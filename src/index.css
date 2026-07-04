@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── 팔자패 글로벌 애니메이션 ─── */
+
+@keyframes pulseGlow {
+  0%   { box-shadow: 0 0 8px rgba(232, 200, 74, 0.10); }
+  50%  { box-shadow: 0 0 18px rgba(232, 200, 74, 0.25); }
+  100% { box-shadow: 0 0 8px rgba(232, 200, 74, 0.10); }
+}
+
+@keyframes pulseGlowBoss {
+  0%   { box-shadow: 0 0 10px rgba(192, 57, 43, 0.15); }
+  50%  { box-shadow: 0 0 24px rgba(192, 57, 43, 0.30); }
+  100% { box-shadow: 0 0 10px rgba(192, 57, 43, 0.15); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(16px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+@keyframes slideUpSheet {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0.8); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+
+@keyframes bounce {
+  0%   { transform: scale(0); }
+  60%  { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%       { transform: translateX(-4px); }
+  40%       { transform: translateX(4px); }
+  60%       { transform: translateX(-4px); }
+  80%       { transform: translateX(4px); }
+}
+
+@keyframes cardStagger {
+  from { transform: scale(0.8); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+
+@keyframes checkFlash {
+  0%   { opacity: 0; transform: scale(1.4); }
+  50%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 1; transform: scale(1); }
+}
