@@ -119,7 +119,7 @@ export default function OnboardingScreen1({ initialYear, onComplete }: Onboardin
       style={{
         position: 'fixed',
         inset: 0,
-        background: '#0D0B08',
+        background: 'var(--bg)',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -138,10 +138,10 @@ export default function OnboardingScreen1({ initialYear, onComplete }: Onboardin
       >
         <span
           style={{
-            fontFamily: 'DM Mono, monospace',
+            fontFamily: 'var(--font-mono)',
             fontSize: '14px',
             letterSpacing: '0.3em',
-            color: '#E8C84A',
+            color: 'var(--gold)',
           }}
         >
           팔자패
@@ -163,10 +163,10 @@ export default function OnboardingScreen1({ initialYear, onComplete }: Onboardin
         <div style={{ marginTop: '32px', textAlign: 'center' }}>
           <h1
             style={{
-              fontFamily: 'Noto Serif KR, serif',
+              fontFamily: 'var(--font-serif)',
               fontWeight: 700,
               fontSize: '24px',
-              color: '#E8E0D0',
+              color: 'var(--text-headline)',
               margin: 0,
             }}
           >
@@ -174,10 +174,10 @@ export default function OnboardingScreen1({ initialYear, onComplete }: Onboardin
           </h1>
           <p
             style={{
-              fontFamily: 'Noto Serif KR, serif',
+              fontFamily: 'var(--font-serif)',
               fontStyle: 'italic',
               fontSize: '16px',
-              color: '#A89880',
+              color: 'var(--text-muted)',
               margin: '6px 0 0',
             }}
           >
@@ -188,11 +188,11 @@ export default function OnboardingScreen1({ initialYear, onComplete }: Onboardin
         {/* HeadlineCopy */}
         <h2
           style={{
-            fontFamily: 'Noto Serif KR, serif',
+            fontFamily: 'var(--font-serif)',
             fontWeight: 700,
             fontSize: '22px',
             lineHeight: 1.4,
-            color: '#E8E0D0',
+            color: 'var(--text-headline)',
             margin: '24px 0 0',
           }}
         >
@@ -202,9 +202,9 @@ export default function OnboardingScreen1({ initialYear, onComplete }: Onboardin
         {/* SubCopy */}
         <p
           style={{
-            fontFamily: 'Noto Sans KR, sans-serif',
+            fontFamily: 'var(--font-mono)',
             fontSize: '14px',
-            color: '#A89880',
+            color: 'var(--text-muted)',
             lineHeight: 1.6,
             margin: '12px 0 0',
           }}
@@ -219,14 +219,15 @@ export default function OnboardingScreen1({ initialYear, onComplete }: Onboardin
           <label
             style={{
               display: 'block',
-              fontFamily: 'DM Mono, monospace',
+              fontFamily: 'var(--font-mono)',
               fontSize: '11px',
-              letterSpacing: '0.1em',
-              color: '#6B5F52',
+              letterSpacing: '0.15em',
+              color: 'var(--text-muted)',
+              textTransform: 'uppercase',
               marginBottom: '8px',
             }}
           >
-            태어난 해
+            YEAR OF BIRTH
           </label>
           <div
             role="group"
@@ -235,9 +236,8 @@ export default function OnboardingScreen1({ initialYear, onComplete }: Onboardin
               display: 'flex',
               alignItems: 'center',
               height: '52px',
-              border: '1px solid rgba(232,200,74,0.12)',
-              borderRadius: '8px',
-              background: '#1A1714',
+              border: '1px solid var(--border-subtle)',
+              background: 'var(--surface)',
               overflow: 'hidden',
             }}
           >
@@ -253,7 +253,7 @@ export default function OnboardingScreen1({ initialYear, onComplete }: Onboardin
                 height: '44px',
                 background: 'none',
                 border: 'none',
-                color: '#A89880',
+                color: 'var(--text-muted)',
                 fontSize: '16px',
                 cursor: 'pointer',
                 display: 'flex',
@@ -272,10 +272,10 @@ export default function OnboardingScreen1({ initialYear, onComplete }: Onboardin
               style={{
                 flex: 1,
                 textAlign: 'center',
-                fontFamily: 'Noto Serif KR, serif',
+                fontFamily: 'var(--font-serif)',
                 fontWeight: 700,
                 fontSize: '20px',
-                color: '#E8C84A',
+                color: 'var(--gold)',
                 outline: 'none',
                 userSelect: 'none',
               }}
@@ -294,7 +294,7 @@ export default function OnboardingScreen1({ initialYear, onComplete }: Onboardin
                 height: '44px',
                 background: 'none',
                 border: 'none',
-                color: '#A89880',
+                color: 'var(--text-muted)',
                 fontSize: '16px',
                 cursor: 'pointer',
                 display: 'flex',
@@ -313,14 +313,15 @@ export default function OnboardingScreen1({ initialYear, onComplete }: Onboardin
           <label
             style={{
               display: 'block',
-              fontFamily: 'DM Mono, monospace',
+              fontFamily: 'var(--font-mono)',
               fontSize: '11px',
-              letterSpacing: '0.1em',
-              color: '#6B5F52',
+              letterSpacing: '0.15em',
+              color: 'var(--text-muted)',
+              textTransform: 'uppercase',
               marginBottom: '8px',
             }}
           >
-            태어난 월 / 일
+            MONTH / DAY
           </label>
           <div style={{ display: 'flex', gap: '12px' }}>
             {/* MonthSelect */}
@@ -332,11 +333,10 @@ export default function OnboardingScreen1({ initialYear, onComplete }: Onboardin
                 style={{
                   width: '100%',
                   height: '52px',
-                  background: '#1A1714',
-                  border: '1px solid rgba(232,200,74,0.12)',
-                  borderRadius: '8px',
-                  color: month === 0 ? '#6B5F52' : '#E8E0D0',
-                  fontFamily: 'Noto Sans KR, sans-serif',
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border-subtle)',
+                  color: month === 0 ? 'var(--text-muted)' : 'var(--text-headline)',
+                  fontFamily: 'var(--font-mono)',
                   fontSize: '14px',
                   padding: '0 36px 0 12px',
                   appearance: 'none',
@@ -356,7 +356,7 @@ export default function OnboardingScreen1({ initialYear, onComplete }: Onboardin
                   right: '12px',
                   top: '50%',
                   transform: 'translateY(-50%)',
-                  color: '#6B5F52',
+                  color: 'var(--text-muted)',
                   pointerEvents: 'none',
                   fontSize: '12px',
                 }}
@@ -375,11 +375,10 @@ export default function OnboardingScreen1({ initialYear, onComplete }: Onboardin
                 style={{
                   width: '100%',
                   height: '52px',
-                  background: '#1A1714',
-                  border: '1px solid rgba(232,200,74,0.12)',
-                  borderRadius: '8px',
-                  color: day === 0 ? '#6B5F52' : '#E8E0D0',
-                  fontFamily: 'Noto Sans KR, sans-serif',
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border-subtle)',
+                  color: day === 0 ? 'var(--text-muted)' : 'var(--text-headline)',
+                  fontFamily: 'var(--font-mono)',
                   fontSize: '14px',
                   padding: '0 36px 0 12px',
                   appearance: 'none',
@@ -401,7 +400,7 @@ export default function OnboardingScreen1({ initialYear, onComplete }: Onboardin
                   right: '12px',
                   top: '50%',
                   transform: 'translateY(-50%)',
-                  color: '#6B5F52',
+                  color: 'var(--text-muted)',
                   pointerEvents: 'none',
                   fontSize: '12px',
                 }}
@@ -425,9 +424,9 @@ export default function OnboardingScreen1({ initialYear, onComplete }: Onboardin
           {error && (
             <span
               style={{
-                fontFamily: 'Noto Sans KR, sans-serif',
+                fontFamily: 'var(--font-mono)',
                 fontSize: '12px',
-                color: '#C0392B',
+                color: 'var(--accent-red)',
               }}
             >
               ⚠ {error}

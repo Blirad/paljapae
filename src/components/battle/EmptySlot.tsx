@@ -1,15 +1,16 @@
 /**
- * EmptySlot — 빈 필드 슬롯 컴포넌트
+ * EmptySlot — 빈 필드 슬롯 컴포넌트 (M6 GSAP hover)
  * 리라 스펙 §2-2 [C/D] FieldArea
  */
 
-import React from 'react'
+import React, { useRef } from 'react'
+import gsap from 'gsap'
 
 interface EmptySlotProps {
   slotIdx: number
   side: 'player' | 'ai'
-  isDropTarget?: boolean   // 드래그 오버 시 강조
-  isSelectable?: boolean   // 카드 선택 후 소환 가능한 슬롯
+  isDropTarget?: boolean
+  isSelectable?: boolean
   onClick?: () => void
   onDragOver?: (e: React.DragEvent) => void
   onDrop?: (e: React.DragEvent) => void
@@ -26,26 +27,50 @@ export default function EmptySlot({
   onDrop,
   onDragLeave,
 }: EmptySlotProps): React.ReactElement {
+  const slotRef = useRef<HTMLDivElement>(null)
+
   const borderColor = isDropTarget || isSelectable
-    ? 'rgba(232,200,74,0.5)'
-    : 'rgba(232,200,74,0.1)'
+    ? 'var(--gold)'
+    : 'var(--border)'
 
   const bg = isDropTarget || isSelectable
-    ? 'rgba(232,200,74,0.05)'
-    : 'transparent'
+    ? 'rgba(212,175,90,0.05)'
+    : 'rgba(255,255,255,0.02)'
+
+  function handleMouseEnter() {
+    if (!isSelectable || !slotRef.current) return
+    gsap.to(slotRef.current, {
+      scale: 1.05,
+      boxShadow: '0 0 12px rgba(212,175,90,0.35)',
+      duration: 0.15,
+      ease: 'power1.out',
+    })
+  }
+
+  function handleMouseLeave() {
+    if (!slotRef.current) return
+    gsap.to(slotRef.current, {
+      scale: 1,
+      boxShadow: 'none',
+      duration: 0.15,
+      ease: 'power1.out',
+    })
+  }
 
   return (
     <div
+      ref={slotRef}
       onClick={onClick}
       onDragOver={onDragOver}
       onDrop={onDrop}
       onDragLeave={onDragLeave}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
       style={{
         flex: 1,
         maxWidth: 84,
         height: 112,
         border: `1px dashed ${borderColor}`,
-        borderRadius: 6,
         background: bg,
         cursor: (isSelectable || isDropTarget) ? 'pointer' : 'default',
         transition: 'border-color 0.15s, background 0.15s',
@@ -57,15 +82,15 @@ export default function EmptySlot({
     >
       {isSelectable && (
         <div style={{
-          width: 24,
-          height: 24,
-          borderRadius: '50%',
-          border: '1px solid rgba(232,200,74,0.4)',
+          width: 28,
+          height: 28,
+          border: '1px solid var(--border-gold)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: 'rgba(232,200,74,0.5)',
-          fontSize: 16,
+          color: 'var(--gold)',
+          fontSize: 18,
+          fontFamily: 'var(--font-mono)',
         }}>
           +
         </div>

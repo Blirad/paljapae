@@ -11,6 +11,7 @@
 import { create } from 'zustand'
 import type { Card } from '@/types/cards'
 import type { FiveElement } from '@/types/elements'
+import { saveCurrentDeckIds, saveStarterDeckIds, loadStarterDeckIds } from '@/utils/persistence'
 import {
   // 초기 보유 풀 카드
   W01, W02, W03, W04, W05, W07,
@@ -111,6 +112,9 @@ interface UnlockStore {
   /** 현재 덱 구성 (카드 ID 배열, 20장) */
   currentDeckIds: string[]
 
+  /** 스타터 덱 카드 ID 목록 (initUnlocks 시 고정 — 제거 불가 보호) */
+  starterDeckIds: string[]
+
   /** 진행 중인 보상 제시 (null = 없음) */
   pendingReward: RewardOffer | null
 
@@ -134,6 +138,12 @@ interface UnlockStore {
   /** 콤보 언락 체크 + 처리 */
   checkComboUnlocks: (clearedStageIds: number[]) => void
 
+  /** 덱에서 카드 1장 제거 (P1-A: ownedCardIds 유지, currentDeckIds에서만 제거) */
+  removeCardFromDeck: (cardId: string) => void
+
+  /** 덱에서 카드 1장을 강화 버전으로 교체 (P1-B: upgradeCardInDeck) */
+  upgradeCardInDeck: (deckId: string, upgradedCard: Card) => void
+
   /** 덱 구성 저장 */
   saveDeck: (cardIds: string[]) => void
 
@@ -144,7 +154,7 @@ interface UnlockStore {
   getCurrentDeck: () => Card[]
 
   /** 진행 상태 불러오기 */
-  loadUnlocks: (ownedCardIds: string[], deckIds: string[]) => void
+  loadUnlocks: (ownedCardIds: string[], deckIds: string[], starterIds?: string[]) => void
 
   /** 초기화 */
   resetUnlocks: () => void
@@ -185,6 +195,7 @@ function pickRandomRewards(pool: Card[], ownedIds: Set<string>, count = 3): Card
 export const useUnlockStore = create<UnlockStore>((set, get) => ({
   ownedCardIds: new Set<string>(),
   currentDeckIds: [],
+  starterDeckIds: [],
   pendingReward: null,
   processedComboIds: new Set<string>(),
 
@@ -194,10 +205,14 @@ export const useUnlockStore = create<UnlockStore>((set, get) => ({
     // 시작 덱: 오행별 자동 생성
     const starterDeck = createStarterDeck(playerElement)
     const currentDeckIds = starterDeck.map(c => c.id)
+    // P1-A: 스타터 덱 ID 목록 보존 (제거 불가 보호용)
+    const starterDeckIds = [...currentDeckIds]
+    saveStarterDeckIds(starterDeckIds)
 
     set({
       ownedCardIds,
       currentDeckIds,
+      starterDeckIds,
       pendingReward: null,
       processedComboIds: new Set<string>(),
     })
@@ -257,6 +272,50 @@ export const useUnlockStore = create<UnlockStore>((set, get) => ({
     }
   },
 
+  removeCardFromDeck: (cardId: string) => {
+    // P1-A: currentDeckIds에서만 제거, ownedCardIds 유지
+    // 방어 1: 덱 최솟값 8장 — 이하면 제거 불가
+    const { currentDeckIds, starterDeckIds } = get()
+    if (currentDeckIds.length <= 8) {
+      console.warn('[unlockStore] removeCardFromDeck: 덱 최솟값(8장) 도달, 제거 차단')
+      return
+    }
+    // 방어 2: starterDeck 카드 ID 개별 차단 (CRIT-01 수정)
+    if (starterDeckIds.includes(cardId)) {
+      console.warn('[unlockStore] removeCardFromDeck: starterDeck 카드 제거 차단', cardId)
+      return
+    }
+    // 첫 번째 일치 항목만 제거 (중복 카드 고려)
+    const idx = currentDeckIds.indexOf(cardId)
+    if (idx === -1) {
+      console.warn('[unlockStore] removeCardFromDeck: 카드 ID를 덱에서 찾지 못함', cardId)
+      return
+    }
+    const newDeckIds = [...currentDeckIds.slice(0, idx), ...currentDeckIds.slice(idx + 1)]
+    set({ currentDeckIds: newDeckIds })
+    saveCurrentDeckIds(newDeckIds)
+  },
+
+  upgradeCardInDeck: (deckId: string, upgradedCard: Card) => {
+    // P1-B: currentDeckIds에서 deckId를 찾아 upgradedCard.id로 교체
+    // ownedCardIds에 강화 카드 ID 추가 (selectReward 패턴)
+    const { currentDeckIds, ownedCardIds } = get()
+    const idx = currentDeckIds.indexOf(deckId)
+    if (idx === -1) {
+      console.warn('[unlockStore] upgradeCardInDeck: 카드 ID를 덱에서 찾지 못함', deckId)
+      return
+    }
+    const newDeckIds = [
+      ...currentDeckIds.slice(0, idx),
+      upgradedCard.id,
+      ...currentDeckIds.slice(idx + 1),
+    ]
+    const newOwned = new Set(ownedCardIds)
+    newOwned.add(upgradedCard.id)
+    set({ currentDeckIds: newDeckIds, ownedCardIds: newOwned })
+    saveCurrentDeckIds(newDeckIds)
+  },
+
   saveDeck: (cardIds: string[]) => {
     set({ currentDeckIds: cardIds })
   },
@@ -278,10 +337,13 @@ export const useUnlockStore = create<UnlockStore>((set, get) => ({
       .filter((c): c is Card => c !== undefined)
   },
 
-  loadUnlocks: (ownedCardIds: string[], deckIds: string[]) => {
+  loadUnlocks: (ownedCardIds: string[], deckIds: string[], starterIds?: string[]) => {
+    // starterIds가 전달되지 않으면 localStorage에서 복원 시도
+    const resolvedStarterIds = starterIds ?? loadStarterDeckIds()
     set({
       ownedCardIds: new Set(ownedCardIds),
       currentDeckIds: deckIds,
+      starterDeckIds: resolvedStarterIds,
     })
   },
 
@@ -289,6 +351,7 @@ export const useUnlockStore = create<UnlockStore>((set, get) => ({
     set({
       ownedCardIds: new Set<string>(),
       currentDeckIds: [],
+      starterDeckIds: [],
       pendingReward: null,
       processedComboIds: new Set<string>(),
     })

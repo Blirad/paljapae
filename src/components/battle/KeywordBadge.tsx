@@ -65,7 +65,7 @@ export default function KeywordBadge({ keyword, used = false }: KeywordBadgeProp
             transform: 'translateX(-50%)',
             marginBottom: 4,
             width: 140,
-            background: '#1A1714',
+            background: 'var(--surface)',
             border: '1px solid rgba(232,200,74,0.45)',
             borderRadius: 6,
             padding: '6px 10px',
@@ -73,10 +73,10 @@ export default function KeywordBadge({ keyword, used = false }: KeywordBadgeProp
             pointerEvents: 'none',
           }}
         >
-          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, fontWeight: 700, color: '#E8C84A', marginBottom: 2 }}>
+          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, fontWeight: 700, color: 'var(--gold)', marginBottom: 2 }}>
             {KEYWORD_LABEL[keyword]}
           </div>
-          <div style={{ fontFamily: 'Noto Sans KR, sans-serif', fontSize: 11, color: '#A89880' }}>
+          <div style={{ fontFamily: 'Noto Sans KR, sans-serif', fontSize: 11, color: 'var(--text-muted)' }}>
             {meta.desc}
           </div>
         </div>

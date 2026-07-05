@@ -37,7 +37,7 @@ export default function OnboardingScreen4({
       style={{
         position: 'fixed',
         inset: 0,
-        background: '#0D0B08',
+        background: 'var(--bg)',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -60,8 +60,8 @@ export default function OnboardingScreen4({
           style={{
             background: 'none',
             border: 'none',
-            color: '#A89880',
-            fontFamily: 'DM Mono, monospace',
+            color: 'var(--text-muted)',
+            fontFamily: 'var(--font-mono)',
             fontSize: '12px',
             cursor: 'pointer',
             padding: '8px 0',
@@ -77,10 +77,10 @@ export default function OnboardingScreen4({
 
         <span
           style={{
-            fontFamily: 'Noto Serif KR, serif',
+            fontFamily: 'var(--font-serif)',
             fontWeight: 700,
             fontSize: '16px',
-            color: '#E8E0D0',
+            color: 'var(--text-headline)',
           }}
         >
           덱 ({deck.length}장)
@@ -98,7 +98,7 @@ export default function OnboardingScreen4({
                 width: '6px',
                 height: '6px',
                 borderRadius: '50%',
-                background: done ? '#E8C84A' : 'rgba(232,200,74,0.2)',
+                background: done ? 'var(--gold)' : 'rgba(201,168,76,0.2)',
               }}
             />
           ))}
@@ -120,10 +120,10 @@ export default function OnboardingScreen4({
 
         <p
           style={{
-            fontFamily: 'Noto Serif KR, serif',
+            fontFamily: 'var(--font-serif)',
             fontStyle: 'italic',
             fontSize: '14px',
-            color: '#6B5F52',
+            color: 'var(--text-muted)',
             lineHeight: 1.6,
             margin: '8px 0 0',
           }}
@@ -155,7 +155,7 @@ export default function OnboardingScreen4({
           bottom: 0,
           padding: '16px 24px',
           paddingBottom: 'calc(16px + env(safe-area-inset-bottom))',
-          background: 'linear-gradient(to top, #0D0B08 80%, transparent)',
+          background: 'linear-gradient(to top, var(--bg) 80%, transparent)',
           display: 'flex',
           gap: '12px',
           flexShrink: 0,

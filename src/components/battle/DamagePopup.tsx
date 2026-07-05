@@ -1,10 +1,11 @@
 /**
  * DamagePopup — 데미지/힐/소진 팝업 컴포넌트
- * 리라 스펙 §5-4
+ * 리라 스펙 §5-4 + GSAP 애니메이션 (작업 3-3)
  */
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef } from 'react'
 import ReactDOM from 'react-dom'
+import gsap from 'gsap'
 import type { DamagePopupData } from '@/game/store/battleStore'
 
 interface DamagePopupProps {
@@ -12,47 +13,45 @@ interface DamagePopupProps {
 }
 
 function getFontSize(value: number): number {
-  if (value >= 11) return 28
-  if (value >= 6) return 22
+  if (value >= 7) return 28
+  if (value >= 4) return 22
   return 18
 }
 
-function getColor(type: DamagePopupData['type']): string {
-  switch (type) {
-    case 'damage': return '#FF4444'
-    case 'heal': return '#44FF88'
-    case 'fatigue': return '#FF8800'
-  }
+function getColor(type: DamagePopupData['type'], value: number): string {
+  if (type === 'heal') return 'var(--el-wood)'
+  if (type === 'fatigue') return 'var(--el-earth)'
+  // damage: 크기별 색상 (Momentor 기준)
+  if (value >= 7) return 'var(--el-fire)'
+  if (value >= 4) return 'var(--gold-accent)'
+  return 'var(--text-primary)'
 }
 
 export default function DamagePopup({ popup }: DamagePopupProps): React.ReactElement {
-  const [phase, setPhase] = useState<'enter' | 'hold' | 'exit'>('enter')
+  const elRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const t1 = setTimeout(() => setPhase('hold'), 150)
-    const t2 = setTimeout(() => setPhase('exit'), 300)
-    return () => {
-      clearTimeout(t1)
-      clearTimeout(t2)
-    }
+    const el = elRef.current
+    if (!el) return
+
+    gsap.fromTo(
+      el,
+      { y: 0, scale: 1.5, opacity: 1 },
+      { y: -80, scale: 0.8, opacity: 0, duration: 0.8, ease: 'power2.out' },
+    )
   }, [])
 
-  const color = getColor(popup.type)
+  const color = getColor(popup.type, popup.value)
   const fontSize = getFontSize(popup.value)
-
-  const translateY = phase === 'enter' ? -8 : phase === 'hold' ? -8 : -32
-  const opacity = phase === 'exit' ? 0 : phase === 'enter' ? 1 : 1
-  const scale = phase === 'enter' ? 1.3 : 1
 
   return ReactDOM.createPortal(
     <div
+      ref={elRef}
       style={{
         position: 'fixed',
         left: `${popup.x}%`,
         top: `${popup.y}%`,
-        transform: `translateX(-50%) translateY(${translateY}px) scale(${scale})`,
-        opacity,
-        transition: phase === 'exit' ? 'opacity 0.4s ease-in, transform 0.4s ease-in' : 'opacity 0.15s ease-out, transform 0.15s ease-out',
+        transform: 'translateX(-50%)',
         zIndex: 40,
         pointerEvents: 'none',
         fontFamily: 'DM Mono, monospace',

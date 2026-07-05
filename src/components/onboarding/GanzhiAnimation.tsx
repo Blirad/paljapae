@@ -64,7 +64,7 @@ export default function GanzhiAnimation({ pillars, onComplete }: GanzhiAnimation
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(13,11,8,0.92)',
+        background: 'var(--bg)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -88,10 +88,10 @@ export default function GanzhiAnimation({ pillars, onComplete }: GanzhiAnimation
           >
             <span
               style={{
-                fontFamily: 'Noto Serif KR, serif',
+                fontFamily: 'var(--font-serif)',
                 fontWeight: 700,
                 fontSize: '48px',
-                color: '#E8C84A',
+                color: 'var(--gold)',
                 lineHeight: 1,
                 minWidth: '52px',
                 textAlign: 'center',
@@ -101,10 +101,10 @@ export default function GanzhiAnimation({ pillars, onComplete }: GanzhiAnimation
             </span>
             <span
               style={{
-                fontFamily: 'Noto Serif KR, serif',
+                fontFamily: 'var(--font-serif)',
                 fontWeight: 700,
                 fontSize: '48px',
-                color: '#E8C84A',
+                color: 'var(--gold)',
                 lineHeight: 1,
                 minWidth: '52px',
                 textAlign: 'center',
@@ -122,9 +122,9 @@ export default function GanzhiAnimation({ pillars, onComplete }: GanzhiAnimation
           <span
             key={label}
             style={{
-              fontFamily: 'DM Mono, monospace',
+              fontFamily: 'var(--font-mono)',
               fontSize: '10px',
-              color: '#6B5F52',
+              color: 'var(--text-muted)',
               width: '52px',
               textAlign: 'center',
             }}
@@ -136,9 +136,9 @@ export default function GanzhiAnimation({ pillars, onComplete }: GanzhiAnimation
 
       <p
         style={{
-          fontFamily: 'Noto Sans KR, sans-serif',
+          fontFamily: 'var(--font-mono)',
           fontSize: '14px',
-          color: '#A89880',
+          color: 'var(--text-muted)',
           margin: 0,
         }}
       >

@@ -17,6 +17,7 @@ import {
 } from '@/types/game'
 import { advanceFatigue, calculateFatigueDamage } from './fatigue'
 import { calculateDamage } from './elementalCombat'
+import type { Relic } from '@/types/relics'
 
 // ────────────────────────────────────────────────────
 // 초기화 헬퍼
@@ -49,8 +50,9 @@ export interface DrawResult {
  * 1. 덱이 비어있으면 Fatigue 처리
  * 2. 덱에서 최대 DRAW_PER_TURN장 드로우
  * 3. 핸드 초과분은 번(burn)
+ * 4. RELIC_JADE_BEAD: 드로우 페이즈 후 추가 1드로우 (핸드 max 체크 포함)
  */
-export function executeDraw(player: PlayerState, _turn: number): DrawResult {
+export function executeDraw(player: PlayerState, _turn: number, relics?: Relic[]): DrawResult {
   let updatedPlayer = { ...player }
   let burnedCount = 0
   let drawnCount = 0
@@ -73,6 +75,15 @@ export function executeDraw(player: PlayerState, _turn: number): DrawResult {
       burnedCount++
     } else {
       newHand.push(card)
+    }
+  }
+
+  // 훅 포인트: 드로우 페이즈 후 — RELIC_JADE_BEAD 추가 1드로우
+  if (relics && relics.some(r => r.id === 'RELIC_JADE_BEAD')) {
+    if (newDeck.length > 0 && newHand.length < HAND_MAX_SIZE) {
+      const extraCard = newDeck.shift() as Card
+      newHand.push(extraCard)
+      drawnCount++
     }
   }
 
@@ -155,17 +166,25 @@ export type PlayCardResult =
  * @param player - 현재 플레이어 상태
  * @param cardIndex - 핸드에서의 카드 인덱스
  * @param fieldSlot - 병사 카드의 경우 배치할 필드 슬롯 (0~3)
+ * @param relics - 보유 유물 목록 (P3: RELIC_ELEMENT_SEAL 비용 감소)
  */
 export function playCard(
   player: PlayerState,
   cardIndex: number,
   fieldSlot?: number,
+  relics?: Relic[],
 ): PlayCardResult {
   const card = player.hand[cardIndex]
   if (!card) return { success: false, reason: '유효하지 않은 카드 인덱스' }
 
-  if (player.currentEnergy < card.cost) {
-    return { success: false, reason: `에너지 부족 (필요: ${card.cost}, 현재: ${player.currentEnergy})` }
+  // 훅 포인트: 카드 플레이 에너지 소비 계산 — RELIC_ELEMENT_SEAL 비용 -1
+  let effectiveCost = card.cost
+  if (relics && relics.some(r => r.id === 'RELIC_ELEMENT_SEAL') && card.element === player.hero.element) {
+    effectiveCost = Math.max(0, effectiveCost - 1)
+  }
+
+  if (player.currentEnergy < effectiveCost) {
+    return { success: false, reason: `에너지 부족 (필요: ${effectiveCost}, 현재: ${player.currentEnergy})` }
   }
 
   const newHand = [...player.hand]
@@ -209,7 +228,7 @@ export function playCard(
       hand: newHand,
       field: newField,
       graveyard: newGraveyard,
-      currentEnergy: player.currentEnergy - card.cost,
+      currentEnergy: player.currentEnergy - effectiveCost,
     },
   }
 }
@@ -228,10 +247,12 @@ export interface CombatResult {
  * 도발 유닛이 있으면 반드시 도발 유닛을 먼저 공격
  * @param state - 현재 게임 상태
  * @param attackerIsPlayer - true: 플레이어 공격, false: AI 공격
+ * @param relics - 보유 유물 목록 (P3: RELIC_HELL_TALISMAN 공격력 보너스)
  */
 export function executeCombatPhase(
   state: GameState,
   attackerIsPlayer: boolean,
+  relics?: Relic[],
 ): GameState {
   const attacker = attackerIsPlayer ? state.player : state.ai
   const defender = attackerIsPlayer ? state.ai : state.player
@@ -273,10 +294,21 @@ export function executeCombatPhase(
       }
     }
 
+    // 훅 포인트: 유닛 공격력 계산 — RELIC_HELL_TALISMAN (플레이어 HP <= 5 시 +3)
+    let effectiveAttack = unit.currentAttack
+    if (
+      relics &&
+      attackerIsPlayer &&
+      relics.some(r => r.id === 'RELIC_HELL_TALISMAN') &&
+      newAttacker.currentHp <= 5
+    ) {
+      effectiveAttack += 3
+    }
+
     if (targetHero) {
       // 영웅 직접 공격
       const damage = calculateDamage(
-        unit.currentAttack,
+        effectiveAttack,
         unit.card.element,
         newDefender.hero.element,
       )
@@ -297,7 +329,7 @@ export function executeCombatPhase(
       // 유닛 공격
       const targetUnit = newDefender.field[targetUnitIdx]!
       const damage = calculateDamage(
-        unit.currentAttack,
+        effectiveAttack,
         unit.card.element,
         targetUnit.card.element,
       )

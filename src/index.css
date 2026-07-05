@@ -2,6 +2,116 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── 팔자패 Momentor 테마 v2 ─── */
+:root {
+  /* 배경 레이어 */
+  --bg:       #E8DCC4;
+  --bg2:      #DDD0B3;
+  --surface:  #F2EAD8;
+
+  /* 다크 전투 전용 */
+  --battle-bg:      #1a1410;
+  --battle-surface: #231e18;
+
+  /* 테두리 */
+  --border:        rgba(44,44,44,0.15);
+  --border-subtle: rgba(201,168,76,0.20);
+  --border-gold:   rgba(201,168,76,0.50);
+  --radius: 0px;
+
+  /* 텍스트 */
+  --text-primary:   #2C2C2C;
+  --text-secondary: rgba(44,44,44,0.60);
+  --text-muted:     rgba(44,44,44,0.40);
+  --text-headline:  #1A1714;
+
+  /* 골드 액센트 */
+  --gold:         #C9A84C;
+  --gold-primary: #C9A84C;
+  --gold-accent:  #E8C547;
+
+  /* 액센트 레드 */
+  --accent-red:   #8B0000;
+
+  /* 오행 컬러 — 크림 배경 최적화 */
+  --el-wood:  #4A7A45;
+  --el-fire:  #9B3A28;
+  --el-earth: #8B6914;
+  --el-metal: #5A6E7F;
+  --el-water: #2E5F8A;
+
+  /* 폰트 */
+  --font-serif: 'Cormorant Garamond', 'Noto Serif KR', serif;
+  --font-mono:  'DM Mono', 'Courier New', monospace;
+}
+
+/* ── 전투 화면 전용 오버라이드 ── */
+[data-screen="battle"] {
+  --bg:       #1a1410;
+  --bg2:      #231e18;
+  --surface:  #2A2420;
+  --border:   rgba(255,255,255,0.08);
+  --border-subtle: rgba(201,168,76,0.15);
+  --border-gold:   rgba(201,168,76,0.40);
+  --text-primary:   #E8DCC4;
+  --text-secondary: rgba(232,220,196,0.65);
+  --text-muted:     rgba(232,220,196,0.35);
+  --text-headline:  #F2EAD8;
+  --el-wood:  #6FA86A;
+  --el-fire:  #C4604A;
+  --el-earth: #B89A5E;
+  --el-metal: #9AAAB8;
+  --el-water: #5E8FB8;
+}
+
+/* ── Momentor 공통 컴포넌트 ── */
+.pj-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border-gold), transparent);
+}
+
+.pj-hard-line {
+  height: 1px;
+  background: var(--border);
+  margin: 16px 0;
+}
+
+.pj-certificate-frame {
+  position: relative;
+  border: 1px solid var(--border-gold);
+  padding: 24px;
+}
+.pj-certificate-frame::before,
+.pj-certificate-frame::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-color: var(--gold);
+  border-style: solid;
+}
+.pj-certificate-frame::before {
+  top: -1px; left: -1px;
+  border-width: 2px 0 0 2px;
+}
+.pj-certificate-frame::after {
+  bottom: -1px; right: -1px;
+  border-width: 0 2px 2px 0;
+}
+
+/* ─── 글로벌 초기화 ─── */
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  margin: 0;
+}
+
+* {
+  border-radius: 0 !important;
+  box-sizing: border-box;
+}
+
 /* ─── 팔자패 글로벌 애니메이션 ─── */
 
 @keyframes pulseGlow {
@@ -63,4 +173,65 @@
   0%   { opacity: 0; transform: scale(1.4); }
   50%  { opacity: 1; transform: scale(1); }
   100% { opacity: 1; transform: scale(1); }
+}
+
+/* M7 P2-B 상점 */
+@keyframes shopCardIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes toastSlideDown {
+  from { transform: translateX(-50%) translateY(-100%); }
+  to   { transform: translateX(-50%) translateY(0); }
+}
+
+/* M7 P3-A 유물 획득 팝업 */
+@keyframes relicPopIn {
+  0%   { transform: scale(0.7); opacity: 0; }
+  70%  { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1.0); opacity: 1; }
+}
+
+@keyframes relicIconIn {
+  0%   { transform: scale(0); opacity: 0; }
+  70%  { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(1.0); opacity: 1; }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+/* M7 P1-B 업그레이드: scaleX flip */
+@keyframes cardFlipOut {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+@keyframes cardFlipIn {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+@keyframes goldPulse {
+  0%   { background: rgba(201,168,76,0); }
+  40%  { background: rgba(201,168,76,0.18); }
+  100% { background: rgba(201,168,76,0); }
+}
+
+/* M7 P4-B: countUp 수치 */
+@keyframes numericBounce {
+  0%   { transform: scaleY(1); }
+  40%  { transform: scaleY(1.2); }
+  100% { transform: scaleY(1); }
+}
+
+/* M7 P4-B: 스탯 변화 bounce (덱 크기, 유물 수, 스테이지) */
+@keyframes statBounce {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.35); }
+  70%  { transform: scale(0.9); }
+  100% { transform: scale(1); }
 }

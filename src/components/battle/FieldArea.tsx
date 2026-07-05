@@ -3,7 +3,8 @@
  * 리라 스펙 §2-2 [C] [D]
  */
 
-import React from 'react'
+import React, { useEffect, useRef } from 'react'
+import gsap from 'gsap'
 import type { FieldUnit } from '@/types/cards'
 import FieldUnitCard from './FieldUnitCard'
 import EmptySlot from './EmptySlot'
@@ -42,6 +43,24 @@ export default function FieldArea({
   dragOverSlot = null,
 }: FieldAreaProps): React.ReactElement {
   const isPlayerField = side === 'player'
+
+  // 소환 애니메이션: 슬롯별 ref + 이전 유닛 추적
+  const slotRefs = useRef<(HTMLDivElement | null)[]>([])
+  const prevFieldRef = useRef<(FieldUnit | null)[]>([])
+
+  useEffect(() => {
+    field.forEach((unit, slotIdx) => {
+      const wasEmpty = prevFieldRef.current[slotIdx] == null
+      const nowHasUnit = unit != null
+      if (wasEmpty && nowHasUnit) {
+        const el = slotRefs.current[slotIdx]
+        if (el) {
+          gsap.from(el, { scale: 0.5, opacity: 0, duration: 0.35, ease: 'back.out(1.7)' })
+        }
+      }
+    })
+    prevFieldRef.current = [...field]
+  })
 
   return (
     <div style={{
@@ -82,16 +101,21 @@ export default function FieldArea({
           }
 
           return (
-            <FieldUnitCard
+            <div
               key={slotIdx}
-              unit={unit}
-              slotIdx={slotIdx}
-              side={side}
-              isSelected={isPlayerField && selectedUnitSlot === slotIdx}
-              isValidAttackTarget={isValidTarget}
-              isDimmed={isDimmed}
-              onClick={onUnitClick ? () => onUnitClick(slotIdx) : undefined}
-            />
+              ref={el => { slotRefs.current[slotIdx] = el }}
+              style={{ flex: 1, maxWidth: 84, display: 'flex' }}
+            >
+              <FieldUnitCard
+                unit={unit}
+                slotIdx={slotIdx}
+                side={side}
+                isSelected={isPlayerField && selectedUnitSlot === slotIdx}
+                isValidAttackTarget={isValidTarget}
+                isDimmed={isDimmed}
+                onClick={onUnitClick ? () => onUnitClick(slotIdx) : undefined}
+              />
+            </div>
           )
         } else {
           // 빈 슬롯

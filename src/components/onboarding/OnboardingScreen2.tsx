@@ -69,7 +69,7 @@ export default function OnboardingScreen2({ sajuResult, onNext }: OnboardingScre
       style={{
         position: 'fixed',
         inset: 0,
-        background: '#0D0B08',
+        background: 'var(--bg)',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -99,7 +99,7 @@ export default function OnboardingScreen2({ sajuResult, onNext }: OnboardingScre
                 width: '6px',
                 height: '6px',
                 borderRadius: '50%',
-                background: done ? '#E8C84A' : 'rgba(232,200,74,0.2)',
+                background: done ? 'var(--gold)' : 'rgba(201,168,76,0.2)',
               }}
             />
           ))}
@@ -139,7 +139,7 @@ export default function OnboardingScreen2({ sajuResult, onNext }: OnboardingScre
           </div>
           <div
             style={{
-              fontFamily: 'Noto Serif KR, serif',
+              fontFamily: 'var(--font-serif)',
               fontWeight: 700,
               fontSize: '64px',
               color: display.color,
@@ -166,9 +166,9 @@ export default function OnboardingScreen2({ sajuResult, onNext }: OnboardingScre
           {/* W4 약식 사주 명시 */}
           <p
             style={{
-              fontFamily: 'DM Mono, monospace',
+              fontFamily: 'var(--font-mono)',
               fontSize: '10px',
-              color: '#6B5F52',
+              color: 'var(--text-muted)',
               letterSpacing: '0.05em',
               margin: '0 0 8px',
             }}
@@ -178,9 +178,9 @@ export default function OnboardingScreen2({ sajuResult, onNext }: OnboardingScre
 
           <p
             style={{
-              fontFamily: 'Noto Serif KR, serif',
+              fontFamily: 'var(--font-serif)',
               fontSize: '16px',
-              color: '#E8E0D0',
+              color: 'var(--text-headline)',
               margin: 0,
               lineHeight: 1.5,
             }}
@@ -195,9 +195,9 @@ export default function OnboardingScreen2({ sajuResult, onNext }: OnboardingScre
           {isTied && (
             <p
               style={{
-                fontFamily: 'Noto Sans KR, sans-serif',
+                fontFamily: 'var(--font-mono)',
                 fontSize: '12px',
-                color: '#6B5F52',
+                color: 'var(--text-muted)',
                 margin: '6px 0 0',
               }}
             >
@@ -208,10 +208,10 @@ export default function OnboardingScreen2({ sajuResult, onNext }: OnboardingScre
 
           <p
             style={{
-              fontFamily: 'Noto Sans KR, sans-serif',
+              fontFamily: 'var(--font-serif)',
               fontSize: '13px',
               fontStyle: 'italic',
-              color: '#A89880',
+              color: 'var(--text-muted)',
               margin: '8px 0 0',
             }}
           >
@@ -231,10 +231,11 @@ export default function OnboardingScreen2({ sajuResult, onNext }: OnboardingScre
         >
           <p
             style={{
-              fontFamily: 'DM Mono, monospace',
+              fontFamily: 'var(--font-mono)',
               fontSize: '11px',
-              letterSpacing: '0.1em',
-              color: '#6B5F52',
+              letterSpacing: '0.15em',
+              textTransform: 'uppercase',
+              color: 'var(--text-muted)',
               margin: '0 0 12px',
             }}
           >
@@ -263,9 +264,9 @@ export default function OnboardingScreen2({ sajuResult, onNext }: OnboardingScre
                     role="cell"
                     style={{
                       width: '64px',
-                      fontFamily: 'Noto Sans KR, sans-serif',
+                      fontFamily: 'var(--font-mono)',
                       fontSize: '12px',
-                      color: '#A89880',
+                      color: 'var(--text-muted)',
                       flexShrink: 0,
                       display: 'flex',
                       alignItems: 'center',
@@ -285,10 +286,10 @@ export default function OnboardingScreen2({ sajuResult, onNext }: OnboardingScre
                     style={{
                       flex: 1,
                       height: '8px',
-                      background: '#1A1714',
+                      background: 'var(--border)',
                       borderRadius: '4px',
                       overflow: 'hidden',
-                      border: isPrimary ? '1px solid rgba(232,200,74,0.45)' : 'none',
+                      border: isPrimary ? '1px solid var(--border-gold)' : 'none',
                     }}
                   >
                     <div
@@ -308,9 +309,9 @@ export default function OnboardingScreen2({ sajuResult, onNext }: OnboardingScre
                     style={{
                       width: '44px',
                       textAlign: 'right',
-                      fontFamily: 'DM Mono, monospace',
+                      fontFamily: 'var(--font-mono)',
                       fontSize: '11px',
-                      color: '#6B5F52',
+                      color: 'var(--text-muted)',
                       flexShrink: 0,
                     }}
                   >
@@ -327,10 +328,10 @@ export default function OnboardingScreen2({ sajuResult, onNext }: OnboardingScre
         {/* 오행 성향 설명 */}
         <p
           style={{
-            fontFamily: 'Noto Serif KR, serif',
+            fontFamily: 'var(--font-serif)',
             fontStyle: 'italic',
             fontSize: '14px',
-            color: '#A89880',
+            color: 'var(--text-muted)',
             lineHeight: 1.6,
             margin: '16px 0 0',
             opacity: animStep >= 4 ? 1 : 0,

@@ -1,6 +1,6 @@
 /**
- * SecondaryButton — 투명 테두리 버튼
- * 리라 스펙 §7
+ * SecondaryButton — Momentor 투명 테두리 버튼
+ * 리라 스펙 §7 + Momentor 디자인 시스템 (2026-07-05)
  */
 import React from 'react'
 
@@ -24,18 +24,35 @@ export default function SecondaryButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      style={style}
-      className={[
-        'h-[52px] rounded-[8px] cursor-pointer',
-        'bg-transparent text-[#E8E0D0] font-sans text-[16px]',
-        'border border-[rgba(232,200,74,0.45)]',
-        'transition-all duration-[150ms]',
-        'hover:border-[rgba(232,200,74,0.8)] hover:text-[#E8C84A]',
-        'active:scale-[0.98]',
-        'focus:outline-[2px] focus:outline-solid focus:outline-[#E8C84A] focus:outline-offset-2',
-        disabled ? 'opacity-30 cursor-not-allowed' : '',
-        className,
-      ].join(' ')}
+      className={className}
+      style={{
+        height: 52,
+        border: '1px solid var(--border)',
+        background: 'transparent',
+        color: 'var(--text-secondary)',
+        fontFamily: 'var(--font-mono)',
+        fontSize: 13,
+        letterSpacing: '0.05em',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.3 : 1,
+        transition: 'border-color 0.15s, color 0.15s',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        ...style,
+      }}
+      onMouseEnter={e => {
+        if (!disabled) {
+          const btn = e.currentTarget as HTMLButtonElement
+          btn.style.borderColor = 'var(--border-gold)'
+          btn.style.color = 'var(--gold)'
+        }
+      }}
+      onMouseLeave={e => {
+        const btn = e.currentTarget as HTMLButtonElement
+        btn.style.borderColor = 'var(--border)'
+        btn.style.color = 'var(--text-secondary)'
+      }}
     >
       {children}
     </button>

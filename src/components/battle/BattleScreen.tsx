@@ -3,13 +3,15 @@
  * 리라 스펙 §2 전체 레이아웃
  */
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useBattleStore } from '@/game/store/battleStore'
 import type { InteractionState } from '@/game/store/battleStore'
 import { useOnboardingStore } from '@/game/store/onboardingStore'
 import { createStartingDeck } from '@/game/store/onboardingStore'
+import { useUnlockStore } from '@/stores/unlockStore'
 import type { HeroId } from '@/types/game'
 import { HEROES } from '@/types/game'
+import { useRelicStore } from '@/stores/relicStore'
 
 import TopStatusBar from './TopStatusBar'
 import PlayerStatusBar from './PlayerStatusBar'
@@ -70,12 +72,12 @@ const AI_HERO_MAP: Record<string, HeroId> = {
 }
 
 interface BattleScreenProps {
-  onRestart: () => void       // 패배/홈 버튼 → WorldMap (or Onboarding)
-  onVictory?: () => void      // 승리 → CardRewardScreen (M5)
+  onRestart: () => void       // 패배/홈 버튼 → DefeatScreen (P0-A)
+  onVictory?: (result: { playerHpRemaining: number }) => void  // 승리 → CardRewardScreen (P0-B)
   stageId?: number | null     // 현재 배틀 스테이지 ID (M5)
 }
 
-export default function BattleScreen({ onRestart, onVictory }: BattleScreenProps): React.ReactElement {
+export default function BattleScreen({ onRestart, onVictory, stageId: _stageId }: BattleScreenProps): React.ReactElement {
   const onboardingResult = useOnboardingStore(s => s.onboardingResult)
   const {
     gameState,
@@ -102,30 +104,65 @@ export default function BattleScreen({ onRestart, onVictory }: BattleScreenProps
   const [dragOverSlot, setDragOverSlot] = useState<number | null>(null)
   const [initialized, setInitialized] = useState(false)
 
+  const relicStore = useRelicStore()
+
   // 게임 초기화
   useEffect(() => {
     if (initialized) return
     setInitialized(true)
 
-    const playerElement = onboardingResult?.primaryElement ?? '火'
-    // HeroData에는 id 필드가 없으므로 element 기반으로 heroId 결정
-    const ELEMENT_TO_HERO_ID: Record<string, HeroId> = {
-      '木': 'wood_hero', '火': 'fire_hero', '土': 'earth_hero', '金': 'metal_hero', '水': 'water_hero',
-    }
-    const playerHeroId = ELEMENT_TO_HERO_ID[playerElement] ?? 'fire_hero'
-    const aiHeroId = AI_HERO_MAP[playerElement] ?? 'earth_hero'
-    const playerDeck = createStartingDeck(playerElement)
-    const aiDeck = createStartingDeck(HEROES[aiHeroId as HeroId].element)
+    try {
+      const playerElement = onboardingResult?.primaryElement ?? '火'
+      // HeroData에는 id 필드가 없으므로 element 기반으로 heroId 결정
+      const ELEMENT_TO_HERO_ID: Record<string, HeroId> = {
+        '木': 'wood_hero', '火': 'fire_hero', '土': 'earth_hero', '金': 'metal_hero', '水': 'water_hero',
+      }
+      const playerHeroId = ELEMENT_TO_HERO_ID[playerElement] ?? 'fire_hero'
+      const aiHeroId = AI_HERO_MAP[playerElement] ?? 'earth_hero'
 
-    initBattle(playerHeroId, playerDeck, aiHeroId as HeroId, aiDeck)
+      // MOD-1: currentDeckIds가 있으면(이벤트/보상으로 추가된 카드 포함) 그것을 우선 사용.
+      // currentDeckIds가 비어있으면(최초 전투 등) createStartingDeck 폴백.
+      const currentDeck = useUnlockStore.getState().getCurrentDeck()
+      const playerDeck = currentDeck.length > 0
+        ? currentDeck
+        : createStartingDeck(playerElement)
+
+      // playerDeck 유효성 확인
+      if (!playerDeck || playerDeck.length === 0) {
+        console.error('[BattleScreen] playerDeck이 비어있습니다. element:', playerElement)
+        throw new Error('덱 초기화 실패: 카드가 없습니다')
+      }
+
+      const aiDeck = createStartingDeck(HEROES[aiHeroId as HeroId].element)
+
+      initBattle(playerHeroId, playerDeck, aiHeroId as HeroId, aiDeck)
+
+      // 훅 포인트: 전투 시작 — RELIC_HERB_POUCH HP +3
+      // initBattle 호출 후 battleStore의 gameState가 비동기로 업데이트되므로
+      // 다음 마이크로태스크에서 처리
+    } catch (err) {
+      console.error('[BattleScreen] initBattle 실패:', err)
+      throw err // ErrorBoundary에서 캐치
+    }
   }, [initialized, onboardingResult, initBattle])
+
+  const applyHerbPouch = useBattleStore(s => s.applyHerbPouch)
+  // 전투 시작 유물 효과 — gameState 초기화 완료 후 1회 적용 (RELIC_HERB_POUCH HP +3)
+  const herbPouchAppliedRef = useRef(false)
+  useEffect(() => {
+    if (!gameState) return
+    if (herbPouchAppliedRef.current) return
+    if (!relicStore.hasRelic('RELIC_HERB_POUCH')) return
+    herbPouchAppliedRef.current = true
+    applyHerbPouch()
+  }, [gameState, relicStore, applyHerbPouch])
 
   if (!gameState) {
     return (
-      <div style={{
-        position: 'fixed', inset: 0, background: '#0D0B08',
+      <div data-screen="battle" style={{
+        position: 'fixed', inset: 0, background: 'var(--bg)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        color: '#E8E0D0', fontFamily: 'Noto Serif KR, serif',
+        color: 'var(--text-headline)', fontFamily: 'var(--font-serif)',
       }}>
         전투 준비 중...
       </div>
@@ -262,11 +299,14 @@ export default function BattleScreen({ onRestart, onVictory }: BattleScreenProps
     onRestart()
   }
 
-  // 승리 시 CardRewardScreen으로 전환 (M5)
+  // 승리 시 CardRewardScreen으로 전환 (P0-B: 실측 HP 전달)
   function handleVictory() {
+    // battleStore에서 전투 후 실제 잔여 HP 읽기 (gameState는 null일 수 있으므로 방어)
+    const storeState = useBattleStore.getState()
+    const currentPlayerHp = storeState.gameState?.player.currentHp ?? 1
     resetBattle()
     if (onVictory) {
-      onVictory()
+      onVictory({ playerHpRemaining: currentPlayerHp })
     } else {
       onRestart()
     }
@@ -293,10 +333,11 @@ export default function BattleScreen({ onRestart, onVictory }: BattleScreenProps
       <style>{GLOBAL_STYLES}</style>
 
       <div
+        data-screen="battle"
         style={{
           position: 'fixed',
           inset: 0,
-          background: '#0D0B08',
+          background: 'var(--bg)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
@@ -335,7 +376,7 @@ export default function BattleScreen({ onRestart, onVictory }: BattleScreenProps
             justifyContent: 'center',
             fontFamily: 'Noto Sans KR, sans-serif',
             fontSize: 12,
-            color: '#E8C84A',
+            color: 'var(--gold-accent)',
             flexShrink: 0,
           }}>
             {hintMessage}
@@ -388,6 +429,51 @@ export default function BattleScreen({ onRestart, onVictory }: BattleScreenProps
 
         {/* [E] 플레이어 상태 바 */}
         <PlayerStatusBar player={player} />
+
+        {/* [E-1] 유물 아이콘 바 (P3) — 보유 유물이 있을 때만 표시 */}
+        {relicStore.ownedRelics.length > 0 && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '4px 12px',
+            background: 'var(--bg2)',
+            borderBottom: '1px solid var(--border)',
+            flexShrink: 0,
+            overflowX: 'auto',
+          }}>
+            <span style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 9,
+              color: 'var(--text-muted)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              flexShrink: 0,
+            }}>
+              유물
+            </span>
+            {relicStore.ownedRelics.map(relic => (
+              <span
+                key={relic.id}
+                aria-label={relic.name}
+                title={relic.description}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 22,
+                  height: 22,
+                  background: 'rgba(201,168,76,0.12)',
+                  borderRadius: '50%',
+                  fontSize: 13,
+                  flexShrink: 0,
+                }}
+              >
+                {relic.icon}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* [F] 손패 영역 */}
         <div onClick={e => e.stopPropagation()}>
@@ -470,7 +556,7 @@ export default function BattleScreen({ onRestart, onVictory }: BattleScreenProps
               padding: '8px 16px',
               fontFamily: 'Noto Sans KR, sans-serif',
               fontSize: 13,
-              color: '#E8E0D0',
+              color: 'var(--text-primary)',
               whiteSpace: 'nowrap',
               boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
             }}

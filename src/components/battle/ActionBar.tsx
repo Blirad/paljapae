@@ -1,6 +1,7 @@
 /**
  * ActionBar — 하단 액션 바
  * 리라 스펙 §2-2 [G]
+ * Momentor 디자인 시스템 적용 (2026-07-05)
  */
 
 import React from 'react'
@@ -34,8 +35,8 @@ export default function ActionBar({
   return (
     <div style={{
       height: 56,
-      background: '#1A1714',
-      borderTop: '1px solid rgba(232,200,74,0.12)',
+      background: 'var(--bg2)',
+      borderTop: '1px solid var(--border)',
       display: 'flex',
       alignItems: 'center',
       padding: '0 12px',
@@ -45,11 +46,11 @@ export default function ActionBar({
     }}>
       {/* 턴 표시 */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
-        <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: '#6B5F52', lineHeight: 1 }}>턴</span>
-        <span style={{ fontFamily: 'DM Mono, monospace', fontWeight: 700, fontSize: 20, color: '#E8C84A', lineHeight: 1 }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', lineHeight: 1, textTransform: 'uppercase', letterSpacing: '0.1em' }}>턴</span>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 20, color: 'var(--gold)', lineHeight: 1 }}>
           {turn}
         </span>
-        <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#6B5F52', lineHeight: 1 }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1 }}>
           /{MAX_TURNS}
         </span>
       </div>
@@ -61,15 +62,14 @@ export default function ActionBar({
         style={{
           flex: 1,
           height: 40,
-          borderRadius: 8,
-          border: canEndTurn ? 'none' : '1px solid rgba(232,200,74,0.12)',
-          background: canEndTurn ? '#E8C84A' : '#1A1714',
-          color: canEndTurn ? '#0D0B08' : '#6B5F52',
-          fontFamily: 'Noto Sans KR, sans-serif',
-          fontWeight: 700,
-          fontSize: 14,
+          border: canEndTurn ? '1px solid var(--gold)' : '1px solid var(--border)',
+          background: 'transparent',
+          color: canEndTurn ? 'var(--gold)' : 'var(--text-muted)',
+          fontFamily: 'var(--font-mono)',
+          fontSize: 13,
+          letterSpacing: '0.1em',
           cursor: canEndTurn ? 'pointer' : 'not-allowed',
-          transition: 'background 0.2s, color 0.2s',
+          transition: 'background 0.2s, color 0.2s, border-color 0.2s',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -81,9 +81,9 @@ export default function ActionBar({
           <span style={{
             width: 12,
             height: 12,
+            border: '2px solid var(--text-muted)',
+            borderTopColor: 'var(--gold)',
             borderRadius: '50%',
-            border: '2px solid #6B5F52',
-            borderTopColor: '#A89880',
             animation: 'spin 0.8s linear infinite',
             display: 'inline-block',
           }} />
@@ -97,12 +97,12 @@ export default function ActionBar({
         style={{
           height: 40,
           width: 48,
-          borderRadius: 8,
-          border: `1px solid ${logOpen ? 'rgba(232,200,74,0.45)' : 'rgba(232,200,74,0.12)'}`,
+          border: `1px solid ${logOpen ? 'var(--border-gold)' : 'var(--border)'}`,
           background: 'transparent',
-          color: logOpen ? '#E8C84A' : '#A89880',
-          fontFamily: 'DM Mono, monospace',
+          color: logOpen ? 'var(--gold)' : 'var(--text-muted)',
+          fontFamily: 'var(--font-mono)',
           fontSize: 10,
+          letterSpacing: '0.05em',
           cursor: 'pointer',
           flexShrink: 0,
         }}

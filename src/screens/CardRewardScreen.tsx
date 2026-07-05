@@ -14,6 +14,9 @@ import { ELEMENT_DISPLAY } from '@/types/elements'
 import { useUnlockStore } from '@/stores/unlockStore'
 import PrimaryButton from '@/components/ui/PrimaryButton'
 
+// P1-A: 덱 최솟값 상수
+const DECK_MIN_SIZE = 8
+
 // ────────────────────────────────────────────────────
 // 오행별 승리 타이틀 (리라 M4 스펙 §4 카피)
 // ────────────────────────────────────────────────────
@@ -54,16 +57,15 @@ function RewardCardSlot({ card, isSelected, dimmed, index, onSelect }: RewardCar
       onClick={onSelect}
       style={{
         flex: 1,
-        background: '#141210',
-        border: `2px solid ${isSelected ? '#E8C84A' : `${elColor}4D`}`,
-        borderRadius: 8,
+        background: 'var(--surface)',
+        border: `1px solid ${isSelected ? 'var(--gold)' : `${elColor}4D`}`,
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
         cursor: 'pointer',
         padding: 0,
         transform: isSelected ? 'scale(1.05)' : 'scale(1)',
-        boxShadow: isSelected ? '0 0 16px rgba(232,200,74,0.3)' : 'none',
+        boxShadow: isSelected ? '0 0 16px rgba(201,168,76,0.3)' : 'none',
         opacity: dimmed ? 0.4 : 1,
         transition: 'transform 0.2s, box-shadow 0.2s, opacity 0.2s, border-color 0.2s',
         WebkitTapHighlightColor: 'transparent',
@@ -79,13 +81,13 @@ function RewardCardSlot({ card, isSelected, dimmed, index, onSelect }: RewardCar
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        background: `${elColor}26`,
+        background: `${elColor}1A`,
         flexShrink: 0,
       }}>
-        <span style={{ fontFamily: 'DM Mono, monospace', fontWeight: 700, fontSize: 14, color: '#E8C84A' }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 14, color: 'var(--gold)' }}>
           {card.cost}
         </span>
-        <span style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: elColor }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: elColor }}>
           {elDisplay ? `${elDisplay.icon}${card.element}` : '중립'}
         </span>
       </div>
@@ -98,7 +100,7 @@ function RewardCardSlot({ card, isSelected, dimmed, index, onSelect }: RewardCar
         justifyContent: 'center',
         background: elDisplay
           ? elDisplay.gradient.replace(/0\.\d+\)/g, '0.4)')
-          : 'linear-gradient(135deg, #1A1714 0%, #141210 100%)',
+          : 'linear-gradient(135deg, var(--surface) 0%, var(--bg2) 100%)',
         minHeight: 60,
       }}>
         <span aria-hidden="true" style={{ fontSize: 28 }}>
@@ -112,21 +114,21 @@ function RewardCardSlot({ card, isSelected, dimmed, index, onSelect }: RewardCar
         flexShrink: 0,
       }}>
         <div style={{
-          fontFamily: 'Noto Serif KR, serif',
-          fontWeight: 700,
+          fontFamily: 'var(--font-serif)',
+          fontStyle: 'italic',
           fontSize: 11,
-          color: '#E8E0D0',
+          color: 'var(--text-headline)',
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
         }}>
           {card.name}
         </div>
-        <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 10, color: '#6B5F52', marginTop: 1 }}>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>
           {isSoldier ? '병사' : '주문'}
         </div>
         {isSoldier && (
-          <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, color: '#E8C84A', fontWeight: 700, marginTop: 1 }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--gold)', marginTop: 1 }}>
             {(card as any).attack}/{(card as any).maxHealth}
           </div>
         )}
@@ -149,8 +151,8 @@ function CardDetailPreview({ card }: { card: Card }): React.ReactElement {
       role="region"
       aria-label="선택한 카드 정보"
       style={{
-        background: '#1A1714',
-        border: '1px solid rgba(232,200,74,0.12)',
+        background: 'var(--surface)',
+        border: '1px solid var(--border-subtle)',
         borderRadius: 8,
         padding: 12,
         animation: 'fadeIn 0.2s ease-out',
@@ -162,8 +164,8 @@ function CardDetailPreview({ card }: { card: Card }): React.ReactElement {
           <span style={{
             fontFamily: 'DM Mono, monospace',
             fontSize: 10,
-            background: '#1A1714',
-            border: '1px solid rgba(232,200,74,0.12)',
+            background: 'var(--surface)',
+            border: '1px solid var(--border-subtle)',
             borderRadius: 4,
             padding: '2px 6px',
             color: elColor,
@@ -172,36 +174,36 @@ function CardDetailPreview({ card }: { card: Card }): React.ReactElement {
           </span>
         )}
         <span style={{
-          fontFamily: 'DM Mono, monospace',
+          fontFamily: 'var(--font-mono)',
           fontSize: 10,
-          background: '#1A1714',
-          border: '1px solid rgba(232,200,74,0.12)',
+          background: 'var(--surface)',
+          border: '1px solid var(--border-subtle)',
           borderRadius: 4,
           padding: '2px 6px',
-          color: '#A89880',
+          color: 'var(--text-muted)',
         }}>
           비용 {card.cost}
         </span>
         <span style={{
-          fontFamily: 'DM Mono, monospace',
+          fontFamily: 'var(--font-mono)',
           fontSize: 10,
-          background: '#1A1714',
-          border: '1px solid rgba(232,200,74,0.12)',
+          background: 'var(--surface)',
+          border: '1px solid var(--border-subtle)',
           borderRadius: 4,
           padding: '2px 6px',
-          color: '#A89880',
+          color: 'var(--text-muted)',
         }}>
           {isSoldier ? '병사' : '주문'}
         </span>
         {isSoldier && (
           <span style={{
-            fontFamily: 'DM Mono, monospace',
+            fontFamily: 'var(--font-mono)',
             fontSize: 10,
-            background: '#1A1714',
-            border: '1px solid rgba(232,200,74,0.12)',
+            background: 'var(--surface)',
+            border: '1px solid var(--border-subtle)',
             borderRadius: 4,
             padding: '2px 6px',
-            color: '#E8C84A',
+            color: 'var(--gold)',
           }}>
             {(card as any).attack}/{(card as any).maxHealth}
           </span>
@@ -210,10 +212,10 @@ function CardDetailPreview({ card }: { card: Card }): React.ReactElement {
 
       {/* 카드명 */}
       <div style={{
-        fontFamily: 'Noto Serif KR, serif',
+        fontFamily: 'var(--font-serif)',
         fontWeight: 700,
         fontSize: 15,
-        color: '#E8E0D0',
+        color: 'var(--text-headline)',
       }}>
         {card.name}
       </div>
@@ -221,9 +223,9 @@ function CardDetailPreview({ card }: { card: Card }): React.ReactElement {
       {/* 효과 텍스트 */}
       {(card as any).effectText && (
         <div style={{
-          fontFamily: 'Noto Sans KR, sans-serif',
+          fontFamily: 'var(--font-mono)',
           fontSize: 13,
-          color: '#A89880',
+          color: 'var(--text-secondary)',
           marginTop: 6,
           lineHeight: 1.5,
         }}>
@@ -234,10 +236,10 @@ function CardDetailPreview({ card }: { card: Card }): React.ReactElement {
       {/* 플레이버 텍스트 */}
       {(card as any).flavorText && (
         <div style={{
-          fontFamily: 'Noto Sans KR, sans-serif',
+          fontFamily: 'var(--font-serif)',
           fontStyle: 'italic',
           fontSize: 12,
-          color: '#6B5F52',
+          color: 'var(--text-muted)',
           marginTop: 6,
           lineHeight: 1.5,
         }}>
@@ -251,14 +253,14 @@ function CardDetailPreview({ card }: { card: Card }): React.ReactElement {
 function CardPreviewPlaceholder(): React.ReactElement {
   return (
     <div style={{
-      background: 'rgba(26,23,20,0.5)',
-      border: '1px dashed rgba(232,200,74,0.12)',
+      background: 'rgba(232,220,196,0.4)',
+      border: '1px dashed var(--border-subtle)',
       borderRadius: 8,
       padding: 16,
       textAlign: 'center',
-      fontFamily: 'Noto Sans KR, sans-serif',
+      fontFamily: 'var(--font-mono)',
       fontSize: 13,
-      color: '#6B5F52',
+      color: 'var(--text-muted)',
     }}>
       카드를 선택하면 상세 정보가 표시됩니다
     </div>
@@ -271,9 +273,11 @@ function CardPreviewPlaceholder(): React.ReactElement {
 
 interface CardRewardScreenProps {
   playerElement: FiveElement
-  stageId: number            // 6이면 보스
-  onComplete: () => void     // WorldMap 복귀
-  onBossCleared: () => void  // 보스 클리어 → EndingScreen
+  stageId: number                   // 6이면 보스
+  onComplete: () => void            // WorldMap 복귀
+  onBossCleared: () => void         // 보스 클리어 → EndingScreen
+  onRemoveCard?: () => void         // P1-A: 카드 제거 화면으로 이동 (스킵 후 분기)
+  goldEarned?: number               // P2-B: 이번 전투에서 획득한 골드
 }
 
 export default function CardRewardScreen({
@@ -281,15 +285,20 @@ export default function CardRewardScreen({
   stageId,
   onComplete,
   onBossCleared,
+  onRemoveCard,
+  goldEarned,
 }: CardRewardScreenProps): React.ReactElement {
   const [selectedCard, setSelectedCard] = useState<Card | null>(null)
   const [adding, setAdding] = useState(false)
   const [visible, setVisible] = useState(false)
+  // P1-A: 스킵 후 분기 UI 표시 여부
+  const [showSkipChoice, setShowSkipChoice] = useState(false)
 
-  const { pendingReward, selectReward } = useUnlockStore(s => ({
-    pendingReward: s.pendingReward,
-    selectReward: s.selectReward,
-  }))
+  const pendingReward = useUnlockStore(s => s.pendingReward)
+  const selectReward = useUnlockStore(s => s.selectReward)
+  // P1-A: 현재 덱 크기 확인
+  const currentDeckIds = useUnlockStore(s => s.currentDeckIds)
+  const canRemoveCard = currentDeckIds.length > DECK_MIN_SIZE
 
   const isBoss = stageId === 6
 
@@ -310,7 +319,12 @@ export default function CardRewardScreen({
   }
 
   function handleSkip(): void {
-    onComplete()
+    // P1-A: onRemoveCard가 있고 덱이 8장 초과일 때 분기 선택지 표시
+    if (onRemoveCard && canRemoveCard) {
+      setShowSkipChoice(true)
+    } else {
+      onComplete()
+    }
   }
 
   const rewardCards = pendingReward?.cards ?? []
@@ -319,7 +333,7 @@ export default function CardRewardScreen({
     <div style={{
       position: 'fixed',
       inset: 0,
-      background: 'rgba(0,0,0,0.85)',
+      background: 'var(--bg)',
       zIndex: 50,
       display: 'flex',
       flexDirection: 'column',
@@ -338,7 +352,7 @@ export default function CardRewardScreen({
       }}>
 
         {/* 승리 배너 */}
-        <div style={{
+        <div className="pj-certificate-frame" style={{
           textAlign: 'center',
           paddingTop: 32,
           paddingBottom: 16,
@@ -347,19 +361,20 @@ export default function CardRewardScreen({
           {isBoss ? (
             <>
               <div style={{
-                fontFamily: 'Noto Serif KR, serif',
-                fontWeight: 700,
+                fontFamily: 'var(--font-serif)',
+                fontStyle: 'italic',
                 fontSize: 18,
-                color: '#E8C84A',
+                color: 'var(--gold)',
                 lineHeight: 1.4,
               }}>
                 {BOSS_VICTORY_TITLE}
               </div>
               <div style={{
-                fontFamily: 'Noto Sans KR, sans-serif',
-                fontSize: 14,
-                color: '#A89880',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                color: 'var(--text-muted)',
                 marginTop: 8,
+                letterSpacing: '0.05em',
               }}>
                 {BOSS_VICTORY_SUBTITLE}
               </div>
@@ -367,27 +382,54 @@ export default function CardRewardScreen({
           ) : (
             <>
               <div style={{
-                fontFamily: 'Noto Serif KR, serif',
-                fontWeight: 700,
+                fontFamily: 'var(--font-serif)',
+                fontStyle: 'italic',
                 fontSize: 22,
-                color: '#E8C84A',
+                color: 'var(--gold)',
               }}>
                 {VICTORY_TITLE[playerElement]}
               </div>
               <div style={{
-                fontFamily: 'Noto Sans KR, sans-serif',
-                fontSize: 14,
-                color: '#A89880',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
+                color: 'var(--text-muted)',
                 marginTop: 4,
+                textTransform: 'uppercase',
+                letterSpacing: '0.15em',
               }}>
-                카드 1장을 선택하세요
+                SELECT A CARD
               </div>
             </>
           )}
         </div>
 
+        {/* P2-B: 골드 획득 배너 — slideDown */}
+        {goldEarned !== undefined && goldEarned > 0 && (
+          <div
+            aria-label={`골드 ${goldEarned} 획득`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              marginBottom: 12,
+              animation: 'toastSlideDown 0.4s cubic-bezier(0.33,1,0.68,1) 0.3s both',
+            }}
+          >
+            <span style={{ fontSize: 18 }}>⬡</span>
+            <span style={{
+              fontFamily: 'var(--font-mono)',
+              fontWeight: 700,
+              fontSize: 16,
+              color: 'var(--gold)',
+            }}>
+              +{goldEarned} 골드
+            </span>
+          </div>
+        )}
+
         {/* 구분선 */}
-        <div style={{ height: 1, background: 'rgba(232,200,74,0.12)', marginBottom: 16 }} />
+        <div style={{ height: 1, background: 'var(--border-subtle)', marginBottom: 16 }} />
 
         {/* 보스 클리어: 엔딩 버튼만 표시 */}
         {isBoss ? (
@@ -425,7 +467,7 @@ export default function CardRewardScreen({
             </div>
 
             {/* 구분선 */}
-            <div style={{ height: 1, background: 'rgba(232,200,74,0.12)', marginBottom: 16 }} />
+            <div style={{ height: 1, background: 'var(--border-subtle)', marginBottom: 16 }} />
 
             {/* CTA */}
             <div style={{ marginTop: 'auto' }}>
@@ -439,24 +481,72 @@ export default function CardRewardScreen({
               </PrimaryButton>
 
               {/* 스킵 */}
-              <button
-                type="button"
-                onClick={handleSkip}
-                style={{
-                  display: 'block',
-                  margin: '16px auto 0',
-                  background: 'none',
-                  border: 'none',
-                  color: '#6B5F52',
-                  fontFamily: 'Noto Sans KR, sans-serif',
-                  fontSize: 13,
-                  textDecoration: 'underline',
-                  cursor: 'pointer',
-                  padding: '8px 16px',
-                }}
-              >
-                이번 판은 건너뜁니다
-              </button>
+              {!showSkipChoice ? (
+                <button
+                  type="button"
+                  onClick={handleSkip}
+                  style={{
+                    display: 'block',
+                    margin: '16px auto 0',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 13,
+                    textDecoration: 'underline',
+                    cursor: 'pointer',
+                    padding: '8px 16px',
+                  }}
+                >
+                  이번 판은 건너뜁니다
+                </button>
+              ) : (
+                /* P1-A: 스킵 후 분기 선택 UI */
+                <div style={{
+                  marginTop: 16,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                  animation: 'fadeIn 0.2s ease-out',
+                }}>
+                  <button
+                    type="button"
+                    onClick={onComplete}
+                    style={{
+                      width: '100%',
+                      padding: '12px 0',
+                      background: 'var(--surface)',
+                      border: '1px solid var(--border-subtle)',
+                      cursor: 'pointer',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 14,
+                      color: 'var(--text-secondary)',
+                      textAlign: 'center',
+                      WebkitTapHighlightColor: 'transparent',
+                    }}
+                  >
+                    지도로 돌아가기
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onRemoveCard}
+                    style={{
+                      width: '100%',
+                      padding: '12px 0',
+                      background: 'var(--surface)',
+                      border: '1px solid var(--border-gold)',
+                      cursor: 'pointer',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 14,
+                      color: 'var(--text-secondary)',
+                      textAlign: 'center',
+                      WebkitTapHighlightColor: 'transparent',
+                    }}
+                  >
+                    카드 제거하기
+                  </button>
+                </div>
+              )}
             </div>
           </>
         )}

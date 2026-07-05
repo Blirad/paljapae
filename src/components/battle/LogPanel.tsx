@@ -1,6 +1,7 @@
 /**
  * LogPanel — 전투 로그 바텀 시트
  * 리라 스펙 §4-6
+ * Momentor 디자인 시스템 적용 (2026-07-05)
  */
 
 import React, { useEffect, useRef } from 'react'
@@ -14,14 +15,12 @@ interface LogPanelProps {
 export default function LogPanel({ isOpen, log, onClose }: LogPanelProps): React.ReactElement {
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // 새 로그 진입 시 자동 스크롤
   useEffect(() => {
     if (isOpen && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [log, isOpen])
 
-  // 최근 50줄만 유지
   const recentLog = log.slice(-50)
 
   return (
@@ -31,9 +30,8 @@ export default function LogPanel({ isOpen, log, onClose }: LogPanelProps): React
       left: 0,
       right: 0,
       height: '50dvh',
-      background: '#1A1714',
-      borderTop: '1px solid rgba(232,200,74,0.45)',
-      borderRadius: '16px 16px 0 0',
+      background: 'var(--bg2)',
+      borderTop: '1px solid var(--border)',
       zIndex: 50,
       transform: isOpen ? 'translateY(0)' : 'translateY(100%)',
       transition: 'transform 0.3s ease-out',
@@ -47,10 +45,10 @@ export default function LogPanel({ isOpen, log, onClose }: LogPanelProps): React
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '0 16px',
-        borderBottom: '1px solid rgba(232,200,74,0.12)',
+        borderBottom: '1px solid var(--border)',
         flexShrink: 0,
       }}>
-        <span style={{ fontFamily: 'Noto Serif KR, serif', fontWeight: 700, fontSize: 15, color: '#E8E0D0' }}>
+        <span style={{ fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontSize: 15, color: 'var(--text-headline)' }}>
           전투 로그
         </span>
         <button
@@ -58,10 +56,11 @@ export default function LogPanel({ isOpen, log, onClose }: LogPanelProps): React
           style={{
             background: 'transparent',
             border: 'none',
-            color: '#A89880',
+            color: 'var(--text-secondary)',
             fontSize: 20,
             cursor: 'pointer',
             lineHeight: 1,
+            fontFamily: 'var(--font-mono)',
           }}
           aria-label="로그 닫기"
         >
@@ -89,11 +88,11 @@ export default function LogPanel({ isOpen, log, onClose }: LogPanelProps): React
               style={{
                 minHeight: 36,
                 padding: '6px 16px',
-                fontFamily: 'Noto Sans KR, sans-serif',
-                fontSize: 12,
-                color: isDivider ? '#E8C84A' : isAI ? '#2563A8' : isFatigue ? '#FF8800' : '#E8E0D0',
-                borderBottom: isDivider ? '1px solid rgba(232,200,74,0.08)' : 'none',
-                fontWeight: isDivider ? 700 : 400,
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                color: isDivider ? 'var(--gold)' : isAI ? 'var(--el-water)' : isFatigue ? 'var(--el-earth)' : 'var(--text-secondary)',
+                borderBottom: isDivider ? '1px solid var(--border)' : 'none',
+                letterSpacing: isDivider ? '0.05em' : 'normal',
               }}
             >
               {entry}

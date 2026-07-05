@@ -24,6 +24,7 @@ import {
 import { decideAITurn } from '@/game/ai/aiPlayer'
 import type { AIAction } from '@/types/game'
 import { getCombatModifier } from '@/game/engine/elementalCombat'
+import { useRelicStore } from '@/stores/relicStore'
 
 // getCombatModifier를 직접 참조 (dynamic import 불필요)
 const _gcm = getCombatModifier
@@ -135,6 +136,8 @@ interface BattleStore {
 
   setLogOpen: (open: boolean) => void
   resetBattle: () => void
+  // P3: 전투 시작 유물 효과 적용 (RELIC_HERB_POUCH)
+  applyHerbPouch: () => void
 }
 
 // ────────────────────────────────────────────────────
@@ -181,37 +184,42 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
   playerKillCount: 0,
 
   initBattle: (playerHeroId, playerDeck, aiHeroId, aiDeck) => {
-    const player = createPlayerState(playerHeroId, playerDeck)
-    const ai = createPlayerState(aiHeroId, aiDeck)
+    try {
+      const player = createPlayerState(playerHeroId, playerDeck)
+      const ai = createPlayerState(aiHeroId, aiDeck)
 
-    // 초기 드로우 + 에너지
-    const drawResult = executeDraw(player, 1)
-    const playerWithHand = executeEnergyCharge(drawResult.player, 1)
+      // 초기 드로우 + 에너지
+      const drawResult = executeDraw(player, 1)
+      const playerWithHand = executeEnergyCharge(drawResult.player, 1)
 
-    const aiDrawResult = executeDraw(ai, 1)
-    const aiWithHand = executeEnergyCharge(aiDrawResult.player, 1)
+      const aiDrawResult = executeDraw(ai, 1)
+      const aiWithHand = executeEnergyCharge(aiDrawResult.player, 1)
 
-    const initialState: GameState = {
-      turn: 1,
-      phase: 'main',
-      player: playerWithHand,
-      ai: aiWithHand,
-      result: null,
-      log: ['게임 시작!', `카드 ${drawResult.drawnCount}장 드로우`],
+      const initialState: GameState = {
+        turn: 1,
+        phase: 'main',
+        player: playerWithHand,
+        ai: aiWithHand,
+        result: null,
+        log: ['게임 시작!', `카드 ${drawResult.drawnCount}장 드로우`],
+      }
+
+      set({
+        gameState: initialState,
+        interaction: 'idle',
+        selectedCardIndex: null,
+        selectedUnitSlot: null,
+        damagePopups: [],
+        toasts: [],
+        logOpen: false,
+        isProcessing: false,
+        aiActionQueue: [],
+        playerKillCount: 0,
+      })
+    } catch (err) {
+      console.error('[battleStore] initBattle 오류:', err)
+      throw err
     }
-
-    set({
-      gameState: initialState,
-      interaction: 'idle',
-      selectedCardIndex: null,
-      selectedUnitSlot: null,
-      damagePopups: [],
-      toasts: [],
-      logOpen: false,
-      isProcessing: false,
-      aiActionQueue: [],
-      playerKillCount: 0,
-    })
   },
 
   selectCard: (cardIndex) => {
@@ -530,7 +538,8 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
     if (combatReadyCount > 0) {
       await sleep(combatReadyCount * 400)
     }
-    let combatState = executeCombatPhase(gameState, true)
+    const relicsForCombat = useRelicStore.getState().ownedRelics
+    let combatState = executeCombatPhase(gameState, true, relicsForCombat)
     let combatResult = checkGameResult(combatState)
 
     if (combatResult) {
@@ -728,11 +737,13 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
 
     // AI 필드 리셋 + 내 드로우 페이즈
     const aiResetField = resetFieldForNewTurn(aiState.ai, newTurn)
+    const relicsForDraw = useRelicStore.getState().ownedRelics
     const myDrawResult = executeDraw(
       {
         ...aiState.player,
       },
       newTurn,
+      relicsForDraw,
     )
     const myWithEnergy = executeEnergyCharge(myDrawResult.player, newTurn)
 
@@ -803,6 +814,23 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
       isProcessing: false,
       aiActionQueue: [],
       playerKillCount: 0,
+    })
+  },
+
+  // P3: 전투 시작 — RELIC_HERB_POUCH HP +3
+  applyHerbPouch: () => {
+    const { gameState } = get()
+    if (!gameState) return
+    const maxHp = gameState.player.hero.maxHp
+    const newHp = Math.min(maxHp, gameState.player.currentHp + 3)
+    set({
+      gameState: {
+        ...gameState,
+        player: {
+          ...gameState.player,
+          currentHp: newHp,
+        },
+      },
     })
   },
 }))

@@ -1,6 +1,7 @@
 /**
  * EndingScreen — 보스 클리어 엔딩 화면 (M5)
  * 리라 M5 스펙 §4-3
+ * Momentor 디자인 시스템 적용 (2026-07-05)
  */
 
 import React, { useState, useEffect } from 'react'
@@ -12,9 +13,9 @@ import SecondaryButton from '@/components/ui/SecondaryButton'
 interface EndingScreenProps {
   playerElement: FiveElement
   heroName: string
-  totalAttempts: number   // 도전 횟수 = 클리어 스테이지 수
-  unlockedCount: number   // 언락 카드 수
-  onRestart: () => void   // → OnboardingFlow
+  totalAttempts: number
+  unlockedCount: number
+  onRestart: () => void
 }
 
 export default function EndingScreen({
@@ -43,7 +44,7 @@ export default function EndingScreen({
   return (
     <div style={{
       minHeight: '100dvh',
-      background: '#0D0B08',
+      background: 'var(--bg)',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
@@ -52,15 +53,20 @@ export default function EndingScreen({
       padding: '0 24px',
       paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)',
     }}>
-      {/* 트로피 */}
+      {/* 대형 한자 트로피 */}
       <div style={{
         marginTop: 80,
-        fontSize: 64,
+        fontFamily: 'var(--font-serif)',
+        fontStyle: 'italic',
+        fontSize: 80,
+        color: 'var(--gold)',
         textAlign: 'center',
         transform: trophyVisible ? 'scale(1)' : 'scale(0)',
         transition: 'transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+        filter: 'drop-shadow(0 0 20px rgba(212,175,90,0.5))',
+        lineHeight: 1,
       }}>
-        🏆
+        覇
       </div>
 
       {/* 엔딩 텍스트 */}
@@ -69,22 +75,26 @@ export default function EndingScreen({
         opacity: textVisible ? 1 : 0,
         transform: textVisible ? 'translateY(0)' : 'translateY(16px)',
         transition: 'opacity 0.4s ease-out, transform 0.4s ease-out',
+        width: '100%',
       }}>
         <div style={{
-          fontFamily: 'Noto Serif KR, serif',
-          fontWeight: 700,
-          fontSize: 22,
-          color: '#E8C84A',
+          fontFamily: 'var(--font-serif)',
+          fontStyle: 'italic',
+          fontSize: 28,
+          color: 'var(--gold)',
           marginTop: 16,
+          letterSpacing: '0.05em',
         }}>
           팔황제를 쓰러뜨렸습니다
         </div>
 
         <div style={{
-          fontFamily: 'Noto Sans KR, sans-serif',
-          fontSize: 14,
-          color: '#A89880',
+          fontFamily: 'var(--font-mono)',
+          fontSize: 11,
+          color: 'var(--text-muted)',
           marginTop: 8,
+          textTransform: 'uppercase',
+          letterSpacing: '0.15em',
         }}>
           당신의 팔자: {elementInfo.icon} {playerElement} — {heroName}
         </div>
@@ -93,26 +103,67 @@ export default function EndingScreen({
         <div style={{
           width: '80%',
           height: 1,
-          background: 'rgba(232,200,74,0.12)',
+          background: 'linear-gradient(90deg, transparent, var(--border-subtle), transparent)',
           margin: '24px auto',
         }} />
 
-        {/* 통계 */}
+        {/* 통계 수치 */}
         <div style={{
-          fontFamily: 'DM Mono, monospace',
-          fontSize: 11,
-          color: '#6B5F52',
           display: 'flex',
           flexDirection: 'column',
-          gap: 4,
+          gap: 12,
           alignItems: 'center',
         }}>
-          <div>사용 스테이지: {totalAttempts}회 도전</div>
-          <div>언락 카드: {unlockedCount}장 획득</div>
+          <div>
+            <div style={{
+              fontFamily: 'var(--font-serif)',
+              fontStyle: 'italic',
+              fontSize: 28,
+              color: 'var(--text-headline)',
+            }}>
+              {totalAttempts}
+            </div>
+            <div style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              color: 'var(--text-muted)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+            }}>
+              회 도전
+            </div>
+          </div>
+          <div>
+            <div style={{
+              fontFamily: 'var(--font-serif)',
+              fontStyle: 'italic',
+              fontSize: 28,
+              color: 'var(--text-headline)',
+            }}>
+              {unlockedCount}
+            </div>
+            <div style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              color: 'var(--text-muted)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+            }}>
+              장 언락
+            </div>
+          </div>
         </div>
 
+        {/* 구분선 */}
+        <div style={{
+          width: '80%',
+          height: 1,
+          background: 'linear-gradient(90deg, transparent, var(--border-subtle), transparent)',
+          margin: '24px auto',
+        }} />
+
         {/* 다시 시작 버튼 */}
-        <div style={{ marginTop: 32, width: '100%' }}>
+        <div style={{ marginTop: 8, width: '100%' }}>
           <SecondaryButton
             onClick={handleRestart}
             className="w-full"

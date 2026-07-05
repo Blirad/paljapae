@@ -1,6 +1,6 @@
 /**
- * PrimaryButton — 공통 황금 CTA 버튼
- * 리라 스펙 §7
+ * PrimaryButton — Momentor 골드 CTA 버튼
+ * 리라 스펙 §7 + Momentor 디자인 시스템 (2026-07-05)
  */
 import React from 'react'
 
@@ -32,21 +32,44 @@ export default function PrimaryButton({
       disabled={isDisabled}
       aria-disabled={isDisabled}
       aria-busy={isLoading}
-      className={[
-        'w-full h-[52px] rounded-[8px] border-none cursor-pointer',
-        'font-sans font-bold text-[16px]',
-        'bg-[#E8C84A] text-[#0D0B08]',
-        'transition-opacity duration-[150ms] transition-transform duration-[100ms]',
-        'hover:opacity-90 active:scale-[0.98]',
-        'focus:outline-[2px] focus:outline-solid focus:outline-[#E8C84A] focus:outline-offset-2',
-        isDisabled ? 'opacity-40 cursor-not-allowed pointer-events-none' : '',
-        className,
-      ].join(' ')}
+      className={className}
+      style={{
+        width: '100%',
+        height: 52,
+        border: '1px solid var(--gold-primary)',
+        background: 'transparent',
+        color: 'var(--gold)',
+        fontFamily: 'var(--font-mono)',
+        fontSize: 13,
+        letterSpacing: '0.1em',
+        cursor: isDisabled ? 'not-allowed' : 'pointer',
+        opacity: isDisabled ? 0.4 : 1,
+        transition: 'background 0.15s',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        pointerEvents: isDisabled ? 'none' : 'auto',
+      }}
+      onMouseEnter={e => {
+        if (!isDisabled) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(212,175,90,0.08)'
+      }}
+      onMouseLeave={e => {
+        (e.currentTarget as HTMLButtonElement).style.background = 'transparent'
+      }}
     >
       {isLoading ? (
-        <span className="flex items-center justify-center gap-2">
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span
-            className="inline-block w-4 h-4 border-2 border-[#0D0B08] border-t-transparent rounded-full animate-spin"
+            style={{
+              display: 'inline-block',
+              width: 14,
+              height: 14,
+              border: '2px solid var(--gold)',
+              borderTopColor: 'transparent',
+              borderRadius: '50%',
+              animation: 'spin 0.8s linear infinite',
+            }}
             aria-hidden="true"
           />
           {loadingText ?? children}

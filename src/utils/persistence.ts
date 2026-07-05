@@ -28,6 +28,12 @@ const STORAGE_KEYS = {
   HERO_NAME: 'paljapae_hero_name',
   BIRTH_DATE: 'paljapae_birth_date',
   SAVE_TIMESTAMP: 'paljapae_save_timestamp',
+  // M7 P1-A: starterDeck 보호용
+  STARTER_DECK_IDS: 'paljapae_starter_deck_ids',
+  // M7 P2-B: 골드 시스템
+  GOLD: 'paljapae_gold_v1',
+  // M7 P4-A: 튜토리얼 완료 여부
+  TUTORIAL_DONE: 'paljapae_tutorial_done_v1',
 } as const
 
 // ────────────────────────────────────────────────────
@@ -137,6 +143,18 @@ export function loadCurrentDeckIds(): string[] {
 }
 
 // ────────────────────────────────────────────────────
+// M7 P1-A: 스타터 덱 ID 저장/복원 (제거 불가 카드 보호)
+// ────────────────────────────────────────────────────
+
+export function saveStarterDeckIds(ids: string[]): void {
+  safeSet(STORAGE_KEYS.STARTER_DECK_IDS, ids)
+}
+
+export function loadStarterDeckIds(): string[] {
+  return safeGet<string[]>(STORAGE_KEYS.STARTER_DECK_IDS, [])
+}
+
+// ────────────────────────────────────────────────────
 // 처리된 콤보 언락 저장/복원
 // ────────────────────────────────────────────────────
 
@@ -223,6 +241,34 @@ export function saveProgress(snapshot: ProgressSnapshot): void {
   saveCurrentDeckIds(snapshot.currentDeckIds)
   saveProcessedCombos(snapshot.processedCombos)
   markVisited()
+}
+
+// ────────────────────────────────────────────────────
+// M7 P2-B: 골드 시스템
+// ────────────────────────────────────────────────────
+
+export function saveGold(gold: number): void {
+  safeSet(STORAGE_KEYS.GOLD, gold)
+}
+
+export function loadGold(): number {
+  return safeGet<number>(STORAGE_KEYS.GOLD, 0)
+}
+
+// ────────────────────────────────────────────────────
+// M7 P4-A: 튜토리얼 완료 여부
+// ────────────────────────────────────────────────────
+
+export function isTutorialDone(): boolean {
+  return localStorage.getItem(STORAGE_KEYS.TUTORIAL_DONE) === 'true'
+}
+
+export function markTutorialDone(): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.TUTORIAL_DONE, 'true')
+  } catch {
+    // 무시
+  }
 }
 
 /** 전체 진행 상태 복원 */

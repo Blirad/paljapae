@@ -35,7 +35,7 @@ export default function OnboardingScreen3({ primaryElement, onNext, onBack }: On
       style={{
         position: 'fixed',
         inset: 0,
-        background: '#0D0B08',
+        background: 'var(--bg)',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -61,8 +61,8 @@ export default function OnboardingScreen3({ primaryElement, onNext, onBack }: On
           style={{
             background: 'none',
             border: 'none',
-            color: '#A89880',
-            fontFamily: 'DM Mono, monospace',
+            color: 'var(--text-muted)',
+            fontFamily: 'var(--font-mono)',
             fontSize: '12px',
             cursor: 'pointer',
             padding: '8px 0',
@@ -88,7 +88,7 @@ export default function OnboardingScreen3({ primaryElement, onNext, onBack }: On
                 width: '6px',
                 height: '6px',
                 borderRadius: '50%',
-                background: done ? '#E8C84A' : 'rgba(232,200,74,0.2)',
+                background: done ? 'var(--gold)' : 'rgba(201,168,76,0.2)',
               }}
             />
           ))}
@@ -144,10 +144,10 @@ export default function OnboardingScreen3({ primaryElement, onNext, onBack }: On
         <div style={{ marginTop: '20px' }}>
           <h2
             style={{
-              fontFamily: 'Noto Serif KR, serif',
+              fontFamily: 'var(--font-serif)',
               fontWeight: 700,
               fontSize: '24px',
-              color: '#E8E0D0',
+              color: 'var(--text-headline)',
               margin: 0,
             }}
           >
@@ -155,10 +155,10 @@ export default function OnboardingScreen3({ primaryElement, onNext, onBack }: On
           </h2>
           <p
             style={{
-              fontFamily: 'Noto Serif KR, serif',
+              fontFamily: 'var(--font-serif)',
               fontStyle: 'italic',
               fontSize: '14px',
-              color: '#E8C84A',
+              color: 'var(--gold)',
               margin: '4px 0 0',
             }}
           >
@@ -180,13 +180,13 @@ export default function OnboardingScreen3({ primaryElement, onNext, onBack }: On
               key={tag}
               role="note"
               style={{
-                background: '#1A1714',
+                background: 'var(--surface)',
                 border: `1px solid ${display.color}80`,
                 borderRadius: '999px',
                 padding: '4px 10px',
-                fontFamily: 'DM Mono, monospace',
+                fontFamily: 'var(--font-mono)',
                 fontSize: '11px',
-                color: '#A89880',
+                color: 'var(--text-muted)',
               }}
             >
               {tag}
@@ -199,10 +199,10 @@ export default function OnboardingScreen3({ primaryElement, onNext, onBack }: On
         {/* 설명 */}
         <p
           style={{
-            fontFamily: 'Noto Serif KR, serif',
+            fontFamily: 'var(--font-serif)',
             fontStyle: 'italic',
             fontSize: '14px',
-            color: '#A89880',
+            color: 'var(--text-muted)',
             lineHeight: 1.7,
             margin: '16px 0 0',
           }}
@@ -215,10 +215,10 @@ export default function OnboardingScreen3({ primaryElement, onNext, onBack }: On
         {/* 플레이버 텍스트 */}
         <p
           style={{
-            fontFamily: 'Noto Sans KR, sans-serif',
+            fontFamily: 'var(--font-serif)',
             fontSize: '13px',
             fontStyle: 'italic',
-            color: '#6B5F52',
+            color: 'var(--text-muted)',
             lineHeight: 1.6,
             margin: '16px 0 0',
           }}
