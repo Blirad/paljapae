@@ -15,11 +15,16 @@ import type { FatigueState } from '@/types/game'
  * Fatigue 피해량 계산
  * N = exhaustedTurnsCount (덱 소진 후 경과 턴 수)
  * 소진 직후(count=0)이면 아직 피해 없음, count=1부터 1씩 증가
+ *
+ * @param fatigue - Fatigue 상태
+ * @param multiplier - 피해 배율 (M8 Challenge 3: 1.5, Challenge 5: 2.0, 기본: 1.0)
  */
-export function calculateFatigueDamage(fatigue: FatigueState): number {
+export function calculateFatigueDamage(fatigue: FatigueState, multiplier = 1): number {
   if (!fatigue.deckExhausted) return 0
   // 소진 후 1번째 턴 = 1 피해, 2번째 = 2 피해, ...
-  return fatigue.exhaustedTurnsCount
+  // multiplier 적용 후 반올림
+  const baseDamage = fatigue.exhaustedTurnsCount
+  return Math.round(baseDamage * multiplier)
 }
 
 /**

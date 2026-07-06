@@ -20,6 +20,9 @@ import EventScreen from '@/screens/EventScreen'
 import ShopScreen from '@/screens/ShopScreen'
 import TutorialOverlay from '@/screens/TutorialOverlay'
 import RelicAcquirePopup from '@/components/ui/RelicAcquirePopup'
+import RunStartScreen from '@/screens/RunStartScreen'
+import { useChallengeStore } from '@/stores/challengeStore'
+import { CHALLENGE_RULES } from '@/types/challengeMode'
 import { useStageStore } from '@/stores/stageStore'
 import { useUnlockStore } from '@/stores/unlockStore'
 import { useRelicStore } from '@/stores/relicStore'
@@ -136,7 +139,7 @@ class GameErrorBoundary extends Component<
 // Scene 타입
 // ────────────────────────────────────────────────────
 
-type AppScene = 'start' | 'onboarding' | 'worldMap' | 'battle' | 'cardReward' | 'ending' | 'defeat' | 'removeCard' | 'upgrade' | 'event' | 'shop'
+type AppScene = 'start' | 'onboarding' | 'runStart' | 'worldMap' | 'battle' | 'cardReward' | 'ending' | 'defeat' | 'removeCard' | 'upgrade' | 'event' | 'shop'
 
 /** 앱 초기 scene 결정 (리라 M5 스펙 §2-1) */
 function getInitialScene(): AppScene {
@@ -210,6 +213,8 @@ export default function App(): React.ReactElement {
   const relicResetRelics = useRelicStore(s => s.resetRelics)
   const relicAddRelic = useRelicStore(s => s.addRelic)
 
+  const challengeResetChallenge = useChallengeStore(s => s.resetChallenge)
+
   // ─── 온보딩 완료 → WorldMap ───────────────────────
 
   const handleOnboardingComplete = useCallback(() => {
@@ -243,7 +248,8 @@ export default function App(): React.ReactElement {
       currentStageId: null,
       gold: 0,
     })
-    setScene('worldMap')
+    // M8: 난이도 선택 화면으로 이동
+    setScene('runStart')
   }, [unlockInitUnlocks, stageResetProgress])
 
   // ─── 이어하기 → WorldMap ──────────────────────────
@@ -273,7 +279,8 @@ export default function App(): React.ReactElement {
       unlockLoadUnlocks(ownedIds, ownedIds.slice(0, 20))
     }
 
-    setScene('worldMap')
+    // M8: 이어하기도 난이도 선택 화면 경유
+    setScene('runStart')
   }, [stageLoadProgress, unlockLoadUnlocks])
 
   // ─── 새 게임 → Onboarding ─────────────────────────
@@ -283,12 +290,13 @@ export default function App(): React.ReactElement {
     stageResetProgress()
     unlockResetUnlocks()
     relicResetRelics()
+    challengeResetChallenge()
     setUpgradeNodeCleared(false)
     setEventNodeCleared(false)
     setShopNodeCleared(false)
     setCtx(prev => ({ ...prev, gold: 0 }))
     setScene('onboarding')
-  }, [stageResetProgress, unlockResetUnlocks, relicResetRelics])
+  }, [stageResetProgress, unlockResetUnlocks, relicResetRelics, challengeResetChallenge])
 
   // ─── WorldMap → Battle ────────────────────────────
 
@@ -362,12 +370,13 @@ export default function App(): React.ReactElement {
     stageResetProgress()
     unlockResetUnlocks()
     relicResetRelics()
+    challengeResetChallenge()
     setUpgradeNodeCleared(false)
     setEventNodeCleared(false)
     setShopNodeCleared(false)
     setCtx(prev => ({ ...prev, gold: 0 }))
     setScene('defeat')
-  }, [stageClearedStageIds, stageResetProgress, unlockResetUnlocks, relicResetRelics])
+  }, [stageClearedStageIds, stageResetProgress, unlockResetUnlocks, relicResetRelics, challengeResetChallenge])
 
   // ─── CardReward 완료 → WorldMap ───────────────────
 
@@ -503,12 +512,13 @@ export default function App(): React.ReactElement {
     stageResetProgress()
     unlockResetUnlocks()
     relicResetRelics()
+    challengeResetChallenge()
     setUpgradeNodeCleared(false)
     setEventNodeCleared(false)
     setShopNodeCleared(false)
     setCtx(prev => ({ ...prev, gold: 0 }))
     setScene('onboarding')
-  }, [stageResetProgress, unlockResetUnlocks, relicResetRelics])
+  }, [stageResetProgress, unlockResetUnlocks, relicResetRelics, challengeResetChallenge])
 
   // ErrorBoundary 리셋: 모든 진행 초기화 후 onboarding으로
   const handleErrorReset = useCallback(() => {
@@ -535,6 +545,28 @@ export default function App(): React.ReactElement {
       case 'onboarding':
         return (
           <OnboardingFlow onGameStart={handleOnboardingComplete} />
+        )
+
+      case 'runStart':
+        return (
+          <RunStartScreen
+            heroName={ctx.heroName}
+            heroElement={ctx.playerElement}
+            onStart={(mode) => {
+              // 챌린지 모드 저장 + 봉인 오행 결정
+              useChallengeStore.getState().setMode(mode)
+              useChallengeStore.getState().initRun()
+              // Challenge HP 반영
+              const rules = CHALLENGE_RULES[mode]
+              if (rules.playerStartHp !== null) {
+                const hp = rules.playerStartHp
+                setCtx(prev => ({ ...prev, heroHp: hp, heroMaxHp: hp }))
+                saveHeroState(hp, hp, ctx.heroName)
+              }
+              setScene('worldMap')
+            }}
+            onCancel={() => setScene('start')}
+          />
         )
 
       case 'worldMap':

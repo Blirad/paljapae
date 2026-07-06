@@ -12,6 +12,7 @@ import { useUnlockStore } from '@/stores/unlockStore'
 import type { HeroId } from '@/types/game'
 import { HEROES } from '@/types/game'
 import { useRelicStore } from '@/stores/relicStore'
+import { useChallengeStore } from '@/stores/challengeStore'
 
 import TopStatusBar from './TopStatusBar'
 import PlayerStatusBar from './PlayerStatusBar'
@@ -105,6 +106,7 @@ export default function BattleScreen({ onRestart, onVictory, stageId: _stageId }
   const [initialized, setInitialized] = useState(false)
 
   const relicStore = useRelicStore()
+  const sealedElement = useChallengeStore(s => s.sealedElement)
 
   // 게임 초기화
   useEffect(() => {
@@ -486,6 +488,7 @@ export default function BattleScreen({ onRestart, onVictory, stageId: _stageId }
             onCardSelect={(i) => selectCard(i)}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
+            sealedElement={sealedElement}
           />
         </div>
 

@@ -44,6 +44,8 @@ interface HandCardMiniProps {
   index: number
   isPlayable: boolean
   isSelected: boolean
+  /** M8 P0-2: Challenge 1 봉인 상태 */
+  isSealed?: boolean
   onSelect: (index: number) => void
   onDragStart?: (e: React.DragEvent, index: number) => void
   onDragEnd?: () => void
@@ -54,6 +56,7 @@ export default function HandCardMini({
   index,
   isPlayable,
   isSelected,
+  isSealed = false,
   onSelect,
   onDragStart,
   onDragEnd,
@@ -100,7 +103,7 @@ export default function HandCardMini({
           ? `1px dashed ${elementColor}${Math.round((isPlayable ? 0.7 : 0.3) * 255).toString(16).padStart(2, '0')}`
           : rarityStyle.border,
         cursor: isPlayable ? (isSelected ? 'default' : 'grab') : 'not-allowed',
-        opacity: isPlayable ? 1 : 0.45,
+        opacity: isSealed ? 0.4 : isPlayable ? 1 : 0.45,
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -240,6 +243,30 @@ export default function HandCardMini({
           border: '1px solid var(--gold)',
           pointerEvents: 'none',
         }} />
+      )}
+
+      {/* Challenge 1 봉인 오버레이 */}
+      {isSealed && (
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          pointerEvents: 'none',
+          background: 'rgba(26,20,16,0.35)',
+        }}>
+          <span style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            color: 'var(--text-muted)',
+            writingMode: 'vertical-rl',
+            textOrientation: 'mixed',
+            letterSpacing: '0.05em',
+          }}>
+            봉인됨
+          </span>
+        </div>
       )}
 
       {/* 툴팁 */}

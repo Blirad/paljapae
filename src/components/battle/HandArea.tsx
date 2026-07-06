@@ -1,11 +1,13 @@
 /**
  * HandArea — 손패 영역
  * 리라 스펙 §2-2 [F] + GSAP 드로우 애니메이션 (작업 3-4)
+ * M8 P0-2: Challenge 1 봉인 카드 UI 지원
  */
 
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import gsap from 'gsap'
 import type { Card } from '@/types/cards'
+import type { FiveElement } from '@/types/elements'
 import HandCardMini from './HandCardMini'
 
 interface HandAreaProps {
@@ -17,6 +19,40 @@ interface HandAreaProps {
   onCardSelect: (index: number) => void
   onDragStart: (e: React.DragEvent, index: number) => void
   onDragEnd: () => void
+  /** M8 P0-2: 봉인된 오행 (null이면 봉인 없음) */
+  sealedElement?: FiveElement | null
+}
+
+// ────────────────────────────────────────────────────
+// SealToast — 봉인 카드 클릭 시 토스트
+// ────────────────────────────────────────────────────
+
+function SealToast({ element, onDismiss }: { element: FiveElement; onDismiss: () => void }): React.ReactElement {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 2000)
+    return () => clearTimeout(t)
+  }, [onDismiss])
+
+  return (
+    <div style={{
+      position: 'absolute',
+      bottom: 8,
+      left: '50%',
+      transform: 'translateX(-50%)',
+      background: 'rgba(26,20,16,0.92)',
+      border: '1px solid var(--accent-red)',
+      padding: '6px 12px',
+      fontFamily: 'var(--font-mono)',
+      fontSize: 11,
+      color: 'var(--accent-red)',
+      whiteSpace: 'nowrap',
+      zIndex: 10,
+      pointerEvents: 'none',
+      animation: 'fadeIn 0.15s ease-out',
+    }}>
+      {element} 카드는 이 챌린지에서 사용할 수 없습니다
+    </div>
+  )
 }
 
 export default function HandArea({
@@ -28,9 +64,11 @@ export default function HandArea({
   onCardSelect,
   onDragStart,
   onDragEnd,
+  sealedElement,
 }: HandAreaProps): React.ReactElement {
   const cardRefs = useRef<(HTMLDivElement | null)[]>([])
   const prevHandLength = useRef(hand.length)
+  const [showSealToast, setShowSealToast] = useState(false)
 
   // 새 카드 드로우 시 애니메이션
   useEffect(() => {
@@ -48,6 +86,16 @@ export default function HandArea({
     prevHandLength.current = curLen
   })
 
+  function handleCardSelect(index: number) {
+    const card = hand[index]
+    // Challenge 1 봉인 카드 클릭 차단
+    if (sealedElement && card.element === sealedElement) {
+      setShowSealToast(true)
+      return
+    }
+    onCardSelect(index)
+  }
+
   return (
     <div style={{
       height: 112,
@@ -55,6 +103,7 @@ export default function HandArea({
       borderTop: '1px solid rgba(232,200,74,0.12)',
       flexShrink: 0,
       overflow: 'hidden',
+      position: 'relative',
     }}>
       {hand.length === 0 ? (
         <div style={{
@@ -80,24 +129,36 @@ export default function HandArea({
           WebkitOverflowScrolling: 'touch',
           alignItems: 'flex-end',
         }}>
-          {hand.map((card, i) => (
-            <div
-              key={`${card.id}-${i}`}
-              ref={el => { cardRefs.current[i] = el }}
-              style={{ flexShrink: 0 }}
-            >
-              <HandCardMini
-                card={card}
-                index={i}
-                isPlayable={card.cost <= currentEnergy && phase === 'main' && !isProcessing}
-                isSelected={selectedCardIndex === i}
-                onSelect={onCardSelect}
-                onDragStart={onDragStart}
-                onDragEnd={onDragEnd}
-              />
-            </div>
-          ))}
+          {hand.map((card, i) => {
+            const isSealed = !!(sealedElement && card.element === sealedElement)
+            return (
+              <div
+                key={`${card.id}-${i}`}
+                ref={el => { cardRefs.current[i] = el }}
+                style={{ flexShrink: 0 }}
+              >
+                <HandCardMini
+                  card={card}
+                  index={i}
+                  isPlayable={!isSealed && card.cost <= currentEnergy && phase === 'main' && !isProcessing}
+                  isSelected={selectedCardIndex === i}
+                  isSealed={isSealed}
+                  onSelect={handleCardSelect}
+                  onDragStart={onDragStart}
+                  onDragEnd={onDragEnd}
+                />
+              </div>
+            )
+          })}
         </div>
+      )}
+
+      {/* Challenge 1 봉인 토스트 */}
+      {showSealToast && sealedElement && (
+        <SealToast
+          element={sealedElement}
+          onDismiss={() => setShowSealToast(false)}
+        />
       )}
     </div>
   )

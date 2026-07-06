@@ -1,6 +1,6 @@
 /**
- * TopStatusBar — AI 영웅 상태 바 + 에너지 바
- * 리라 스펙 §2-2 [A] [B]
+ * TopStatusBar — AI 영웅 상태 바 + 에너지 바 + 챌린지 배지 (M8 P0-2)
+ * 리라 스펙 §2-2 [A] [B] + 리라 M8 스펙 P0-2 챌린지 배지
  * Momentor 디자인 시스템 적용 (2026-07-05)
  */
 
@@ -8,9 +8,47 @@ import React from 'react'
 import type { PlayerState } from '@/types/game'
 import { ENERGY_CAP } from '@/types/game'
 import { ELEMENT_DISPLAY } from '@/types/elements'
+import { useChallengeStore } from '@/stores/challengeStore'
+import { CHALLENGE_BADGE_TEXT, isMaxChallenge } from '@/types/challengeMode'
 
 interface TopStatusBarProps {
   ai: PlayerState
+}
+
+// ────────────────────────────────────────────────────
+// ChallengeBadge — 챌린지 배지 컴포넌트
+// ────────────────────────────────────────────────────
+
+function ChallengeBadge(): React.ReactElement | null {
+  const mode = useChallengeStore(s => s.mode)
+  if (mode === 'normal') return null
+
+  const badgeText = CHALLENGE_BADGE_TEXT[mode]
+  const isMax = isMaxChallenge(mode)
+
+  return (
+    <div style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      padding: '2px 7px',
+      background: isMax
+        ? 'rgba(201,168,76,0.15)'
+        : 'rgba(139,0,0,0.15)',
+      border: isMax
+        ? '1px solid var(--gold)'
+        : '1px solid var(--accent-red)',
+      flexShrink: 0,
+    }}>
+      <span style={{
+        fontFamily: 'var(--font-mono)',
+        fontSize: 11,
+        color: isMax ? 'var(--gold)' : 'var(--accent-red)',
+        letterSpacing: '0.02em',
+      }}>
+        [{badgeText}]
+      </span>
+    </div>
+  )
 }
 
 function HpBar({ current, max }: { current: number; max: number }): React.ReactElement {
@@ -86,6 +124,9 @@ export default function TopStatusBar({ ai }: TopStatusBarProps): React.ReactElem
           </span>
           <HpBar current={ai.currentHp} max={ai.hero.maxHp} />
         </div>
+
+        {/* 챌린지 배지 (M8 P0-2) */}
+        <ChallengeBadge />
 
         {/* AI 핸드 카드 수 (뒷면) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: -4 }}>

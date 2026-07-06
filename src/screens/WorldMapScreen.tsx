@@ -21,6 +21,7 @@ import { useRelicStore } from '@/stores/relicStore'
 import { ELEMENT_DISPLAY } from '@/types/elements'
 import type { FiveElement } from '@/types/elements'
 import { getAdvantageRelation, getAdvantageText } from '@/utils/advantage'
+import RelicDetailModal from '@/components/ui/RelicDetailModal'
 
 // ────────────────────────────────────────────────────
 // Props
@@ -853,15 +854,20 @@ function RelicTooltip({ relic, anchorRect, onClose }: RelicTooltipProps): React.
 }
 
 // ────────────────────────────────────────────────────
-// RelicBar — M7 P3
+// RelicBar — M8 P0-1 업그레이드 (최대 5개 + 더보기 + DetailModal)
 // ────────────────────────────────────────────────────
+
+const RELIC_BAR_MAX_VISIBLE = 5
 
 function RelicBar(): React.ReactElement {
   const ownedRelics = useRelicStore(s => s.ownedRelics)
   const [tooltipRelicId, setTooltipRelicId] = useState<string | null>(null)
   const [tooltipAnchor, setTooltipAnchor] = useState<DOMRect | null>(null)
+  const [showDetailModal, setShowDetailModal] = useState(false)
 
   const tooltipRelic = ownedRelics.find(r => r.id === tooltipRelicId) ?? null
+  const visibleRelics = ownedRelics.slice(0, RELIC_BAR_MAX_VISIBLE)
+  const overflowCount = Math.max(0, ownedRelics.length - RELIC_BAR_MAX_VISIBLE)
 
   function handleRelicClick(e: React.MouseEvent<HTMLButtonElement>, relicId: string) {
     if (tooltipRelicId === relicId) {
@@ -908,8 +914,8 @@ function RelicBar(): React.ReactElement {
           </span>
         ) : (
           <>
-            {/* 유물 아이콘 버튼들 */}
-            {ownedRelics.map(relic => (
+            {/* 유물 아이콘 버튼들 — 최대 5개 */}
+            {visibleRelics.map(relic => (
               <button
                 key={relic.id}
                 onClick={e => handleRelicClick(e, relic.id)}
@@ -935,15 +941,40 @@ function RelicBar(): React.ReactElement {
               </button>
             ))}
 
-            {/* 카운트 */}
+            {/* +N 더보기 버튼 */}
+            {overflowCount > 0 && (
+              <button
+                onClick={() => setShowDetailModal(true)}
+                aria-label={`유물 ${overflowCount}개 더보기`}
+                style={{
+                  height: 24,
+                  padding: '0 6px',
+                  background: 'rgba(201,168,76,0.08)',
+                  border: '1px solid var(--border-gold)',
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 10,
+                  color: 'var(--gold)',
+                  flexShrink: 0,
+                  WebkitTapHighlightColor: 'transparent',
+                }}
+              >
+                +{overflowCount} 더보기
+              </button>
+            )}
+
+            {/* 카운트 + 전체 보기 (overflowCount=0일 때도 전체 목록 버튼 제공) */}
             <span style={{
               fontFamily: 'var(--font-mono)',
               fontSize: 10,
               color: 'var(--text-muted)',
               marginLeft: 'auto',
               flexShrink: 0,
-            }}>
-              보유 {ownedRelics.length}개
+              cursor: 'pointer',
+            }}
+              onClick={() => setShowDetailModal(true)}
+            >
+              {ownedRelics.length}/20
             </span>
           </>
         )}
@@ -959,6 +990,11 @@ function RelicBar(): React.ReactElement {
             setTooltipAnchor(null)
           }}
         />
+      )}
+
+      {/* RelicDetailModal (M8 P0-1) */}
+      {showDetailModal && (
+        <RelicDetailModal onClose={() => setShowDetailModal(false)} />
       )}
     </>
   )
