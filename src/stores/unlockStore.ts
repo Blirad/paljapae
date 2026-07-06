@@ -156,6 +156,9 @@ interface UnlockStore {
   /** 진행 상태 불러오기 */
   loadUnlocks: (ownedCardIds: string[], deckIds: string[], starterIds?: string[]) => void
 
+  /** 일일 뽑기에서 획득한 카드 ID 목록을 ownedCardIds에 추가 (M8 P1) */
+  addOwnedCards: (cardIds: string[]) => void
+
   /** 초기화 */
   resetUnlocks: () => void
 }
@@ -344,6 +347,23 @@ export const useUnlockStore = create<UnlockStore>((set, get) => ({
       ownedCardIds: new Set(ownedCardIds),
       currentDeckIds: deckIds,
       starterDeckIds: resolvedStarterIds,
+    })
+  },
+
+  addOwnedCards: (cardIds: string[]) => {
+    // M8 P1: 일일 뽑기 카드를 ownedCardIds + currentDeckIds에 추가
+    set(state => {
+      const newOwned = new Set(state.ownedCardIds)
+      const newDeckIds = [...state.currentDeckIds]
+      cardIds.forEach(id => {
+        newOwned.add(id)
+        // 덱이 20장 미만이면 자동으로 덱에도 추가
+        if (newDeckIds.length < 20) {
+          newDeckIds.push(id)
+        }
+      })
+      saveCurrentDeckIds(newDeckIds)
+      return { ownedCardIds: newOwned, currentDeckIds: newDeckIds }
     })
   },
 

@@ -23,6 +23,9 @@ import AITurnOverlay from './AITurnOverlay'
 import LogPanel from './LogPanel'
 import ResultScreen from './ResultScreen'
 import DamagePopup from './DamagePopup'
+import FieldSeparator from './FieldSeparator'
+import BattleParticles from './BattleParticles'
+import type { BattleParticlesRef } from './BattleParticles'
 import type { FieldUnit } from '@/types/cards'
 
 // ────────────────────────────────────────────────────
@@ -62,6 +65,18 @@ const GLOBAL_STYLES = `
   80% { transform: translateX(4px); }
 }
 `
+
+// ────────────────────────────────────────────────────
+// 오행별 전투 배경 — FAIL1 수정: JS inline style로 강제 적용
+// CSS 선택자가 브라우저 캐시나 specificity 문제로 무시될 경우를 대비
+// ────────────────────────────────────────────────────
+const ELEMENT_BATTLE_BG: Record<string, string> = {
+  '木': 'radial-gradient(ellipse at top, #1A2E1A 0%, #0A1208 60%, #060C06 100%)',
+  '火': 'radial-gradient(ellipse at bottom, #3A1A0A 0%, #1A0A04 60%, #0D0602 100%)',
+  '土': 'radial-gradient(ellipse at center, #2A1E0A 0%, #1A1408 60%, #0E0C06 100%)',
+  '金': 'radial-gradient(ellipse at top right, #0A1022 0%, #060C1A 60%, #040810 100%)',
+  '水': 'radial-gradient(ellipse at top, #060E1E 0%, #041018 60%, #02080E 100%)',
+}
 
 // AI 영웅 매핑 (온보딩 결과와 반대 오행)
 const AI_HERO_MAP: Record<string, HeroId> = {
@@ -104,6 +119,7 @@ export default function BattleScreen({ onRestart, onVictory, stageId: _stageId }
 
   const [dragOverSlot, setDragOverSlot] = useState<number | null>(null)
   const [initialized, setInitialized] = useState(false)
+  const particlesRef = useRef<BattleParticlesRef>(null)
 
   const relicStore = useRelicStore()
   const sealedElement = useChallengeStore(s => s.sealedElement)
@@ -248,6 +264,14 @@ export default function BattleScreen({ onRestart, onVictory, stageId: _stageId }
       const error = summonCard(slotIdx)
       if (error) {
         addToast(error)
+      } else {
+        // 카드 소환 성공 — 파티클 (슬롯 위치 근사 중앙)
+        particlesRef.current?.emit(
+          window.innerWidth / 2,
+          window.innerHeight * 0.55,
+          player.hero.element,
+          8,
+        )
       }
     }
   }
@@ -336,10 +360,10 @@ export default function BattleScreen({ onRestart, onVictory, stageId: _stageId }
 
       <div
         data-screen="battle"
+        data-element={player.hero.element}
         style={{
           position: 'fixed',
           inset: 0,
-          background: 'var(--bg)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
@@ -348,6 +372,8 @@ export default function BattleScreen({ onRestart, onVictory, stageId: _stageId }
           height: '100dvh',
           userSelect: 'none',
           pointerEvents: (isProcessing && !isAiTurn) ? 'none' : 'auto',
+          // FAIL1 수정: 오행별 배경을 inline style로 강제 적용 (CSS specificity/캐시 문제 방어)
+          background: ELEMENT_BATTLE_BG[player.hero.element] ?? '#1a1410',
         }}
         onClick={handleBoardClick}
       >
@@ -368,22 +394,7 @@ export default function BattleScreen({ onRestart, onVictory, stageId: _stageId }
           )}
         </div>
 
-        {/* 힌트 배너 */}
-        {hintMessage && (
-          <div style={{
-            height: 24,
-            background: 'rgba(232,200,74,0.08)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontFamily: 'Noto Sans KR, sans-serif',
-            fontSize: 12,
-            color: 'var(--gold-accent)',
-            flexShrink: 0,
-          }}>
-            {hintMessage}
-          </div>
-        )}
+        {/* 힌트 배너 — FieldSeparator로 통합 */}
 
         {/* [C] AI 필드 */}
         <div style={{ flexShrink: 0 }}>
@@ -401,16 +412,15 @@ export default function BattleScreen({ onRestart, onVictory, stageId: _stageId }
             hasTauntInAiField={hasTauntInAiField}
             attackerHasPierce={attackerHasPierce}
             onUnitClick={(slotIdx) => { handleAiUnitClick(slotIdx) }}
+            playerElement={player.hero.element}
           />
         </div>
 
-        {/* 중앙 경계선 */}
-        <div style={{
-          height: 1,
-          margin: '8px 16px',
-          borderTop: '1px dashed rgba(232,200,74,0.12)',
-          flexShrink: 0,
-        }} />
+        {/* 중앙 FieldSeparator */}
+        <FieldSeparator
+          element={player.hero.element}
+          hintMessage={hintMessage}
+        />
 
         {/* [D] 플레이어 필드 */}
         <div style={{ flexShrink: 0 }} onClick={e => e.stopPropagation()}>
@@ -426,6 +436,7 @@ export default function BattleScreen({ onRestart, onVictory, stageId: _stageId }
             onDrop={handleDrop}
             onDragLeave={handleDragLeave}
             dragOverSlot={dragOverSlot}
+            playerElement={player.hero.element}
           />
         </div>
 
@@ -535,6 +546,9 @@ export default function BattleScreen({ onRestart, onVictory, stageId: _stageId }
       {damagePopups.map(popup => (
         <DamagePopup key={popup.id} popup={popup} />
       ))}
+
+      {/* 파티클 레이어 */}
+      <BattleParticles ref={particlesRef} />
 
       {/* 토스트 */}
       <div style={{

@@ -1,13 +1,14 @@
 /**
  * PlayerStatusBar — 플레이어 영웅 상태 바
- * 리라 스펙 §2-2 [E]
- * Momentor 디자인 시스템 적용 (2026-07-05)
+ * 리라 스펙 §2-2 [E] + 비주얼 오버홀 2026-07-06
+ * 72px 높이, HeroPortraitSVG 64×64, EnergyOrbs
  */
 
 import React from 'react'
 import type { PlayerState } from '@/types/game'
-import { ENERGY_CAP } from '@/types/game'
 import { ELEMENT_DISPLAY } from '@/types/elements'
+import HeroPortraitSVG from './HeroPortraitSVG'
+import EnergyOrbs from './EnergyOrbs'
 
 interface PlayerStatusBarProps {
   player: PlayerState
@@ -15,85 +16,81 @@ interface PlayerStatusBarProps {
 
 export default function PlayerStatusBar({ player }: PlayerStatusBarProps): React.ReactElement {
   const display = ELEMENT_DISPLAY[player.hero.element]
-  const hpPct = player.currentHp / player.hero.maxHp
-  const barColor = hpPct > 0.6 ? 'var(--gold)' : hpPct > 0.3 ? 'var(--el-earth)' : 'var(--el-fire)'
   const deckExhausted = player.deck.length === 0
 
   return (
     <div style={{
-      height: 52,
+      height: 72,
       background: 'var(--bg2)',
       borderTop: '1px solid var(--border)',
       display: 'flex',
       alignItems: 'center',
       gap: 8,
-      padding: '0 12px',
+      padding: '0 10px',
       flexShrink: 0,
     }}>
-      {/* 영웅 아바타 */}
-      <div style={{
-        width: 36,
-        height: 36,
-        background: display.gradient,
-        border: `2px solid ${display.color}`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: 18,
-        flexShrink: 0,
-      }}>
-        {display.icon}
-      </div>
+      {/* 영웅 초상화 SVG 64×64 */}
+      <HeroPortraitSVG
+        element={player.hero.element}
+        currentHp={player.currentHp}
+        maxHp={player.hero.maxHp}
+        size={56}
+      />
 
       {/* 영웅 정보 */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 0 }}>
         <span style={{
           fontFamily: 'var(--font-serif)',
           fontStyle: 'italic',
           fontSize: 14,
           color: 'var(--text-headline)',
+          overflow: 'hidden',
+          whiteSpace: 'nowrap',
+          textOverflow: 'ellipsis',
         }}>
           {player.hero.nickname}
         </span>
-        {/* HP 바 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+
+        {/* HP 바 16px */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <span style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            color: 'var(--text-secondary)',
+            whiteSpace: 'nowrap',
+          }}>
             {player.currentHp}/{player.hero.maxHp}
           </span>
           <div style={{
-            height: 8,
+            height: 10,
             flex: 1,
-            background: 'var(--border)',
+            background: 'rgba(255,255,255,0.08)',
             overflow: 'hidden',
+            borderRadius: 5,
           }}>
             <div style={{
-              height: 8,
-              width: `${hpPct * 100}%`,
-              background: barColor,
+              height: 10,
+              width: `${(player.currentHp / player.hero.maxHp) * 100}%`,
+              background: player.currentHp / player.hero.maxHp > 0.5
+                ? display.color
+                : player.currentHp / player.hero.maxHp > 0.3
+                ? '#F59E0B'
+                : '#EF4444',
               transition: 'width 0.4s ease-out, background-color 0.4s',
+              borderRadius: 5,
+              animation: player.currentHp / player.hero.maxHp <= 0.3
+                ? 'pulseRed 0.8s ease-in-out infinite'
+                : 'none',
             }} />
           </div>
         </div>
-      </div>
 
-      {/* 에너지 */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-        <div style={{ display: 'flex', gap: 2 }}>
-          {Array(ENERGY_CAP).fill(null).map((_, i) => (
-            <div
-              key={i}
-              style={{
-                width: 14,
-                height: 14,
-                background: i < player.currentEnergy ? 'var(--gold)' : 'var(--border)',
-                border: i < player.currentEnergy ? 'none' : '1px solid var(--border-subtle)',
-              }}
-            />
-          ))}
-        </div>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)' }}>
-          {player.currentEnergy}/{ENERGY_CAP}
-        </span>
+        {/* 에너지 구슬 */}
+        <EnergyOrbs
+          element={player.hero.element}
+          currentEnergy={player.currentEnergy}
+          showLabel={true}
+        />
       </div>
 
       {/* 덱/묘지 카운터 */}

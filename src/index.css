@@ -99,6 +99,43 @@
   border-width: 0 2px 2px 0;
 }
 
+/* ── 전투 보드 오행 배경 ── */
+[data-screen="battle"][data-element="木"] {
+  background: radial-gradient(ellipse at top, #1A2E1A 0%, #0A1208 60%, #060C06 100%);
+}
+[data-screen="battle"][data-element="火"] {
+  background: radial-gradient(ellipse at bottom, #3A1A0A 0%, #1A0A04 60%, #0D0602 100%);
+}
+[data-screen="battle"][data-element="土"] {
+  background: radial-gradient(ellipse at center, #2A1E0A 0%, #1A1408 60%, #0E0C06 100%);
+}
+[data-screen="battle"][data-element="金"] {
+  background: radial-gradient(ellipse at top right, #0A1022 0%, #060C1A 60%, #040810 100%);
+}
+[data-screen="battle"][data-element="水"] {
+  background: radial-gradient(ellipse at top, #060E1E 0%, #041018 60%, #02080E 100%);
+}
+
+/* ── 에너지 구슬 bounce keyframe ── */
+@keyframes orbBounce {
+  0%   { transform: scale(0); }
+  60%  { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+/* ── 피해 팝업 수평 흔들림 ── */
+@keyframes floatUpShake {
+  0%   { transform: translateX(var(--popup-x, 0px)) translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateX(var(--popup-x, 0px)) translateY(-120px) scale(0.5); opacity: 0; }
+}
+
+/* ── legendary 구슬 pulse ── */
+@keyframes legendaryPulse {
+  0%   { box-shadow: 0 0 20px rgba(201,168,76,0.6), 0 0 40px rgba(201,168,76,0.2); }
+  50%  { box-shadow: 0 0 28px rgba(201,168,76,0.8), 0 0 56px rgba(201,168,76,0.35); }
+  100% { box-shadow: 0 0 20px rgba(201,168,76,0.6), 0 0 40px rgba(201,168,76,0.2); }
+}
+
 /* ─── 글로벌 초기화 ─── */
 body {
   background: var(--bg);

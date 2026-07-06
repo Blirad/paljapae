@@ -4,7 +4,7 @@
  */
 
 import React, { useRef, useState } from 'react'
-import CardArtSVG, { getRarityBorderStyle } from './CardArtSVG'
+import CardArtSVG, { getRarityBorderStyle, LegendaryCorners } from './CardArtSVG'
 import type { Card } from '@/types/cards'
 import { ELEMENT_DISPLAY } from '@/types/elements'
 import type { FiveElement } from '@/types/elements'
@@ -31,6 +31,15 @@ const NEUTRAL_ART: ElementArt = {
   bg: 'linear-gradient(135deg, rgba(212,175,90,0.08), rgba(0,0,0,0))',
   emoji: '✨',
   accent: 'var(--gold)',
+}
+
+// 오행별 비용 구슬 radial-gradient
+const COST_ORB_GRADIENT: Record<FiveElement, string> = {
+  '木': 'radial-gradient(circle at 35% 35%, #7EC87A, #2E6B2A)',
+  '火': 'radial-gradient(circle at 35% 35%, #FF8C5A, #C4400A)',
+  '土': 'radial-gradient(circle at 35% 35%, #F0C84A, #A07820)',
+  '金': 'radial-gradient(circle at 35% 35%, #C8E4F8, #5A8AB8)',
+  '水': 'radial-gradient(circle at 35% 35%, #64C8F8, #1A5A9A)',
 }
 
 // getRarityBorderStyle은 CardArtSVG에서 import하여 사용
@@ -92,26 +101,26 @@ export default function HandCardMini({
       onMouseEnter={() => setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
       style={{
-        width: 60,
-        height: 96,
+        width: 80,
+        height: 124,
         flexShrink: 0,
         scrollSnapAlign: 'start',
         background: 'var(--surface)',
         border: isSelected
-          ? '1px solid var(--gold)'
+          ? '2px solid var(--gold)'
           : card.cardType === 'spell'
           ? `1px dashed ${elementColor}${Math.round((isPlayable ? 0.7 : 0.3) * 255).toString(16).padStart(2, '0')}`
-          : rarityStyle.border,
+          : (rarityStyle.border as string | undefined) ?? '1px solid rgba(80,80,80,0.4)',
         cursor: isPlayable ? (isSelected ? 'default' : 'grab') : 'not-allowed',
         opacity: isSealed ? 0.4 : isPlayable ? 1 : 0.45,
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        transform: isSelected ? 'translateY(-12px)' : 'translateY(0)',
+        transform: isSelected ? 'translateY(-18px)' : 'translateY(0)',
         boxShadow: isSelected
-          ? `0 0 12px rgba(212,175,90,0.4)`
+          ? `0 0 16px rgba(212,175,90,0.5)`
           : isPlayable
-          ? rarityStyle.boxShadow || `0 2px 8px ${elementColor}40`
+          ? ((rarityStyle.boxShadow as string | undefined) ?? `0 2px 8px ${elementColor}40`)
           : 'none',
         transition: 'transform 0.15s ease-out, box-shadow 0.15s',
         userSelect: 'none',
@@ -119,32 +128,49 @@ export default function HandCardMini({
       }}
       aria-label={`${card.name} 비용:${card.cost}`}
     >
-      {/* 헤더 */}
+      {/* 헤더 — 비용 구슬 + 오행 아이콘 */}
       <div style={{
-        height: 20,
+        height: 24,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '0 3px',
+        padding: '0 4px',
         flexShrink: 0,
       }}>
+        {/* 비용 구슬 — 오행 radial gradient 20px */}
         <div style={{
-          width: 18,
-          height: 18,
-          background: 'transparent',
-          border: '1px solid var(--gold)',
+          width: 20,
+          height: 20,
+          borderRadius: '50%',
+          background: element ? COST_ORB_GRADIENT[element] : 'radial-gradient(circle at 35% 35%, #C9A84C, #7A5A20)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           fontFamily: 'var(--font-mono)',
-          fontWeight: 400,
+          fontWeight: 700,
           fontSize: 11,
-          color: 'var(--gold)',
+          color: 'white',
+          textShadow: '0 1px 2px rgba(0,0,0,0.6)',
+          flexShrink: 0,
+          boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
+          position: 'relative',
         }}>
           {card.cost}
+          {/* 하이라이트 */}
+          <div style={{
+            position: 'absolute',
+            top: 3,
+            left: 3,
+            width: 4,
+            height: 4,
+            borderRadius: '50%',
+            background: 'white',
+            opacity: 0.45,
+            pointerEvents: 'none',
+          }} />
         </div>
         {display && (
-          <span style={{ fontSize: 12, color: display.color }}>
+          <span style={{ fontSize: 13, color: display.color }}>
             {display.icon}
           </span>
         )}
@@ -152,7 +178,7 @@ export default function HandCardMini({
 
       {/* 오행 SVG 아트 영역 (M6) */}
       <div style={{
-        height: 80,
+        height: 60,
         flexShrink: 0,
         position: 'relative',
         overflow: 'hidden',
@@ -194,8 +220,8 @@ export default function HandCardMini({
 
       {/* 카드명 */}
       <div style={{
-        height: 24,
-        padding: '0 3px',
+        height: 20,
+        padding: '0 4px',
         display: 'flex',
         alignItems: 'center',
         fontFamily: 'var(--font-serif)',
@@ -206,34 +232,86 @@ export default function HandCardMini({
         whiteSpace: 'nowrap',
         textOverflow: 'ellipsis',
         flexShrink: 0,
+        background: 'rgba(0,0,0,0.15)',
       }}>
         {card.name.split(' ')[0]}
       </div>
 
-      {/* 타입 태그 */}
+      {/* 스탯 영역 — 공격/체력 원형 뱃지 */}
       <div style={{
-        height: 16,
-        padding: '0 3px',
+        height: 20,
+        padding: '0 4px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         flexShrink: 0,
+        background: 'rgba(0,0,0,0.25)',
       }}>
         <span style={{
           fontFamily: 'var(--font-mono)',
           fontSize: 9,
-          background: 'transparent',
           color: 'var(--text-muted)',
-          padding: '0 2px',
         }}>
           {card.cardType === 'soldier' ? '병사' : '주문'}
         </span>
         {card.cardType === 'soldier' && (
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--gold)' }}>
-            {card.attack}/{card.maxHealth}
-          </span>
+          <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+            {/* 공격 뱃지 */}
+            <div style={{
+              width: 18,
+              height: 18,
+              borderRadius: '50%',
+              background: 'radial-gradient(circle at 35% 35%, #FF6B6B, #8B1A1A)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              fontWeight: 700,
+              color: 'white',
+              flexShrink: 0,
+            }}>
+              {card.attack}
+            </div>
+            {/* 체력 뱃지 */}
+            <div style={{
+              width: 18,
+              height: 18,
+              borderRadius: '50%',
+              background: 'radial-gradient(circle at 35% 35%, #64D8A0, #1A6B3A)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              fontWeight: 700,
+              color: 'white',
+              flexShrink: 0,
+            }}>
+              {card.maxHealth}
+            </div>
+          </div>
         )}
       </div>
+
+      {/* Legendary 코너 장식 */}
+      {card.rarity === 'legendary' && element && (
+        <LegendaryCorners element={element} />
+      )}
+
+      {/* 에너지 부족 시 비용 크리스탈 빨간 테두리 */}
+      {!isPlayable && !isSealed && (
+        <div style={{
+          position: 'absolute',
+          top: 6,
+          left: 6,
+          width: 22,
+          height: 22,
+          borderRadius: '50%',
+          border: '2px solid rgba(239,68,68,0.7)',
+          pointerEvents: 'none',
+        }} />
+      )}
 
       {/* 선택 테두리 */}
       {isSelected && (

@@ -29,8 +29,8 @@ export default function ActionBar({
   const canEndTurn = phase === 'main' && !isAiTurn && !isProcessing
 
   let buttonText = '턴 종료'
-  if (isAiTurn) buttonText = 'AI 턴 중...'
-  else if (isProcessing) buttonText = '전투 중...'
+  if (isAiTurn) buttonText = '상대방 차례'
+  else if (isProcessing) buttonText = '처리 중...'
 
   return (
     <div style={{
@@ -61,19 +61,24 @@ export default function ActionBar({
         onClick={onEndTurn}
         style={{
           flex: 1,
-          height: 40,
-          border: canEndTurn ? '1px solid var(--gold)' : '1px solid var(--border)',
-          background: 'transparent',
-          color: canEndTurn ? 'var(--gold)' : 'var(--text-muted)',
+          height: 44,
+          maxWidth: 200,
+          border: canEndTurn ? '1px solid rgba(201,168,76,0.8)' : '1px solid var(--border)',
+          background: canEndTurn
+            ? 'linear-gradient(135deg, #C9A84C, #A0822C)'
+            : 'rgba(255,255,255,0.05)',
+          color: canEndTurn ? '#1A1410' : 'rgba(232,220,196,0.3)',
           fontFamily: 'var(--font-mono)',
-          fontSize: 13,
-          letterSpacing: '0.1em',
+          fontSize: 16,
+          fontWeight: canEndTurn ? 700 : 400,
+          letterSpacing: '0.05em',
           cursor: canEndTurn ? 'pointer' : 'not-allowed',
-          transition: 'background 0.2s, color 0.2s, border-color 0.2s',
+          transition: 'background 0.25s, opacity 0.25s, color 0.25s',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           gap: 6,
+          boxShadow: canEndTurn ? '0 2px 8px rgba(201,168,76,0.3)' : 'none',
         }}
         aria-label={buttonText}
       >

@@ -21,6 +21,8 @@ import ShopScreen from '@/screens/ShopScreen'
 import TutorialOverlay from '@/screens/TutorialOverlay'
 import RelicAcquirePopup from '@/components/ui/RelicAcquirePopup'
 import RunStartScreen from '@/screens/RunStartScreen'
+import DailyDrawScreen from '@/screens/DailyDrawScreen'
+import { hasDrawnToday } from '@/game/hooks/useDailyDraw'
 import { useChallengeStore } from '@/stores/challengeStore'
 import { CHALLENGE_RULES } from '@/types/challengeMode'
 import { useStageStore } from '@/stores/stageStore'
@@ -139,7 +141,7 @@ class GameErrorBoundary extends Component<
 // Scene 타입
 // ────────────────────────────────────────────────────
 
-type AppScene = 'start' | 'onboarding' | 'runStart' | 'worldMap' | 'battle' | 'cardReward' | 'ending' | 'defeat' | 'removeCard' | 'upgrade' | 'event' | 'shop'
+type AppScene = 'start' | 'onboarding' | 'runStart' | 'dailyDraw' | 'worldMap' | 'battle' | 'cardReward' | 'ending' | 'defeat' | 'removeCard' | 'upgrade' | 'event' | 'shop'
 
 /** 앱 초기 scene 결정 (리라 M5 스펙 §2-1) */
 function getInitialScene(): AppScene {
@@ -563,9 +565,18 @@ export default function App(): React.ReactElement {
                 setCtx(prev => ({ ...prev, heroHp: hp, heroMaxHp: hp }))
                 saveHeroState(hp, hp, ctx.heroName)
               }
-              setScene('worldMap')
+              // M8 P1: 오늘 뽑기 미완료 시 일일 뽑기 화면 경유
+              setScene(hasDrawnToday() ? 'worldMap' : 'dailyDraw')
             }}
             onCancel={() => setScene('start')}
+          />
+        )
+
+      case 'dailyDraw':
+        return (
+          <DailyDrawScreen
+            onComplete={() => setScene('worldMap')}
+            onSkip={() => setScene('worldMap')}
           />
         )
 

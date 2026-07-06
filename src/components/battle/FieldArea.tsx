@@ -9,6 +9,16 @@ import type { FieldUnit } from '@/types/cards'
 import FieldUnitCard from './FieldUnitCard'
 import EmptySlot from './EmptySlot'
 import type { InteractionState } from '@/game/store/battleStore'
+import type { FiveElement } from '@/types/elements'
+
+// 오행별 필드 배경 오버레이 컬러 (rgba, opacity 0.06)
+const FIELD_BG_OVERLAY: Record<FiveElement, string> = {
+  '木': 'rgba(126,200,122,0.06)',
+  '火': 'rgba(255,140,90,0.06)',
+  '土': 'rgba(240,200,74,0.06)',
+  '金': 'rgba(200,228,248,0.06)',
+  '水': 'rgba(100,200,248,0.06)',
+}
 
 interface FieldAreaProps {
   field: (FieldUnit | null)[]
@@ -25,6 +35,7 @@ interface FieldAreaProps {
   onDragLeave?: () => void
   dragOverSlot?: number | null
   isAiHeroTargetable?: boolean
+  playerElement?: FiveElement
 }
 
 export default function FieldArea({
@@ -41,6 +52,7 @@ export default function FieldArea({
   onDrop,
   onDragLeave,
   dragOverSlot = null,
+  playerElement,
 }: FieldAreaProps): React.ReactElement {
   const isPlayerField = side === 'player'
 
@@ -62,14 +74,16 @@ export default function FieldArea({
     prevFieldRef.current = [...field]
   })
 
+  const overlayBg = playerElement ? FIELD_BG_OVERLAY[playerElement] : 'rgba(255,255,255,0.02)'
+
   return (
     <div style={{
-      height: 120,
+      height: 150,
       display: 'flex',
-      gap: 4,
+      gap: 6,
       padding: '4px 8px',
-      background: 'rgba(255,255,255,0.02)',
-      borderRadius: 8,
+      background: overlayBg,
+      borderRadius: 4,
       margin: '0 8px',
       flexShrink: 0,
     }}>
@@ -104,7 +118,7 @@ export default function FieldArea({
             <div
               key={slotIdx}
               ref={el => { slotRefs.current[slotIdx] = el }}
-              style={{ flex: 1, maxWidth: 84, display: 'flex' }}
+              style={{ flex: 1, maxWidth: 88, display: 'flex' }}
             >
               <FieldUnitCard
                 unit={unit}

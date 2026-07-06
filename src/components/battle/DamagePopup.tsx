@@ -13,22 +13,24 @@ interface DamagePopupProps {
 }
 
 function getFontSize(value: number): number {
-  if (value >= 7) return 28
-  if (value >= 4) return 22
-  return 18
+  if (value >= 7) return 48
+  if (value >= 4) return 40
+  return 32
 }
 
 function getColor(type: DamagePopupData['type'], value: number): string {
-  if (type === 'heal') return 'var(--el-wood)'
-  if (type === 'fatigue') return 'var(--el-earth)'
-  // damage: 크기별 색상 (Momentor 기준)
-  if (value >= 7) return 'var(--el-fire)'
-  if (value >= 4) return 'var(--gold-accent)'
-  return 'var(--text-primary)'
+  if (type === 'heal') return '#4ADE80'
+  if (type === 'fatigue') return '#F59E0B'
+  // damage: 크기별 색상
+  if (value >= 7) return '#EF4444'
+  if (value >= 4) return '#FCA5A5'
+  return '#FFB3B3'
 }
 
 export default function DamagePopup({ popup }: DamagePopupProps): React.ReactElement {
   const elRef = useRef<HTMLDivElement>(null)
+  // 수평 랜덤 오프셋 -20 ~ +20px (컴포넌트 마운트 시 1회 결정)
+  const xOffset = useRef((Math.random() - 0.5) * 40)
 
   useEffect(() => {
     const el = elRef.current
@@ -36,8 +38,8 @@ export default function DamagePopup({ popup }: DamagePopupProps): React.ReactEle
 
     gsap.fromTo(
       el,
-      { y: 0, scale: 1.5, opacity: 1 },
-      { y: -80, scale: 0.8, opacity: 0, duration: 0.8, ease: 'power2.out' },
+      { y: 0, x: xOffset.current, scale: 1.6, opacity: 1 },
+      { y: -100, x: xOffset.current + (Math.random() - 0.5) * 20, scale: 0.7, opacity: 0, duration: 0.9, ease: 'power2.out' },
     )
   }, [])
 
@@ -58,7 +60,7 @@ export default function DamagePopup({ popup }: DamagePopupProps): React.ReactEle
         fontWeight: 700,
         fontSize,
         color,
-        textShadow: `0 0 8px ${color}80`,
+        textShadow: `0 2px 8px rgba(0,0,0,0.8), 0 0 12px ${color}80`,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',

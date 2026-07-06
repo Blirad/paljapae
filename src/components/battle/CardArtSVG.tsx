@@ -69,50 +69,116 @@ export function getRarityBorderStyle(rarity: Rarity): React.CSSProperties {
   switch (rarity) {
     case 'common':
       return {
-        border: '1px solid rgba(44,44,44,0.25)',
+        border: '1px solid rgba(80,80,80,0.4)',
         boxShadow: 'none',
       }
     case 'uncommon':
       return {
-        border: '1px solid rgba(201,168,76,0.4)',
-        boxShadow: 'none',
+        border: '1.5px solid rgba(120,160,200,0.6)',
+        boxShadow: '0 0 8px rgba(120,160,200,0.25)',
       }
     case 'rare':
       return {
-        border: '1px solid rgba(201,168,76,0.7)',
-        boxShadow: '0 0 12px rgba(201,168,76,0.4)',
+        border: '2px solid rgba(201,168,76,0.8)',
+        boxShadow: '0 0 14px rgba(201,168,76,0.4), inset 0 0 8px rgba(201,168,76,0.1)',
       }
     case 'legendary':
       return {
-        border: '1px solid #C9A84C',
-        boxShadow: '0 0 20px rgba(201,168,76,0.6), 0 0 40px rgba(201,168,76,0.2)',
+        border: '2px solid #C9A84C',
+        boxShadow: '0 0 20px rgba(201,168,76,0.6), 0 0 40px rgba(201,168,76,0.2), inset 0 0 12px rgba(201,168,76,0.15)',
+        animation: 'legendaryPulse 2s ease-in-out infinite',
       }
     default:
       return {
-        border: '1px solid rgba(44,44,44,0.25)',
+        border: '1px solid rgba(80,80,80,0.4)',
       }
   }
+}
+
+/**
+ * LegendaryCorners — legendary 카드 코너 장식 (JSX div 4개)
+ * 리라 스펙 §인터랙션명세 §10
+ */
+export function LegendaryCorners({ element }: { element?: FiveElement }): React.ReactElement {
+  const cornerColor = element ? ({
+    '木': '#4CAF50',
+    '火': '#C4604A',
+    '土': '#C9A84C',
+    '金': '#9AAAB8',
+    '水': '#5E8FB8',
+  } as Record<FiveElement, string>)[element] : '#C9A84C'
+
+  const cornerStyle: React.CSSProperties = {
+    position: 'absolute',
+    width: 8,
+    height: 8,
+    pointerEvents: 'none',
+    zIndex: 2,
+  }
+
+  return (
+    <>
+      {/* 좌상단 */}
+      <div style={{
+        ...cornerStyle,
+        top: 1,
+        left: 1,
+        borderTop: `2px solid ${cornerColor}`,
+        borderLeft: `2px solid ${cornerColor}`,
+      }} />
+      {/* 우상단 */}
+      <div style={{
+        ...cornerStyle,
+        top: 1,
+        right: 1,
+        borderTop: `2px solid ${cornerColor}`,
+        borderRight: `2px solid ${cornerColor}`,
+      }} />
+      {/* 좌하단 */}
+      <div style={{
+        ...cornerStyle,
+        bottom: 1,
+        left: 1,
+        borderBottom: `2px solid ${cornerColor}`,
+        borderLeft: `2px solid ${cornerColor}`,
+      }} />
+      {/* 우하단 */}
+      <div style={{
+        ...cornerStyle,
+        bottom: 1,
+        right: 1,
+        borderBottom: `2px solid ${cornerColor}`,
+        borderRight: `2px solid ${cornerColor}`,
+      }} />
+    </>
+  )
 }
 
 // ────────────────────────────────────────────────────
 // 오행별 SVG 패턴 (wood, fire, earth, metal, water)
 // ────────────────────────────────────────────────────
 
+// ────────────────────────────────────────────────────
+// FAIL2 수정: 오행별 SVG 패턴 — 배경 색 블록 + 굵은 아이콘으로 mini 크기에서도 명확히 구분
+// ────────────────────────────────────────────────────
+
 function WoodPattern({ accent }: { accent: string }): React.ReactElement {
   return (
     <g>
-      {/* 줄기 */}
-      <line x1="32" y1="56" x2="32" y2="20" stroke={accent} strokeWidth="2" strokeOpacity="0.7" />
-      {/* 가지들 */}
-      <line x1="32" y1="38" x2="18" y2="28" stroke={accent} strokeWidth="1.5" strokeOpacity="0.6" />
-      <line x1="32" y1="32" x2="46" y2="22" stroke={accent} strokeWidth="1.5" strokeOpacity="0.6" />
-      <line x1="32" y1="44" x2="44" y2="36" stroke={accent} strokeWidth="1.2" strokeOpacity="0.5" />
-      {/* 잎 */}
-      <ellipse cx="16" cy="26" rx="5" ry="3" fill={accent} fillOpacity="0.5" transform="rotate(-20, 16, 26)" />
-      <ellipse cx="47" cy="20" rx="5" ry="3" fill={accent} fillOpacity="0.5" transform="rotate(20, 47, 20)" />
-      <ellipse cx="45" cy="34" rx="4" ry="2.5" fill={accent} fillOpacity="0.4" transform="rotate(10, 45, 34)" />
-      {/* 바닥 원 */}
-      <circle cx="32" cy="56" r="6" fill={accent} fillOpacity="0.15" />
+      {/* 초록 배경 블록 — 木 식별용 */}
+      <rect width="64" height="58" fill="#1A3A1A" fillOpacity="0.5" />
+      {/* 굵은 줄기 */}
+      <line x1="32" y1="56" x2="32" y2="16" stroke={accent} strokeWidth="3.5" strokeOpacity="0.9" />
+      {/* 굵은 가지 */}
+      <line x1="32" y1="36" x2="14" y2="24" stroke={accent} strokeWidth="2.5" strokeOpacity="0.8" />
+      <line x1="32" y1="28" x2="50" y2="18" stroke={accent} strokeWidth="2.5" strokeOpacity="0.8" />
+      <line x1="32" y1="44" x2="48" y2="34" stroke={accent} strokeWidth="2" strokeOpacity="0.7" />
+      {/* 큰 잎 */}
+      <ellipse cx="12" cy="22" rx="8" ry="4.5" fill={accent} fillOpacity="0.75" transform="rotate(-25, 12, 22)" />
+      <ellipse cx="52" cy="16" rx="8" ry="4.5" fill={accent} fillOpacity="0.75" transform="rotate(25, 52, 16)" />
+      <ellipse cx="49" cy="32" rx="6" ry="3.5" fill={accent} fillOpacity="0.6" transform="rotate(12, 49, 32)" />
+      {/* 바닥 뿌리 */}
+      <circle cx="32" cy="56" r="7" fill={accent} fillOpacity="0.25" />
     </g>
   )
 }
@@ -120,20 +186,23 @@ function WoodPattern({ accent }: { accent: string }): React.ReactElement {
 function FirePattern({ accent }: { accent: string }): React.ReactElement {
   return (
     <g>
-      {/* 화염 외형 */}
+      {/* 붉은 배경 블록 — 火 식별용 */}
+      <rect width="64" height="58" fill="#3A1000" fillOpacity="0.55" />
+      {/* 큰 화염 외형 */}
       <path
-        d="M32 52 C20 44 16 34 22 24 C24 20 28 22 26 26 C30 18 36 16 34 22 C40 14 46 18 42 26 C48 22 48 32 42 36 C46 42 44 52 32 52Z"
+        d="M32 54 C16 44 10 30 18 16 C20 10 26 14 23 20 C28 10 37 8 34 18 C42 8 50 14 44 24 C52 18 52 34 44 40 C50 46 46 54 32 54Z"
         fill={accent}
-        fillOpacity="0.4"
+        fillOpacity="0.55"
       />
-      {/* 내부 불꽃 */}
+      {/* 밝은 내부 불꽃 */}
       <path
-        d="M32 48 C24 42 22 36 26 28 C28 24 30 26 29 30 C32 24 35 22 34 28 C38 22 40 28 37 32 C40 36 38 44 32 48Z"
+        d="M32 50 C22 42 20 34 25 24 C27 20 30 22 28 28 C32 20 36 18 35 26 C40 20 42 30 39 36 C43 40 40 48 32 50Z"
         fill={accent}
-        fillOpacity="0.6"
+        fillOpacity="0.8"
       />
-      {/* 중심 */}
-      <circle cx="32" cy="38" r="4" fill="white" fillOpacity="0.2" />
+      {/* 핵심 백열 */}
+      <ellipse cx="32" cy="36" rx="6" ry="8" fill="white" fillOpacity="0.3" />
+      <circle cx="32" cy="38" r="3" fill="white" fillOpacity="0.5" />
     </g>
   )
 }
@@ -141,15 +210,19 @@ function FirePattern({ accent }: { accent: string }): React.ReactElement {
 function EarthPattern({ accent }: { accent: string }): React.ReactElement {
   return (
     <g>
-      {/* 산 외형 */}
-      <polygon points="32,16 52,52 12,52" fill={accent} fillOpacity="0.25" />
+      {/* 황토 배경 블록 — 土 식별용 */}
+      <rect width="64" height="58" fill="#2A1E00" fillOpacity="0.5" />
+      {/* 큰 산 외형 */}
+      <polygon points="32,10 56,52 8,52" fill={accent} fillOpacity="0.4" />
+      {/* 뒤 산 */}
+      <polygon points="18,22 44,52 -8,52" fill={accent} fillOpacity="0.2" />
       {/* 눈 덮인 봉우리 */}
-      <polygon points="32,16 40,32 24,32" fill="white" fillOpacity="0.15" />
-      {/* 레이어 선들 */}
-      <line x1="16" y1="44" x2="48" y2="44" stroke={accent} strokeWidth="1" strokeOpacity="0.4" />
-      <line x1="20" y1="36" x2="44" y2="36" stroke={accent} strokeWidth="1" strokeOpacity="0.3" />
-      {/* 수평선 빛 */}
-      <line x1="8" y1="52" x2="56" y2="52" stroke={accent} strokeWidth="1.5" strokeOpacity="0.5" />
+      <polygon points="32,10 43,30 21,30" fill="white" fillOpacity="0.25" />
+      {/* 레이어 층선 */}
+      <line x1="12" y1="42" x2="52" y2="42" stroke={accent} strokeWidth="1.5" strokeOpacity="0.55" />
+      <line x1="18" y1="34" x2="46" y2="34" stroke={accent} strokeWidth="1.5" strokeOpacity="0.4" />
+      {/* 지평선 */}
+      <line x1="4" y1="52" x2="60" y2="52" stroke={accent} strokeWidth="2" strokeOpacity="0.65" />
     </g>
   )
 }
@@ -157,17 +230,21 @@ function EarthPattern({ accent }: { accent: string }): React.ReactElement {
 function MetalPattern({ accent }: { accent: string }): React.ReactElement {
   return (
     <g>
-      {/* 검 날 */}
-      <polygon points="32,14 34,40 32,44 30,40" fill={accent} fillOpacity="0.6" />
+      {/* 청금 배경 블록 — 金 식별용 */}
+      <rect width="64" height="58" fill="#061228" fillOpacity="0.5" />
+      {/* 검 날 — 더 넓고 밝게 */}
+      <polygon points="32,10 36,42 32,48 28,42" fill={accent} fillOpacity="0.8" />
+      {/* 검 날 광택 */}
+      <polygon points="32,10 34,28 32,32 31,28" fill="white" fillOpacity="0.3" />
       {/* 검 가드 */}
-      <rect x="22" y="38" width="20" height="4" rx="2" fill={accent} fillOpacity="0.5" />
+      <rect x="18" y="40" width="28" height="5" rx="2.5" fill={accent} fillOpacity="0.7" />
       {/* 손잡이 */}
-      <rect x="30" y="42" width="4" height="12" rx="2" fill={accent} fillOpacity="0.4" />
-      {/* 별빛 반짝임 */}
-      <circle cx="32" cy="22" r="2" fill="white" fillOpacity="0.4" />
-      <line x1="32" y1="18" x2="32" y2="14" stroke="white" strokeWidth="1" strokeOpacity="0.3" />
-      <line x1="28" y1="22" x2="24" y2="22" stroke="white" strokeWidth="1" strokeOpacity="0.3" />
-      <line x1="36" y1="22" x2="40" y2="22" stroke="white" strokeWidth="1" strokeOpacity="0.3" />
+      <rect x="30" y="45" width="4" height="10" rx="2" fill={accent} fillOpacity="0.55" />
+      {/* 별빛 십자 반짝임 */}
+      <circle cx="32" cy="20" r="3" fill="white" fillOpacity="0.55" />
+      <line x1="32" y1="14" x2="32" y2="10" stroke="white" strokeWidth="1.5" strokeOpacity="0.5" />
+      <line x1="26" y1="20" x2="22" y2="20" stroke="white" strokeWidth="1.5" strokeOpacity="0.5" />
+      <line x1="38" y1="20" x2="42" y2="20" stroke="white" strokeWidth="1.5" strokeOpacity="0.5" />
     </g>
   )
 }
@@ -175,15 +252,18 @@ function MetalPattern({ accent }: { accent: string }): React.ReactElement {
 function WaterPattern({ accent }: { accent: string }): React.ReactElement {
   return (
     <g>
-      {/* 물결 레이어들 */}
-      <path d="M10 30 Q20 24 30 30 Q40 36 50 30" fill="none" stroke={accent} strokeWidth="2" strokeOpacity="0.6" />
-      <path d="M10 36 Q20 30 30 36 Q40 42 50 36" fill="none" stroke={accent} strokeWidth="2" strokeOpacity="0.5" />
-      <path d="M10 42 Q20 36 30 42 Q40 48 50 42" fill="none" stroke={accent} strokeWidth="2" strokeOpacity="0.4" />
-      {/* 물방울 */}
-      <path d="M32 16 C32 16 24 26 24 30 C24 34.4 27.6 38 32 38 C36.4 38 40 34.4 40 30 C40 26 32 16 32 16Z"
-        fill={accent} fillOpacity="0.35" />
-      {/* 내부 광택 */}
-      <ellipse cx="29" cy="26" rx="2" ry="3" fill="white" fillOpacity="0.2" transform="rotate(-10, 29, 26)" />
+      {/* 파랑 배경 블록 — 水 식별용 */}
+      <rect width="64" height="58" fill="#020C24" fillOpacity="0.55" />
+      {/* 굵은 물결 3겹 */}
+      <path d="M6 28 Q18 20 30 28 Q42 36 54 28" fill="none" stroke={accent} strokeWidth="3" strokeOpacity="0.75" />
+      <path d="M6 36 Q18 28 30 36 Q42 44 54 36" fill="none" stroke={accent} strokeWidth="3" strokeOpacity="0.6" />
+      <path d="M6 44 Q18 36 30 44 Q42 52 54 44" fill="none" stroke={accent} strokeWidth="2.5" strokeOpacity="0.45" />
+      {/* 큰 물방울 */}
+      <path d="M32 10 C32 10 22 24 22 30 C22 36.6 26.5 42 32 42 C37.5 42 42 36.6 42 30 C42 24 32 10 32 10Z"
+        fill={accent} fillOpacity="0.5" />
+      {/* 광택 */}
+      <ellipse cx="28" cy="24" rx="3" ry="4.5" fill="white" fillOpacity="0.3" transform="rotate(-10, 28, 24)" />
+      <circle cx="32" cy="30" r="2" fill="white" fillOpacity="0.2" />
     </g>
   )
 }
