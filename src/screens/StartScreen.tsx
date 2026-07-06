@@ -195,9 +195,10 @@ interface SaveInfo {
 interface StartScreenProps {
   onContinue: () => void
   onNewGame: () => void
+  onDeckBuild?: () => void
 }
 
-export default function StartScreen({ onContinue, onNewGame }: StartScreenProps): React.ReactElement {
+export default function StartScreen({ onContinue, onNewGame, onDeckBuild }: StartScreenProps): React.ReactElement {
   const [showConfirm, setShowConfirm] = useState(false)
   const [saveInfo, setSaveInfo] = useState<SaveInfo | null>(null)
   const [mounted, setMounted] = useState(false)
@@ -442,6 +443,21 @@ export default function StartScreen({ onContinue, onNewGame }: StartScreenProps)
             이어하기 →
           </PrimaryButton>
         </div>
+
+        {onDeckBuild && (
+          <div style={{
+            marginTop: 12,
+            animation: 'slideUp 0.4s ease-out 0.2s both',
+          }}>
+            <SecondaryButton
+              onClick={onDeckBuild}
+              className="w-full"
+              style={{ width: '100%', height: 44, fontSize: 13 } as React.CSSProperties}
+            >
+              덱 편집
+            </SecondaryButton>
+          </div>
+        )}
 
         <div style={{
           marginTop: 12,

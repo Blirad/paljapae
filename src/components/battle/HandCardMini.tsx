@@ -189,6 +189,8 @@ export default function HandCardMini({
             rarity={card.rarity}
             size="mini"
             cardType={card.cardType}
+            keywords={card.cardType === 'soldier' ? card.keywords : []}
+            cost={card.cost}
           />
         ) : (
           <div style={{

@@ -159,6 +159,9 @@ interface UnlockStore {
   /** 일일 뽑기에서 획득한 카드 ID 목록을 ownedCardIds에 추가 (M8 P1) */
   addOwnedCards: (cardIds: string[]) => void
 
+  /** 덱 편집: 보유 카드를 currentDeckIds에 추가 (M8 DeckBuild) */
+  addCardToDeck: (cardId: string) => void
+
   /** 초기화 */
   resetUnlocks: () => void
 }
@@ -348,6 +351,22 @@ export const useUnlockStore = create<UnlockStore>((set, get) => ({
       currentDeckIds: deckIds,
       starterDeckIds: resolvedStarterIds,
     })
+  },
+
+  addCardToDeck: (cardId: string) => {
+    // M8 DeckBuild: 이미 보유한 카드를 currentDeckIds에 추가 (20장 캡 방어)
+    const { ownedCardIds, currentDeckIds } = get()
+    if (!ownedCardIds.has(cardId)) {
+      console.warn('[unlockStore] addCardToDeck: 보유하지 않은 카드 추가 차단', cardId)
+      return
+    }
+    if (currentDeckIds.length >= 20) {
+      console.warn('[unlockStore] addCardToDeck: 덱 20장 상한 도달, 추가 차단')
+      return
+    }
+    const newDeckIds = [...currentDeckIds, cardId]
+    set({ currentDeckIds: newDeckIds })
+    saveCurrentDeckIds(newDeckIds)
   },
 
   addOwnedCards: (cardIds: string[]) => {

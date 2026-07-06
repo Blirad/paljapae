@@ -1,24 +1,14 @@
 /**
- * BattleParticles — 카드 사용/승리 파티클 시스템
+ * BattleParticles — 카드 사용/승리/충격파 파티클 시스템
  * 리라 스펙 §인터랙션명세 §7
+ * STS 강화: emitShockwave 추가 (리라 스펙 §2-C)
  * position:fixed 레이어, 동적 DOM 생성 + GSAP + onComplete 제거
  */
 
 import { useImperativeHandle, forwardRef, useRef } from 'react'
 import gsap from 'gsap'
 import type { FiveElement } from '@/types/elements'
-
-// ────────────────────────────────────────────────────
-// 오행별 파티클 컬러
-// ────────────────────────────────────────────────────
-
-const PARTICLE_COLORS: Record<FiveElement, string[]> = {
-  '木': ['#7EC87A', '#4CAF50', '#2E6B2A'],
-  '火': ['#FF8C5A', '#C4604A', '#FF5A2A'],
-  '土': ['#F0C84A', '#C9A84C', '#A07820'],
-  '金': ['#C8E4F8', '#9AAAB8', '#5A8AB8'],
-  '水': ['#64C8F8', '#4FC3F7', '#1A5A9A'],
-}
+import { PARTICLE_COLORS } from '@/utils/battleColors'
 
 const GOLD_COLORS = ['#C9A84C', '#E8C547', '#FFD700', '#F0C04A']
 
@@ -29,6 +19,7 @@ const GOLD_COLORS = ['#C9A84C', '#E8C547', '#FFD700', '#F0C04A']
 export interface BattleParticlesRef {
   emit: (x: number, y: number, element: FiveElement, count?: number) => void
   emitVictory: () => void
+  emitShockwave: (targetEl: HTMLElement, color: string) => void
 }
 
 const BattleParticles = forwardRef<BattleParticlesRef>(function BattleParticles(_props, ref) {
@@ -111,6 +102,38 @@ const BattleParticles = forwardRef<BattleParticlesRef>(function BattleParticles(
           },
         )
       }
+    },
+
+    // 충격파 원 emit (리라 스펙 §2-C)
+    emitShockwave(targetEl: HTMLElement, color: string) {
+      const rect = targetEl.getBoundingClientRect()
+      const cx = rect.left + rect.width / 2
+      const cy = rect.top + rect.height / 2
+
+      const ring = document.createElement('div')
+      ring.style.cssText = `
+        position: fixed;
+        left: ${cx}px;
+        top: ${cy}px;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        border: 3px solid ${color};
+        transform: translate(-50%, -50%) scale(0);
+        pointer-events: none;
+        z-index: 52;
+        opacity: 0.9;
+      `
+      document.body.appendChild(ring)
+      gsap.to(ring, {
+        scale: 4,
+        opacity: 0,
+        duration: 0.35,
+        ease: 'power2.out',
+        onComplete: () => {
+          if (document.body.contains(ring)) document.body.removeChild(ring)
+        },
+      })
     },
   }))
 

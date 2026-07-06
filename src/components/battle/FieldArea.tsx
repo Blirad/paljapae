@@ -1,6 +1,7 @@
 /**
  * FieldArea — AI/플레이어 필드 영역 (4슬롯)
  * 리라 스펙 §2-2 [C] [D]
+ * STS 강화: 소환 3단계 타임라인 + 사망 emitDeathEffect (리라 스펙 §1-B, §4)
  */
 
 import React, { useEffect, useRef } from 'react'
@@ -10,6 +11,8 @@ import FieldUnitCard from './FieldUnitCard'
 import EmptySlot from './EmptySlot'
 import type { InteractionState } from '@/game/store/battleStore'
 import type { FiveElement } from '@/types/elements'
+import { emitSummonRing } from './SummonRing'
+import { PARTICLE_COLORS } from '@/utils/battleColors'
 
 // 오행별 필드 배경 오버레이 컬러 (rgba, opacity 0.06)
 const FIELD_BG_OVERLAY: Record<FiveElement, string> = {
@@ -18,6 +21,73 @@ const FIELD_BG_OVERLAY: Record<FiveElement, string> = {
   '土': 'rgba(240,200,74,0.06)',
   '金': 'rgba(200,228,248,0.06)',
   '水': 'rgba(100,200,248,0.06)',
+}
+
+// ────────────────────────────────────────────────────
+// 사망 이펙트 함수 (DOM 직접 생성, 리라 스펙 §4-B)
+// ────────────────────────────────────────────────────
+
+function emitDeathEffect(slotEl: HTMLElement, element: FiveElement): void {
+  const colors = PARTICLE_COLORS[element]
+  const rect = slotEl.getBoundingClientRect()
+  const cx = rect.left + rect.width / 2
+  const cy = rect.top + rect.height / 2
+
+  // 파티클 16개 방사
+  for (let i = 0; i < 16; i++) {
+    const p = document.createElement('div')
+    const color = colors[i % colors.length]
+    const size = 2 + Math.random() * 4
+    p.style.cssText = `
+      position: fixed;
+      width: ${size}px;
+      height: ${size}px;
+      border-radius: 50%;
+      background: ${color};
+      left: ${cx}px;
+      top: ${cy}px;
+      pointer-events: none;
+      z-index: 53;
+    `
+    document.body.appendChild(p)
+    const angle = (Math.PI * 2 * i) / 16 + (Math.random() - 0.5) * 0.8
+    const dist = 30 + Math.random() * 50
+    gsap.to(p, {
+      x: Math.cos(angle) * dist,
+      y: Math.sin(angle) * dist - 20,
+      opacity: 0,
+      duration: 0.35 + Math.random() * 0.2,
+      ease: 'power2.out',
+      onComplete: () => {
+        if (document.body.contains(p)) document.body.removeChild(p)
+      },
+    })
+  }
+
+  // 흰 flash 원
+  const flash = document.createElement('div')
+  flash.style.cssText = `
+    position: fixed;
+    left: ${cx}px;
+    top: ${cy}px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: white;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 54;
+  `
+  document.body.appendChild(flash)
+  gsap.to(flash, {
+    scale: 5,
+    opacity: 0,
+    duration: 0.25,
+    ease: 'power2.out',
+    onComplete: () => {
+      if (document.body.contains(flash)) document.body.removeChild(flash)
+    },
+  })
 }
 
 interface FieldAreaProps {
@@ -56,18 +126,51 @@ export default function FieldArea({
 }: FieldAreaProps): React.ReactElement {
   const isPlayerField = side === 'player'
 
-  // 소환 애니메이션: 슬롯별 ref + 이전 유닛 추적
+  // 소환/사망 애니메이션: 슬롯별 ref + 이전 유닛 추적
   const slotRefs = useRef<(HTMLDivElement | null)[]>([])
   const prevFieldRef = useRef<(FieldUnit | null)[]>([])
 
   useEffect(() => {
     field.forEach((unit, slotIdx) => {
-      const wasEmpty = prevFieldRef.current[slotIdx] == null
+      const prevUnit = prevFieldRef.current[slotIdx]
+      const wasEmpty = prevUnit == null
       const nowHasUnit = unit != null
+      const wasUnit = prevUnit != null
+      const nowEmpty = unit == null
+
+      // 소환 감지 → 3단계 타임라인 (리라 스펙 §1-B)
       if (wasEmpty && nowHasUnit) {
         const el = slotRefs.current[slotIdx]
         if (el) {
-          gsap.from(el, { scale: 0.5, opacity: 0, duration: 0.35, ease: 'back.out(1.7)' })
+          // perspective 적용 (rotationX용)
+          el.style.perspective = '400px'
+
+          const tl = gsap.timeline()
+          // 1단계: 위에서 낙하 + 임팩트
+          tl.fromTo(el,
+            { scale: 0.7, opacity: 0, y: -60, rotationX: 20 },
+            { scale: 1.15, opacity: 1, y: 0, rotationX: 0, duration: 0.22, ease: 'power3.out' },
+          )
+          // 2단계: 착지 바운스 + 소환진 링 emit
+          .to(el, {
+            scale: 1.0,
+            duration: 0.18,
+            ease: 'back.out(2.0)',
+            onStart: () => {
+              // 소환진 링 폭발
+              emitSummonRing(el, playerElement ? getElementColor(playerElement) : '#C9A84C')
+              // 파티클 12개 (BattleParticles와 독립적으로 DOM 직접 생성)
+              emitSummonParticles(el, playerElement ?? '火')
+            },
+          })
+        }
+      }
+
+      // 사망 감지 → emitDeathEffect (리라 스펙 §4-A)
+      if (wasUnit && nowEmpty) {
+        const el = slotRefs.current[slotIdx]
+        if (el) {
+          emitDeathEffect(el, prevUnit!.card.element ?? playerElement ?? '火')
         }
       }
     })
@@ -155,4 +258,57 @@ export default function FieldArea({
       })}
     </div>
   )
+}
+
+// ────────────────────────────────────────────────────
+// 내부 헬퍼
+// ────────────────────────────────────────────────────
+
+function getElementColor(element: FiveElement): string {
+  const colors: Record<FiveElement, string> = {
+    '木': '#7EC87A',
+    '火': '#FF8C5A',
+    '土': '#F0C84A',
+    '金': '#C8E4F8',
+    '水': '#64C8F8',
+  }
+  return colors[element]
+}
+
+// 소환 파티클 12개 (리라 스펙 §1-B 4단계)
+function emitSummonParticles(slotEl: HTMLElement, element: FiveElement): void {
+  const colors = PARTICLE_COLORS[element]
+  const rect = slotEl.getBoundingClientRect()
+  const cx = rect.left + rect.width / 2
+  const cy = rect.top + rect.height / 2
+
+  for (let i = 0; i < 12; i++) {
+    const p = document.createElement('div')
+    const color = colors[i % colors.length]
+    const size = 2 + Math.random() * 3
+    p.style.cssText = `
+      position: fixed;
+      width: ${size}px;
+      height: ${size}px;
+      border-radius: 50%;
+      background: ${color};
+      left: ${cx}px;
+      top: ${cy}px;
+      pointer-events: none;
+      z-index: 52;
+    `
+    document.body.appendChild(p)
+    const angle = (Math.PI * 2 * i) / 12 + (Math.random() - 0.5) * 0.6
+    const dist = 20 + Math.random() * 35
+    gsap.to(p, {
+      x: Math.cos(angle) * dist,
+      y: Math.sin(angle) * dist - 15,
+      opacity: 0,
+      duration: 0.3 + Math.random() * 0.2,
+      ease: 'power2.out',
+      onComplete: () => {
+        if (document.body.contains(p)) document.body.removeChild(p)
+      },
+    })
+  }
 }

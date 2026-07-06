@@ -1,9 +1,10 @@
 /**
  * FieldUnitCard — 필드 위 유닛 카드 컴포넌트
  * 리라 스펙 §3-1
+ * STS 강화: 공격 돌진 y -90 + 히트스탑 + shake ±14 + 키워드 VFX + reborn 부활 (리라 스펙 §2, §3, §4-C)
  */
 
-import React, { useRef, useCallback } from 'react'
+import React, { useRef, useCallback, useEffect } from 'react'
 import gsap from 'gsap'
 import type { FieldUnit } from '@/types/cards'
 import { ELEMENT_DISPLAY } from '@/types/elements'
@@ -18,6 +19,50 @@ const KEYWORD_ICON: Partial<Record<import('@/types/cards').Keyword, string>> = {
   pierce: '🗡',
   poison: '☠',
   lifesteal: '💚',
+}
+
+// ────────────────────────────────────────────────────
+// 키워드 VFX 플래시 텍스트 (리라 스펙 §3-A)
+// ────────────────────────────────────────────────────
+
+function emitKeywordFlash(
+  anchorEl: HTMLElement,
+  text: string,
+  color: string,
+): void {
+  const rect = anchorEl.getBoundingClientRect()
+  const span = document.createElement('div')
+  span.textContent = text
+  span.style.cssText = `
+    position: fixed;
+    left: ${rect.left + rect.width / 2}px;
+    top: ${rect.top}px;
+    transform: translateX(-50%);
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    color: ${color};
+    text-shadow: 0 0 8px ${color}80;
+    pointer-events: none;
+    z-index: 55;
+    white-space: nowrap;
+  `
+  document.body.appendChild(span)
+  gsap.timeline()
+    .fromTo(span,
+      { scale: 0, opacity: 1, y: 0 },
+      { scale: 1.4, opacity: 1, y: -4, duration: 0.15, ease: 'back.out(2)' },
+    )
+    .to(span, { scale: 1.0, duration: 0.08 })
+    .to(span, {
+      y: -32,
+      opacity: 0,
+      duration: 0.38,
+      ease: 'power2.out',
+      onComplete: () => {
+        if (document.body.contains(span)) document.body.removeChild(span)
+      },
+    })
 }
 
 // ────────────────────────────────────────────────────
@@ -48,34 +93,135 @@ export default function FieldUnitCard({
   const display = ELEMENT_DISPLAY[element]
   const allKeywords = [...unit.card.keywords, ...unit.temporaryKeywords]
 
-  // 공격 클릭 시 애니메이션 (플레이어 유닛이 AI 방향으로 이동)
+  // M8 P0: 카드 소환 등장 애니메이션 (CSS animation — 마운트 시 1회)
+  useEffect(() => {
+    const el = cardRef.current
+    if (!el) return
+    el.style.animation = 'cardAppear 0.22s ease-out forwards'
+    const timer = setTimeout(() => {
+      if (el) el.style.animation = ''
+    }, 300)
+
+    // 소환 시점 키워드 특수 연출 (리라 스펙 §3-C)
+    const kwTimer = setTimeout(() => {
+      const currentEl = cardRef.current
+      if (!currentEl) return
+
+      // rush 소환 시 "돌진!" 플래시
+      if (allKeywords.includes('rush')) {
+        emitKeywordFlash(currentEl, '돌진!', '#FFD700')
+        gsap.timeline()
+          .to(currentEl, { boxShadow: '0 0 16px #FFD700', duration: 0.15 })
+          .to(currentEl, { boxShadow: 'none', duration: 0.3 })
+      }
+
+      // incinerate 소환 시 orange flash
+      if (allKeywords.includes('incinerate')) {
+        gsap.timeline()
+          .to(currentEl, { filter: 'brightness(1.6) sepia(0.4)', duration: 0.1 })
+          .to(currentEl, { filter: 'brightness(1) sepia(0)', duration: 0.3 })
+      }
+
+      // taunt 소환 시 gold ring pulse
+      if (allKeywords.includes('taunt')) {
+        gsap.timeline()
+          .to(currentEl, { boxShadow: '0 0 20px rgba(184,154,94,0.8)', duration: 0.2 })
+          .to(currentEl, { boxShadow: '0 0 6px rgba(184,154,94,0.4)', duration: 0.3 })
+      }
+    }, 200)
+
+    return () => {
+      clearTimeout(timer)
+      clearTimeout(kwTimer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 공격 클릭 시 애니메이션 — y -90 돌진 + 히트스탑 + 복귀 (리라 스펙 §2-A)
   const handleClick = useCallback(() => {
     if (!onClick) return
     const el = cardRef.current
     if (el && side === 'player' && isSelected) {
-      // 공격 애니메이션: 위로 이동 후 복귀
       gsap.timeline()
-        .to(el, { y: -20, duration: 0.15 })
-        .to(el, { y: 0, duration: 0.25, ease: 'bounce.out' })
+        // 1단계: 적 방향 돌진 (y 음수 = 위 방향 = AI 필드 방향)
+        .to(el, { y: -90, x: 0, duration: 0.18, ease: 'power3.in' })
+        // 히트스탑: 50ms 정지
+        .to(el, { duration: 0.05 })
+        // 복귀
+        .to(el, { y: 0, x: 0, duration: 0.25, ease: 'back.out(1.5)' })
     }
     onClick()
   }, [onClick, side, isSelected])
 
-  // 피격 shake (isValidAttackTarget이 사라질 때 = 공격받은 직후는 감지 어려우므로 HP 감소 감지)
+  // 피격 shake — ±14px 강화 (리라 스펙 §2 / §3-B)
   const prevHpRef = useRef(unit.currentHealth)
   if (prevHpRef.current !== unit.currentHealth && unit.currentHealth < prevHpRef.current) {
     prevHpRef.current = unit.currentHealth
     const el = cardRef.current
     if (el) {
+      // shake ±14px 강화 (기존 ±10 → ±14)
       gsap.timeline()
-        .to(el, { x: -6, duration: 0.05 })
-        .to(el, { x: 6, duration: 0.05 })
-        .to(el, { x: -4, duration: 0.05 })
-        .to(el, { x: 0, duration: 0.05 })
+        .to(el, { x: -14, duration: 0.05, ease: 'power2.out' })
+        .to(el, { x: 11, duration: 0.06 })
+        .to(el, { x: -9, duration: 0.06 })
+        .to(el, { x: 6, duration: 0.06 })
+        .to(el, { x: -3, duration: 0.06 })
+        .to(el, { x: 0, duration: 0.06, ease: 'power2.out' })
+
+      // poison 피격 시 녹색 flash (리라 스펙 §3-B)
+      if (allKeywords.includes('poison')) {
+        gsap.timeline()
+          .to(el, { filter: 'brightness(1.8) hue-rotate(90deg)', duration: 0.08 })
+          .to(el, { filter: 'brightness(1) hue-rotate(0deg)', duration: 0.22 })
+      }
+
+      // freeze 피격 시 파란 flash (리라 스펙 §3-B)
+      if (unit.frozen) {
+        gsap.timeline()
+          .to(el, { filter: 'brightness(2) saturate(0) sepia(1) hue-rotate(180deg)', duration: 0.08 })
+          .to(el, { filter: 'brightness(1) saturate(1) sepia(0) hue-rotate(0deg)', duration: 0.25 })
+      }
+
+      // incinerate 피격 시 "소각!" + orange flash (리라 스펙 §3-D)
+      if (allKeywords.includes('incinerate')) {
+        emitKeywordFlash(el, '소각!', '#FF6B35')
+        gsap.timeline()
+          .to(el, { background: 'rgba(255,100,50,0.4)', duration: 0.1 })
+          .to(el, { background: 'var(--bg2)', duration: 0.3 })
+      }
     }
   } else {
     prevHpRef.current = unit.currentHealth
   }
+
+  // HP 증가 감지 → lifesteal "흡혈!" VFX (리라 스펙 §3-C)
+  const prevHpIncreaseRef = useRef(unit.currentHealth)
+  useEffect(() => {
+    if (unit.currentHealth > prevHpIncreaseRef.current) {
+      const el = cardRef.current
+      if (el && allKeywords.includes('lifesteal')) {
+        emitKeywordFlash(el, '흡혈!', '#4ADE80')
+      }
+    }
+    prevHpIncreaseRef.current = unit.currentHealth
+  }, [unit.currentHealth]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // reborn 부활 감지 (리라 스펙 §4-C)
+  const prevRebornRef = useRef(unit.rebornUsed)
+  useEffect(() => {
+    if (prevRebornRef.current === false && unit.rebornUsed === true) {
+      const el = cardRef.current
+      if (!el) return
+      gsap.timeline()
+        .fromTo(el,
+          { opacity: 0, scale: 0.3, filter: 'brightness(5)' },
+          { opacity: 1, scale: 1.2, filter: 'brightness(2)', duration: 0.2, ease: 'power3.out' },
+        )
+        .to(el, { scale: 1.0, filter: 'brightness(1)', duration: 0.25, ease: 'back.out(1.5)' })
+      emitKeywordFlash(el, '부활!', '#C8E4F8')
+    }
+    prevRebornRef.current = unit.rebornUsed
+  }, [unit.rebornUsed])
 
   // 도발 유닛 테두리
   const hasTaunt = allKeywords.includes('taunt')
@@ -151,13 +297,15 @@ export default function FieldUnitCard({
         </div>
       </div>
 
-      {/* 오행 SVG 아트 영역 (M6) */}
+      {/* 오행 SVG 아트 영역 (M8 P0: keywords 전달) */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         <CardArtSVG
           element={element}
           rarity={unit.card.rarity}
           size="field"
           cardType={unit.card.cardType}
+          keywords={unit.card.cardType === 'soldier' ? unit.card.keywords : []}
+          cost={unit.card.cost}
         />
         {/* 관통 삼각형 뱃지 */}
         {hasPierce && (

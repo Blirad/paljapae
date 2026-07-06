@@ -3,7 +3,8 @@
  * 리라 스펙 §2 전체 레이아웃
  */
 
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
+import gsap from 'gsap'
 import { useBattleStore } from '@/game/store/battleStore'
 import type { InteractionState } from '@/game/store/battleStore'
 import { useOnboardingStore } from '@/game/store/onboardingStore'
@@ -27,6 +28,7 @@ import FieldSeparator from './FieldSeparator'
 import BattleParticles from './BattleParticles'
 import type { BattleParticlesRef } from './BattleParticles'
 import type { FieldUnit } from '@/types/cards'
+import { ELEMENT_DISPLAY } from '@/types/elements'
 
 // ────────────────────────────────────────────────────
 // 글로벌 CSS 애니메이션 (인라인 스타일 보조)
@@ -64,18 +66,24 @@ const GLOBAL_STYLES = `
   60% { transform: translateX(-4px); }
   80% { transform: translateX(4px); }
 }
+@keyframes cardAppear {
+  0%   { transform: scale(0.4) translateY(12px); opacity: 0; }
+  60%  { transform: scale(1.12) translateY(-4px); opacity: 1; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
 `
 
 // ────────────────────────────────────────────────────
 // 오행별 전투 배경 — FAIL1 수정: JS inline style로 강제 적용
 // CSS 선택자가 브라우저 캐시나 specificity 문제로 무시될 경우를 대비
 // ────────────────────────────────────────────────────
+// M8 P0: 채도/대비 강화 (리라 스펙 §3)
 const ELEMENT_BATTLE_BG: Record<string, string> = {
-  '木': 'radial-gradient(ellipse at top, #1A2E1A 0%, #0A1208 60%, #060C06 100%)',
-  '火': 'radial-gradient(ellipse at bottom, #3A1A0A 0%, #1A0A04 60%, #0D0602 100%)',
-  '土': 'radial-gradient(ellipse at center, #2A1E0A 0%, #1A1408 60%, #0E0C06 100%)',
-  '金': 'radial-gradient(ellipse at top right, #0A1022 0%, #060C1A 60%, #040810 100%)',
-  '水': 'radial-gradient(ellipse at top, #060E1E 0%, #041018 60%, #02080E 100%)',
+  '木': 'radial-gradient(ellipse at top, #0E2210 0%, #071008 55%, #030804 100%)',
+  '火': 'radial-gradient(ellipse at bottom, #4A1500 0%, #200800 50%, #0D0400 100%)',
+  '土': 'radial-gradient(ellipse at center, #201800 0%, #100E00 55%, #080600 100%)',
+  '金': 'radial-gradient(ellipse at top right, #06091A 0%, #030812 55%, #020509 100%)',
+  '水': 'radial-gradient(ellipse at top, #040C1C 0%, #020A14 55%, #01060C 100%)',
 }
 
 // AI 영웅 매핑 (온보딩 결과와 반대 오행)
@@ -120,6 +128,8 @@ export default function BattleScreen({ onRestart, onVictory, stageId: _stageId }
   const [dragOverSlot, setDragOverSlot] = useState<number | null>(null)
   const [initialized, setInitialized] = useState(false)
   const particlesRef = useRef<BattleParticlesRef>(null)
+  // 화면 흔들림 ref (리라 스펙 §2-B)
+  const screenShakeRef = useRef<HTMLDivElement>(null)
 
   const relicStore = useRelicStore()
   const sealedElement = useChallengeStore(s => s.sealedElement)
@@ -202,6 +212,21 @@ export default function BattleScreen({ onRestart, onVictory, stageId: _stageId }
     : false
 
   // ────────────────────────────────────────────────────
+  // 화면 흔들림 (리라 스펙 §2-B)
+  // ────────────────────────────────────────────────────
+
+  const emitScreenShake = useCallback(() => {
+    const el = screenShakeRef.current
+    if (!el) return
+    gsap.timeline()
+      .to(el, { x: 4, duration: 0.04, ease: 'none' })
+      .to(el, { x: -4, duration: 0.04 })
+      .to(el, { x: 3, duration: 0.04 })
+      .to(el, { x: -2, duration: 0.04 })
+      .to(el, { x: 0, duration: 0.04 })
+  }, [])
+
+  // ────────────────────────────────────────────────────
   // 이벤트 핸들러
   // ────────────────────────────────────────────────────
 
@@ -223,6 +248,19 @@ export default function BattleScreen({ onRestart, onVictory, stageId: _stageId }
     }
 
     attackTarget(slotIdx)
+    // 화면 흔들림 + 충격파 (리라 스펙 §2-B, §2-C)
+    emitScreenShake()
+    const targetUnit = ai.field[slotIdx]
+    if (targetUnit) {
+      // 타겟 슬롯 중앙 좌표로 emitShockwave
+      const attackerDisplay = ELEMENT_DISPLAY[attackerUnit.card.element ?? '火']
+      // targetEl은 DOM에서 가져올 수 없으므로 viewport 중앙 상단 근사값 사용
+      // 실제 타겟 el 취득은 FieldArea forwardRef 추가 시 개선 가능 (리라 스펙 주석)
+      const approxTargetEl = document.querySelector(`[data-screen="battle"]`) as HTMLElement | null
+      if (approxTargetEl) {
+        particlesRef.current?.emitShockwave(approxTargetEl, attackerDisplay.color)
+      }
+    }
   }
 
   function handleAiHeroClick() {
@@ -237,6 +275,8 @@ export default function BattleScreen({ onRestart, onVictory, stageId: _stageId }
     }
 
     attackTarget('hero')
+    // 화면 흔들림 (리라 스펙 §2-B)
+    emitScreenShake()
   }
 
   function handlePlayerUnitClick(slotIdx: number) {
@@ -359,6 +399,7 @@ export default function BattleScreen({ onRestart, onVictory, stageId: _stageId }
       <style>{GLOBAL_STYLES}</style>
 
       <div
+        ref={screenShakeRef}
         data-screen="battle"
         data-element={player.hero.element}
         style={{
@@ -374,6 +415,7 @@ export default function BattleScreen({ onRestart, onVictory, stageId: _stageId }
           pointerEvents: (isProcessing && !isAiTurn) ? 'none' : 'auto',
           // FAIL1 수정: 오행별 배경을 inline style로 강제 적용 (CSS specificity/캐시 문제 방어)
           background: ELEMENT_BATTLE_BG[player.hero.element] ?? '#1a1410',
+          willChange: 'transform',
         }}
         onClick={handleBoardClick}
       >

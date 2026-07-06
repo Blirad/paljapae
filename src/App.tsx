@@ -22,6 +22,7 @@ import TutorialOverlay from '@/screens/TutorialOverlay'
 import RelicAcquirePopup from '@/components/ui/RelicAcquirePopup'
 import RunStartScreen from '@/screens/RunStartScreen'
 import DailyDrawScreen from '@/screens/DailyDrawScreen'
+import DeckBuildScreen from '@/screens/DeckBuildScreen'
 import { hasDrawnToday } from '@/game/hooks/useDailyDraw'
 import { useChallengeStore } from '@/stores/challengeStore'
 import { CHALLENGE_RULES } from '@/types/challengeMode'
@@ -141,7 +142,7 @@ class GameErrorBoundary extends Component<
 // Scene 타입
 // ────────────────────────────────────────────────────
 
-type AppScene = 'start' | 'onboarding' | 'runStart' | 'dailyDraw' | 'worldMap' | 'battle' | 'cardReward' | 'ending' | 'defeat' | 'removeCard' | 'upgrade' | 'event' | 'shop'
+type AppScene = 'start' | 'onboarding' | 'runStart' | 'dailyDraw' | 'worldMap' | 'battle' | 'cardReward' | 'ending' | 'defeat' | 'removeCard' | 'upgrade' | 'event' | 'shop' | 'deckBuild'
 
 /** 앱 초기 scene 결정 (리라 M5 스펙 §2-1) */
 function getInitialScene(): AppScene {
@@ -541,6 +542,15 @@ export default function App(): React.ReactElement {
           <StartScreen
             onContinue={handleContinue}
             onNewGame={handleNewGame}
+            onDeckBuild={() => setScene('deckBuild')}
+          />
+        )
+
+      case 'deckBuild':
+        return (
+          <DeckBuildScreen
+            onComplete={() => setScene('start')}
+            onCancel={() => setScene('start')}
           />
         )
 
