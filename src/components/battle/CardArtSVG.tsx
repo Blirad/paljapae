@@ -361,7 +361,7 @@ function SilhouetteLayer({
 interface CardArtSVGProps {
   element: FiveElement
   rarity?: Rarity
-  size?: 'mini' | 'field'  // mini=손패, field=필드
+  size?: 'mini' | 'field' | 'hero'  // mini=손패, field=필드, hero=필드 유닛 미니 SVG (32×28px)
   cardType?: 'soldier' | 'spell'
   keywords?: string[]  // M8 P0: 실루엣 선택에 사용 (cards.ts 변경 없음)
   cost?: number        // M8 P0: 검사 실루엣 크기 조정에 사용
@@ -376,8 +376,8 @@ export default function CardArtSVG({
   cost = 3,
 }: CardArtSVGProps): React.ReactElement {
   const art = ELEMENT_ART[element]
-  const width = size === 'mini' ? 60 : 76
-  const height = size === 'mini' ? 40 : 50
+  const width = size === 'mini' ? 60 : size === 'hero' ? 32 : 76
+  const height = size === 'mini' ? 40 : size === 'hero' ? 28 : 50
 
   const PatternComponent = {
     '木': WoodPattern,
@@ -465,8 +465,8 @@ export default function CardArtSVG({
         </>
       )}
 
-      {/* 희귀도별 상단 그라디언트 바 */}
-      {rarity !== 'common' && (
+      {/* 희귀도별 상단 그라디언트 바 (hero 사이즈에서는 생략) */}
+      {rarity !== 'common' && size !== 'hero' && (
         <rect
           width="64"
           height="2"
@@ -475,8 +475,8 @@ export default function CardArtSVG({
         />
       )}
 
-      {/* legendary: 무지개 상단 바 */}
-      {rarity === 'legendary' && (
+      {/* legendary: 무지개 상단 바 (hero 사이즈에서는 생략) */}
+      {rarity === 'legendary' && size !== 'hero' && (
         <defs>
           <linearGradient id="rainbow" x1="0%" y1="0%" x2="100%" y2="0%">
             <stop offset="0%" stopColor="#FF6B35" />
@@ -487,7 +487,7 @@ export default function CardArtSVG({
           </linearGradient>
         </defs>
       )}
-      {rarity === 'legendary' && (
+      {rarity === 'legendary' && size !== 'hero' && (
         <rect width="64" height="2" fill="url(#rainbow)" fillOpacity="0.9" />
       )}
     </svg>
