@@ -155,10 +155,15 @@ describe('ALL_SAMPLE_CARDS 일관성 검증', () => {
     expect(uniqueIds.size).toBe(ids.length)
   })
 
-  it('모든 카드의 비용이 1~5 범위', () => {
+  it('모든 카드의 비용이 1 이상, Commander/Celestial 제외 최대 5', () => {
     ALL_SAMPLE_CARDS.forEach(card => {
       expect(card.cost).toBeGreaterThanOrEqual(1)
-      expect(card.cost).toBeLessThanOrEqual(5)
+      // Commander(영웅 전용 고유 유닛)와 Celestial은 4~8 비용 허용
+      if (card.cardType !== 'commander') {
+        expect(card.cost).toBeLessThanOrEqual(5)
+      } else {
+        expect(card.cost).toBeLessThanOrEqual(8)
+      }
     })
   })
 

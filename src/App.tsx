@@ -25,6 +25,7 @@ import RunStartScreen from '@/screens/RunStartScreen'
 import DailyDrawScreen from '@/screens/DailyDrawScreen'
 import DeckBuildScreen from '@/screens/DeckBuildScreen'
 import TitleScreen from '@/screens/TitleScreen'
+import HeroSelectScreen from '@/screens/HeroSelectScreen'
 import RestScreen from '@/screens/RestScreen'
 import SettingsScreen from '@/screens/SettingsScreen'
 import CollectionScreen from '@/screens/CollectionScreen'
@@ -807,6 +808,17 @@ export default function App(): React.ReactElement {
             onResetGame={() => {
               setScene('title')
             }}
+          />
+        )
+
+      case 'heroSelect':
+        return (
+          <HeroSelectScreen
+            onSelect={(_hero) => {
+              // 영웅 선택 완료 → 온보딩으로 이동 (Phase 1 기본 플로우)
+              setScene('onboarding')
+            }}
+            onCancel={() => setScene('title')}
           />
         )
 

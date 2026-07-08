@@ -105,7 +105,8 @@ describe('M8 P1: drawCards', () => {
   })
 
   it('각 카드는 유효한 rarity를 가짐', () => {
-    const VALID_RARITIES = ['common', 'uncommon', 'rare', 'legendary']
+    // Phase 1: epic, celestial 추가로 6단계 모두 유효
+    const VALID_RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'celestial']
     const cards = drawCards(3)
     cards.forEach(card => {
       expect(VALID_RARITIES).toContain(card.rarity)

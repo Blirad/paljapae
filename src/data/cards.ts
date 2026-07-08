@@ -1,13 +1,16 @@
 /**
- * 팔자패 론칭용 전체 카드 세트 — M4
- * 마스터플랜 §10 기반 73장
+ * 팔자패/운명카드전 전체 카드 세트
+ * 기존 73장 + 운명카드전 Phase 1 영웅 카드 27장 = 100장
  *
  * 분류:
  *  - 병사 카드 (오행 × 비용별): 40장
  *  - 효과 카드 (오행 × 타입별): 20장
  *  - 중립 카드: 8장
  *  - 전설 카드: 5장
- *  합계: 73장
+ *  - 지휘관 카드 (Commander): 10장
+ *  - 천상 카드 (Celestial): 1장
+ *  - 영웅 전용 common/uncommon: 16장
+ *  합계: 100장
  *
  * 밸런스 공식 (§9-1):
  *  공격력 + 체력 = (비용 × 2) + 1
@@ -15,6 +18,7 @@
  */
 
 import type { SoldierCard, SpellCard, Card } from '@/types/cards'
+import { HERO_CARDS } from './heroCards'
 
 // ────────────────────────────────────────────────────
 // 木 병사 카드 (8장)
@@ -1043,6 +1047,8 @@ export const ALL_CARDS: Card[] = [
   N01, N02, N03, N04, N05, N06, N07, N08,
   // 전설 (5장)
   LEGEND_WOOD, LEGEND_FIRE, LEGEND_EARTH, LEGEND_METAL, LEGEND_WATER,
+  // 운명카드전 Phase 1 영웅 카드 (27장)
+  ...HERO_CARDS,
 ]
 
 // ────────────────────────────────────────────────────

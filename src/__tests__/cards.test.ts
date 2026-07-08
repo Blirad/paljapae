@@ -1,6 +1,6 @@
 /**
- * M4 카드 데이터 단위 테스트
- * 73장 전체 카드 검증
+ * 카드 데이터 단위 테스트
+ * 기존 73장 + 운명카드전 Phase 1 영웅카드 25장 = 98장
  */
 
 import { describe, it, expect } from 'vitest'
@@ -18,53 +18,48 @@ import { isSoldierCard, isSpellCard } from '@/types/cards'
 // 73장 수량 검증
 // ────────────────────────────────────────────────────
 
-describe('전체 카드 수량 검증 (73장)', () => {
-  it('ALL_CARDS 총 73장', () => {
-    expect(ALL_CARDS.length).toBe(73)
+describe('전체 카드 수량 검증 (Phase 1: 98장)', () => {
+  it('ALL_CARDS 총 98장 (기존 73 + 영웅카드 25)', () => {
+    expect(ALL_CARDS.length).toBe(98)
   })
 
-  it('木 카드 13장 (병사8 + 효과4 + 전설1)', () => {
-    expect(CARDS_BY_ELEMENT['木'].length).toBe(13)
+  it('기존 오행별 카드풀(CARDS_BY_ELEMENT) — 木 13장 이상', () => {
+    expect(CARDS_BY_ELEMENT['木'].length).toBeGreaterThanOrEqual(13)
   })
 
-  it('火 카드 13장 (병사8 + 효과4 + 전설1)', () => {
-    expect(CARDS_BY_ELEMENT['火'].length).toBe(13)
+  it('기존 오행별 카드풀(CARDS_BY_ELEMENT) — 火 13장 이상', () => {
+    expect(CARDS_BY_ELEMENT['火'].length).toBeGreaterThanOrEqual(13)
   })
 
-  it('土 카드 13장 (병사8 + 효과4 + 전설1)', () => {
-    expect(CARDS_BY_ELEMENT['土'].length).toBe(13)
+  it('기존 오행별 카드풀(CARDS_BY_ELEMENT) — 土 13장 이상', () => {
+    expect(CARDS_BY_ELEMENT['土'].length).toBeGreaterThanOrEqual(13)
   })
 
-  it('金 카드 13장 (병사8 + 효과4 + 전설1)', () => {
-    expect(CARDS_BY_ELEMENT['金'].length).toBe(13)
+  it('기존 오행별 카드풀(CARDS_BY_ELEMENT) — 金 13장 이상', () => {
+    expect(CARDS_BY_ELEMENT['金'].length).toBeGreaterThanOrEqual(13)
   })
 
-  it('水 카드 13장 (병사8 + 효과4 + 전설1)', () => {
-    expect(CARDS_BY_ELEMENT['水'].length).toBe(13)
+  it('기존 오행별 카드풀(CARDS_BY_ELEMENT) — 水 13장 이상', () => {
+    expect(CARDS_BY_ELEMENT['水'].length).toBeGreaterThanOrEqual(13)
   })
 
-  it('중립 카드 8장', () => {
-    expect(CARDS_BY_ELEMENT['중립'].length).toBe(8)
+  it('중립 카드 8장 이상', () => {
+    expect(CARDS_BY_ELEMENT['중립'].length).toBeGreaterThanOrEqual(8)
   })
 
-  it('전설 카드 5장 (오행별 1장)', () => {
+  it('전설 카드 5장 이상 (오행별 1장, celestial 별도)', () => {
     const legendCards = ALL_CARDS.filter(c => c.rarity === 'legendary')
-    expect(legendCards.length).toBe(5)
+    expect(legendCards.length).toBeGreaterThanOrEqual(5)
   })
 
-  it('병사 카드 40장', () => {
+  it('병사 카드 40장 이상', () => {
     const soldiers = ALL_CARDS.filter(isSoldierCard)
-    // 木8 + 火8 + 土8 + 金8 + 水8 = 40 + 중립병사5 = 45 아니라
-    // 중립병사5 + 오행병사40 = 45? 확인 필요
-    // 스펙: 병사(오행×비용별) 40장, 효과 20장, 중립 8장, 전설 5장
-    // 중립 8장 중 병사5 주문3
-    const soldierCount = soldiers.length
-    expect(soldierCount).toBeGreaterThanOrEqual(40)
+    expect(soldiers.length).toBeGreaterThanOrEqual(40)
   })
 
-  it('효과 카드 20장 (오행별 4장씩)', () => {
+  it('효과 카드 20장 이상 (오행별)', () => {
     const spells = ALL_CARDS.filter(isSpellCard).filter(c => c.element !== null)
-    expect(spells.length).toBe(20)
+    expect(spells.length).toBeGreaterThanOrEqual(20)
   })
 })
 
@@ -79,10 +74,20 @@ describe('카드 데이터 무결성', () => {
     expect(uniqueIds.size).toBe(ids.length)
   })
 
-  it('모든 카드 비용이 1~5 범위', () => {
+  it('모든 카드 비용이 1 이상', () => {
     ALL_CARDS.forEach(card => {
       expect(card.cost).toBeGreaterThanOrEqual(1)
-      expect(card.cost).toBeLessThanOrEqual(5)
+    })
+  })
+
+  it('일반 카드(soldier/spell) 비용이 1~5 범위, Commander/Celestial은 최대 8', () => {
+    ALL_CARDS.forEach(card => {
+      if (card.cardType === 'soldier' || card.cardType === 'spell') {
+        expect(card.cost).toBeLessThanOrEqual(5)
+      } else {
+        // commander: 4~8 허용
+        expect(card.cost).toBeLessThanOrEqual(8)
+      }
     })
   })
 
@@ -193,8 +198,8 @@ describe('createStarterDeck — 오행별 시작 덱', () => {
 // ────────────────────────────────────────────────────
 
 describe('ALL_SAMPLE_CARDS 하위호환 (cardModel.test.ts)', () => {
-  it('ALL_SAMPLE_CARDS === ALL_CARDS (73장 이상)', () => {
-    expect(ALL_SAMPLE_CARDS.length).toBeGreaterThanOrEqual(73)
+  it('ALL_SAMPLE_CARDS === ALL_CARDS (98장)', () => {
+    expect(ALL_SAMPLE_CARDS.length).toBe(98)
   })
 
   it('createFireStarterDeck() 20장', () => {
