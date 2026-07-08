@@ -32,7 +32,9 @@ import { useStageStore } from '@/stores/stageStore'
 import { useUnlockStore } from '@/stores/unlockStore'
 import { useRelicStore } from '@/stores/relicStore'
 import { useOnboardingStore, HERO_DATA } from '@/game/store/onboardingStore'
+import { calculateImbalance } from '@/game/saju/sajuImbalance'
 import type { FiveElement } from '@/types/elements'
+import type { ImbalanceTier } from '@/game/saju/sajuImbalance'
 import type { EventResult } from '@/data/events'
 import type { RelicId } from '@/types/relics'
 import {
@@ -182,6 +184,8 @@ interface GameContext {
   heroMaxHp: number
   currentStageId: number | null
   gold?: number
+  /** 플레이어 사주 오행 불균형 티어 (온보딩 완료 시 설정) */
+  playerImbalanceTier?: ImbalanceTier
 }
 
 const DEFAULT_CONTEXT: GameContext = {
@@ -276,6 +280,10 @@ export default function App(): React.ReactElement {
     // 이전 런의 localStorage 금고 값 초기화 (스펙 §3-4 MOD-03)
     saveGold(0)
 
+    // Phase 1-A: 불균형 티어 계산 (elementScore가 없으면 moderate 기본값 사용)
+    const defaultScore = { 木: 0, 火: 6, 土: 0, 金: 0, 水: 0 }  // fallback: moderate
+    const imbalanceResult = calculateImbalance(result.elementScore ?? defaultScore)
+
     setCtx({
       playerElement: result.primaryElement,
       heroName: heroData.name,
@@ -283,6 +291,7 @@ export default function App(): React.ReactElement {
       heroMaxHp: 30,
       currentStageId: null,
       gold: 0,
+      playerImbalanceTier: imbalanceResult.tier,
     })
     // M8: 난이도 선택 화면으로 이동
     setScene('runStart')

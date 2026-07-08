@@ -44,9 +44,10 @@ export default function OnboardingFlow({ onGameStart }: OnboardingFlowProps): Re
   const handleStart = useCallback(() => {
     if (!sajuResult) return
 
-    const { primaryElement } = sajuResult
+    const { primaryElement, elementScore } = sajuResult
     const hero = HERO_DATA[primaryElement]
-    const deck = createStartingDeck(primaryElement)
+    // Phase 1-A: elementScore를 전달하여 불균형 tier 기반 덱 구성
+    const deck = createStartingDeck(primaryElement, elementScore)
 
     setOnboardingResult({
       birthYear: 0,
@@ -55,6 +56,7 @@ export default function OnboardingFlow({ onGameStart }: OnboardingFlowProps): Re
       primaryElement,
       hero,
       startingDeck: deck,
+      elementScore,
     })
 
     onGameStart()
@@ -94,7 +96,7 @@ export default function OnboardingFlow({ onGameStart }: OnboardingFlowProps): Re
   }
 
   if (step === 4 && sajuResult) {
-    const deck = createStartingDeck(sajuResult.primaryElement)
+    const deck = createStartingDeck(sajuResult.primaryElement, sajuResult.elementScore)
     return (
       <OnboardingScreen4
         primaryElement={sajuResult.primaryElement}

@@ -3,7 +3,7 @@
  * 리라 스펙 v1.0 기반
  */
 
-import type { FiveElement } from './elements'
+import type { FiveElement, ElementScore } from './elements'
 import type { Card } from './cards'
 
 /** 온보딩 화면 번호 (1~4) */
@@ -28,4 +28,6 @@ export interface OnboardingResult {
   primaryElement: FiveElement
   hero: HeroData
   startingDeck: Card[]
+  /** 오행 점수 분포 (Phase 1-A: 불균형 지수 계산 입력용) */
+  elementScore?: ElementScore
 }

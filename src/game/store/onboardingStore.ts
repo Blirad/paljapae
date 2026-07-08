@@ -114,22 +114,135 @@ export const DECK_FLAVOR: Record<FiveElement, string> = {
   水: '운명이 이미 카드를 골랐습니다. 뭔가 복잡해 보이지만 일단 해보세요.',
 }
 
-/** 오행별 시작 덱 생성 (마스터플랜 §5-4: 主 12 + 상생 6 + 중립 2) */
-export function createStartingDeck(element: FiveElement): Card[] {
-  // 동적 import 대신 직접 sampleCards에서 생성
-  // 각 오행별 카드를 조합 (M1 sampleCards 활용)
-  return getStartingDeckForElement(element)
+/**
+ * 오행별 시작 덱 생성 — Phase 1-A: 불균형 지수 연동
+ *
+ * elementScore가 없을 경우 기존 moderate(主 12 + 상생 6 + 중립 2) 동작 유지.
+ * elementScore가 있을 경우 불균형 지수 계산 후 3단계 분기:
+ *   extreme (σ>1.5 or R≥0.7): 주 14 + 부 4 + 중립 2 = 20
+ *   moderate (σ 0.6~1.5)     : 주 12 + 부 6 + 중립 2 = 20
+ *   balanced (σ<0.6)         : 균등 배분(상위 3×4 + 하위 2×3) + 중립 2 = 20
+ */
+export function createStartingDeck(
+  element: FiveElement,
+  elementScore?: Record<FiveElement, number>,
+): Card[] {
+  if (!elementScore) {
+    // 기존 동작 유지 (moderate)
+    return getStartingDeckForElement(element)
+  }
+
+  const { tier, dominantElement } = calculateImbalance(elementScore)
+  return getStartingDeckByTier(dominantElement, tier, elementScore)
 }
 
 import {
-  W01, W02, W03, W04, W05,
-  F01, F02, F03, F04, F06, LEGEND_FIRE,
-  T01, T02, T03,
-  G01, G04, G05,
-  H01, H03, H04, LEGEND_WATER,
+  W01, W02, W03, W04, W05, W07, W08,
+  F01, F02, F03, F04, F06, F07, F08, LEGEND_FIRE,
+  T01, T02, T03, T04, T05,
+  G01, G04, G05, G06, G07,
+  H01, H03, H04, H05, H06, LEGEND_WATER,
   N01, N02,
 } from '@/data/sampleCards'
 import type { Card as CardType } from '@/types/cards'
+import { calculateImbalance } from '@/game/saju/sajuImbalance'
+import type { ImbalanceTier } from '@/game/saju/sajuImbalance'
+
+// ────────────────────────────────────────────────────
+// 오행별 덱 카드 풀 (extreme: 주 14장에 충분한 카드 확보)
+// ────────────────────────────────────────────────────
+
+/** 오행별 주 카드 풀 (최대 14장 공급 가능) */
+const PRIMARY_CARD_POOL: Record<FiveElement, CardType[]> = {
+  木: [
+    W01, { ...W01, id: 'W-01b' }, { ...W01, id: 'W-01c' },
+    W02, { ...W02, id: 'W-02b' }, { ...W02, id: 'W-02c' },
+    W03, { ...W03, id: 'W-03b' }, { ...W03, id: 'W-03c' },
+    W04, { ...W04, id: 'W-04b' }, { ...W04, id: 'W-04c' },
+    W05, { ...W05, id: 'W-05b' },
+  ],
+  火: [
+    F01, { ...F01, id: 'F-01b' }, { ...F01, id: 'F-01c' },
+    F02, { ...F02, id: 'F-02b' }, { ...F02, id: 'F-02c' },
+    F03, { ...F03, id: 'F-03b' }, { ...F03, id: 'F-03c' },
+    F04, { ...F04, id: 'F-04b' }, { ...F04, id: 'F-04c' },
+    F06, { ...F06, id: 'F-06b' },
+    LEGEND_FIRE, { ...F01, id: 'F-01d' },
+  ],
+  土: [
+    T01, { ...T01, id: 'T-01b' }, { ...T01, id: 'T-01c' }, { ...T01, id: 'T-01d' },
+    T02, { ...T02, id: 'T-02b' }, { ...T02, id: 'T-02c' }, { ...T02, id: 'T-02d' },
+    T03, { ...T03, id: 'T-03b' }, { ...T03, id: 'T-03c' }, { ...T03, id: 'T-03d' },
+    T04, { ...T04, id: 'T-04b' },
+  ],
+  金: [
+    G01, { ...G01, id: 'G-01b' }, { ...G01, id: 'G-01c' }, { ...G01, id: 'G-01d' },
+    G04, { ...G04, id: 'G-04b' }, { ...G04, id: 'G-04c' }, { ...G04, id: 'G-04d' },
+    G05, { ...G05, id: 'G-05b' }, { ...G05, id: 'G-05c' }, { ...G05, id: 'G-05d' },
+    G06, { ...G06, id: 'G-06b' },
+    G07, { ...G07, id: 'G-07b' },
+  ],
+  水: [
+    H01, { ...H01, id: 'H-01b' }, { ...H01, id: 'H-01c' }, { ...H01, id: 'H-01d' },
+    H03, { ...H03, id: 'H-03b' }, { ...H03, id: 'H-03c' }, { ...H03, id: 'H-03d' },
+    H04, { ...H04, id: 'H-04b' }, { ...H04, id: 'H-04c' }, { ...H04, id: 'H-04d' },
+    LEGEND_WATER, { ...H04, id: 'H-04e' },
+    H05, { ...H05, id: 'H-05b' },
+  ],
+}
+
+/** 오행별 상생 부 카드 풀 (최대 6장 공급 가능) */
+const SECONDARY_CARD_POOL: Record<FiveElement, CardType[]> = {
+  // 水→木 상생
+  木: [
+    H01, { ...H01, id: 'Hx-01' },
+    H04, { ...H04, id: 'Hx-04' },
+    H03, { ...H03, id: 'Hx-03' },
+    H05, { ...H05, id: 'Hx-05' },
+    H06, { ...H06, id: 'Hx-06' },
+    { ...H01, id: 'Hx-01b' },
+  ],
+  // 木→火 상생
+  火: [
+    W01, { ...W01, id: 'Wx-01' },
+    W05, { ...W05, id: 'Wx-05' },
+    W02, { ...W02, id: 'Wx-02' },
+    W03, { ...W03, id: 'Wx-03' },
+    W07, { ...W07, id: 'Wx-07' },
+    W08, { ...W08, id: 'Wx-08' },
+  ],
+  // 火→土 상생
+  土: [
+    F01, { ...F01, id: 'Fx-01' },
+    F02, { ...F02, id: 'Fx-02' },
+    F06, { ...F06, id: 'Fx-06' },
+    F07, { ...F07, id: 'Fx-07' },
+    F08, { ...F08, id: 'Fx-08' },
+    T05, { ...T05, id: 'Tx-05' },
+  ],
+  // 土→金 상생
+  金: [
+    T01, { ...T01, id: 'Tx-01' },
+    T02, { ...T02, id: 'Tx-02' },
+    T03, { ...T03, id: 'Tx-03' },
+    T04, { ...T04, id: 'Tx-04' },
+    T05, { ...T05, id: 'Tx-05b' },
+    G07, { ...G07, id: 'Gx-07' },
+  ],
+  // 金→水 상생
+  水: [
+    G01, { ...G01, id: 'Gx-01' },
+    G04, { ...G04, id: 'Gx-04' },
+    G05, { ...G05, id: 'Gx-05' },
+    G06, { ...G06, id: 'Gx-06' },
+    G07, { ...G07, id: 'Gx-07b' },
+    { ...G01, id: 'Gx-01b' },
+  ],
+}
+
+const NEUTRAL_POOL: CardType[] = [N01, N02]
+
+const FIVE_ELEMENTS: FiveElement[] = ['木', '火', '土', '金', '水']
 
 function getStartingDeckForElement(element: FiveElement): CardType[] {
   switch (element) {
@@ -212,4 +325,62 @@ function getStartingDeckForElement(element: FiveElement): CardType[] {
         N01, N02,
       ]
   }
+}
+
+/**
+ * 불균형 tier에 따른 시작 덱 구성 (Phase 1-A)
+ *
+ * extreme: 주 14장 + 부 4장 + 중립 2장 = 20장
+ * moderate: 주 12장 + 부 6장 + 중립 2장 = 20장
+ * balanced: 상위 3오행×4장 + 하위 2오행×3장 + 중립 2장 = 20장
+ */
+function getStartingDeckByTier(
+  dominantElement: FiveElement,
+  tier: ImbalanceTier,
+  elementScore: Record<FiveElement, number>,
+): CardType[] {
+  const primaryPool = PRIMARY_CARD_POOL[dominantElement]
+  const secondaryPool = SECONDARY_CARD_POOL[dominantElement]
+
+  if (tier === 'extreme') {
+    // 주 14장 + 부 4장 + 중립 2장
+    return [
+      ...primaryPool.slice(0, 14),
+      ...secondaryPool.slice(0, 4),
+      ...NEUTRAL_POOL,
+    ]
+  }
+
+  if (tier === 'moderate') {
+    // 주 12장 + 부 6장 + 중립 2장
+    return [
+      ...primaryPool.slice(0, 12),
+      ...secondaryPool.slice(0, 6),
+      ...NEUTRAL_POOL,
+    ]
+  }
+
+  // balanced: 오행별 점수 순으로 정렬 후 상위 3개 × 4장 + 하위 2개 × 3장 + 중립 2장
+  const sorted = [...FIVE_ELEMENTS].sort(
+    (a, b) => elementScore[b] - elementScore[a] || FIVE_ELEMENTS.indexOf(a) - FIVE_ELEMENTS.indexOf(b),
+  )
+  const top3 = sorted.slice(0, 3)
+  const bottom2 = sorted.slice(3, 5)
+
+  const deck: CardType[] = []
+
+  // 상위 3개 오행: 각 4장
+  for (const el of top3) {
+    deck.push(...PRIMARY_CARD_POOL[el].slice(0, 4))
+  }
+
+  // 하위 2개 오행: 각 3장
+  for (const el of bottom2) {
+    deck.push(...PRIMARY_CARD_POOL[el].slice(0, 3))
+  }
+
+  // 중립 2장
+  deck.push(...NEUTRAL_POOL)
+
+  return deck  // 4×3 + 3×2 + 2 = 12 + 6 + 2 = 20장
 }
