@@ -7,7 +7,6 @@
 import React, { useState, useEffect } from 'react'
 import type { FiveElement } from '@/types/elements'
 import { ELEMENT_DISPLAY } from '@/types/elements'
-import { clearAllProgress } from '@/utils/persistence'
 import SecondaryButton from '@/components/ui/SecondaryButton'
 
 interface EndingScreenProps {
@@ -37,7 +36,7 @@ export default function EndingScreen({
   }, [])
 
   function handleRestart(): void {
-    clearAllProgress()
+    // ★ clearAllProgress는 App.tsx RunSummary에서 처리
     onRestart()
   }
 

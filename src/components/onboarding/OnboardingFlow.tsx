@@ -4,6 +4,7 @@
  * 온보딩 완료 시 Zustand onboardingStore + gameStore에 결과 저장
  */
 import React, { useState, useCallback } from 'react'
+import OnboardingStep0 from './OnboardingStep0'
 import OnboardingScreen1 from './OnboardingScreen1'
 import OnboardingScreen2 from './OnboardingScreen2'
 import OnboardingScreen3 from './OnboardingScreen3'
@@ -15,13 +16,13 @@ interface OnboardingFlowProps {
   onGameStart: () => void
 }
 
-type Step = 1 | 2 | 3 | 4
+type Step = 0 | 1 | 2 | 3 | 4
 
 const CURRENT_YEAR = new Date().getFullYear()
 const DEFAULT_YEAR = CURRENT_YEAR - 25
 
 export default function OnboardingFlow({ onGameStart }: OnboardingFlowProps): React.ReactElement {
-  const [step, setStep] = useState<Step>(1)
+  const [step, setStep] = useState<Step>(0)
   const [sajuResult, setSajuResult] = useState<SajuResult | null>(null)
   const [_pillars, setPillars] = useState<ThreePillars | null>(null)
   const setOnboardingResult = useOnboardingStore(s => s.setOnboardingResult)
@@ -58,6 +59,10 @@ export default function OnboardingFlow({ onGameStart }: OnboardingFlowProps): Re
 
     onGameStart()
   }, [sajuResult, setOnboardingResult, onGameStart])
+
+  if (step === 0) {
+    return <OnboardingStep0 onNext={() => setStep(1)} />
+  }
 
   if (step === 1) {
     return (

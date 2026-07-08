@@ -3,7 +3,8 @@
  * 리라 스펙 §3
  * ⚠️ W4 필수: "약식 사주(생년월일 기준)" 명시 포함
  */
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
+import gsap from 'gsap'
 import PrimaryButton from '@/components/ui/PrimaryButton'
 import Divider from '@/components/ui/Divider'
 import type { SajuResult } from '@/game/saju/manseryeok'
@@ -53,6 +54,11 @@ export default function OnboardingScreen2({ sajuResult, onNext }: OnboardingScre
   // 진입 애니메이션 단계
   const [animStep, setAnimStep] = useState(0)
 
+  // GSAP refs — 주 오행 강조용
+  const primaryIconRef = useRef<HTMLDivElement>(null)
+  const primaryTextRef = useRef<HTMLDivElement>(null)
+  const barRefs = useRef<(HTMLDivElement | null)[]>([])
+
   useEffect(() => {
     const timings = [100, 500, 900, 1200]
     const timers = timings.map((delay, i) =>
@@ -60,6 +66,48 @@ export default function OnboardingScreen2({ sajuResult, onNext }: OnboardingScre
     )
     return () => timers.forEach(clearTimeout)
   }, [])
+
+  // animStep 4 도달 시 GSAP 주 오행 강조
+  useEffect(() => {
+    if (animStep < 4) return
+
+    // 주 오행 아이콘 scale bounce
+    if (primaryIconRef.current) {
+      gsap.to(primaryIconRef.current, {
+        scale: 1.3,
+        duration: 0.2,
+        yoyo: true,
+        repeat: 1,
+        ease: 'power2.inOut',
+      })
+    }
+
+    // 주 오행 텍스트 등장
+    if (primaryTextRef.current) {
+      gsap.from(primaryTextRef.current, {
+        opacity: 0,
+        y: 20,
+        duration: 0.5,
+        ease: 'power2.out',
+      })
+    }
+
+    // 각 오행 바 glow 효과
+    barRefs.current.forEach((barEl, idx) => {
+      if (!barEl) return
+      const elKey = ELEMENT_ORDER[idx]
+      const elColor = ELEMENT_DISPLAY[elKey].color
+      gsap.fromTo(
+        barEl,
+        { boxShadow: 'none' },
+        {
+          boxShadow: `0 0 12px ${elColor}`,
+          duration: 0.3,
+          delay: idx * 0.1,
+        }
+      )
+    })
+  }, [animStep])
 
   // 바 차트 너비 (진입 후 표시)
   const barsVisible = animStep >= 4
@@ -126,6 +174,7 @@ export default function OnboardingScreen2({ sajuResult, onNext }: OnboardingScre
           }}
         >
           <div
+            ref={primaryIconRef}
             style={{
               fontSize: '80px',
               lineHeight: 1,
@@ -138,6 +187,7 @@ export default function OnboardingScreen2({ sajuResult, onNext }: OnboardingScre
             {display.icon}
           </div>
           <div
+            ref={primaryTextRef}
             style={{
               fontFamily: 'var(--font-serif)',
               fontWeight: 700,
@@ -293,6 +343,7 @@ export default function OnboardingScreen2({ sajuResult, onNext }: OnboardingScre
                     }}
                   >
                     <div
+                      ref={r => { barRefs.current[idx] = r }}
                       style={{
                         height: '100%',
                         width: barsVisible ? `${pct}%` : '0%',

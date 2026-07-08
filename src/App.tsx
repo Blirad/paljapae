@@ -14,6 +14,7 @@ import StartScreen from '@/screens/StartScreen'
 import CardRewardScreen from '@/screens/CardRewardScreen'
 import EndingScreen from '@/screens/EndingScreen'
 import DefeatScreen from '@/screens/DefeatScreen'
+import RunSummaryScreen from '@/screens/RunSummaryScreen'
 import RemoveCardScreen from '@/screens/RemoveCardScreen'
 import UpgradeCardScreen from '@/screens/UpgradeCardScreen'
 import EventScreen from '@/screens/EventScreen'
@@ -23,6 +24,7 @@ import RelicAcquirePopup from '@/components/ui/RelicAcquirePopup'
 import RunStartScreen from '@/screens/RunStartScreen'
 import DailyDrawScreen from '@/screens/DailyDrawScreen'
 import DeckBuildScreen from '@/screens/DeckBuildScreen'
+import TitleScreen from '@/screens/TitleScreen'
 import { hasDrawnToday } from '@/game/hooks/useDailyDraw'
 import { useChallengeStore } from '@/stores/challengeStore'
 import { CHALLENGE_RULES } from '@/types/challengeMode'
@@ -142,16 +144,31 @@ class GameErrorBoundary extends Component<
 // Scene 타입
 // ────────────────────────────────────────────────────
 
-type AppScene = 'start' | 'onboarding' | 'runStart' | 'dailyDraw' | 'worldMap' | 'battle' | 'cardReward' | 'ending' | 'defeat' | 'removeCard' | 'upgrade' | 'event' | 'shop' | 'deckBuild'
+type AppScene =
+  | 'title'        // 신규 — 앱 최초 진입 타이틀 화면
+  | 'start'        // 기존 — 기존 유저 로비 (StartScreen 개편)
+  | 'onboarding'   // 기존
+  | 'runStart'     // 기존
+  | 'dailyDraw'    // 기존
+  | 'worldMap'     // 기존
+  | 'battle'       // 기존
+  | 'cardReward'   // 기존
+  | 'ending'       // 기존
+  | 'defeat'       // 기존
+  | 'removeCard'   // 기존
+  | 'upgrade'      // 기존
+  | 'event'        // 기존
+  | 'shop'         // 기존
+  | 'deckBuild'    // 기존
+  | 'heroSelect'   // 신규 — 타입 선언만, Phase B 구현
+  | 'rest'         // 신규 — 타입 선언만, Phase B 구현
+  | 'runSummary'   // 신규 — 타입 선언만, Phase B 구현
+  | 'collection'   // 신규 — 타입 선언만, Phase B 구현
+  | 'settings'     // 신규 — 타입 선언만, Phase B 구현
 
-/** 앱 초기 scene 결정 (리라 M5 스펙 §2-1) */
+/** 앱 초기 scene 결정 — 항상 타이틀 화면에서 시작 (리라 Phase A 스펙 §A-4) */
 function getInitialScene(): AppScene {
-  try {
-    if (hasSaveData()) return 'start'
-  } catch {
-    // localStorage 접근 불가 시 온보딩으로
-  }
-  return 'onboarding'
+  return 'title'  // 항상 타이틀 화면에서 시작
 }
 
 // ────────────────────────────────────────────────────
@@ -184,6 +201,8 @@ export default function App(): React.ReactElement {
   const [ctx, setCtx] = useState<GameContext>(DEFAULT_CONTEXT)
   // P0-A: 패배 시 stagesCleared 캡처 (리셋 후 0이 되므로 미리 보존)
   const [defeatStagesCleared, setDefeatStagesCleared] = useState<number>(0)
+  // Phase B: RunSummary 결과 타입 (victory | defeat)
+  const [runSummaryResult, setRunSummaryResult] = useState<'victory' | 'defeat'>('defeat')
   // P1-B: 업그레이드 노드 cleared 상태 (런당 1회, localStorage 저장 불필요)
   const [upgradeNodeCleared, setUpgradeNodeCleared] = useState<boolean>(false)
   // P2: 이벤트 노드 cleared 상태 (런당 1회)
@@ -217,6 +236,20 @@ export default function App(): React.ReactElement {
   const relicAddRelic = useRelicStore(s => s.addRelic)
 
   const challengeResetChallenge = useChallengeStore(s => s.resetChallenge)
+
+  // ─── Title → StartScreen or Onboarding ──────────
+
+  const handleContinueFromTitle = useCallback(() => {
+    try {
+      if (hasSaveData()) {
+        setScene('start')
+      } else {
+        setScene('onboarding')
+      }
+    } catch {
+      setScene('onboarding')
+    }
+  }, [])
 
   // ─── 온보딩 완료 → WorldMap ───────────────────────
 
@@ -369,17 +402,10 @@ export default function App(): React.ReactElement {
   const handleBattleDefeat = useCallback(() => {
     const capturedStagesCleared = stageClearedStageIds.size
     setDefeatStagesCleared(capturedStagesCleared)
-    clearAllProgress()
-    stageResetProgress()
-    unlockResetUnlocks()
-    relicResetRelics()
-    challengeResetChallenge()
-    setUpgradeNodeCleared(false)
-    setEventNodeCleared(false)
-    setShopNodeCleared(false)
-    setCtx(prev => ({ ...prev, gold: 0 }))
-    setScene('defeat')
-  }, [stageClearedStageIds, stageResetProgress, unlockResetUnlocks, relicResetRelics, challengeResetChallenge])
+    // ★ clearAllProgress 및 리셋은 RunSummary 이후 사용자 선택 시 처리
+    setRunSummaryResult('defeat')
+    setScene('runSummary')
+  }, [stageClearedStageIds])
 
   // ─── CardReward 완료 → WorldMap ───────────────────
 
@@ -512,16 +538,11 @@ export default function App(): React.ReactElement {
   // ─── Ending → Onboarding ──────────────────────────
 
   const handleRestart = useCallback(() => {
-    stageResetProgress()
-    unlockResetUnlocks()
-    relicResetRelics()
-    challengeResetChallenge()
-    setUpgradeNodeCleared(false)
-    setEventNodeCleared(false)
-    setShopNodeCleared(false)
-    setCtx(prev => ({ ...prev, gold: 0 }))
-    setScene('onboarding')
-  }, [stageResetProgress, unlockResetUnlocks, relicResetRelics, challengeResetChallenge])
+    // ★ 리셋은 RunSummary 이후 사용자 선택 시 처리
+    setRunSummaryResult('victory')
+    setDefeatStagesCleared(stageClearedStageIds.size)
+    setScene('runSummary')
+  }, [stageClearedStageIds])
 
   // ErrorBoundary 리셋: 모든 진행 초기화 후 onboarding으로
   const handleErrorReset = useCallback(() => {
@@ -537,12 +558,21 @@ export default function App(): React.ReactElement {
 
   function renderScene(): React.ReactElement {
     switch (scene) {
+      case 'title':
+        return (
+          <TitleScreen
+            onExistingUser={handleContinueFromTitle}
+            onNewUser={() => setScene('onboarding')}
+          />
+        )
+
       case 'start':
         return (
           <StartScreen
             onContinue={handleContinue}
             onNewGame={handleNewGame}
             onDeckBuild={() => setScene('deckBuild')}
+            onDailyDraw={() => setScene('dailyDraw')}
           />
         )
 
@@ -693,6 +723,42 @@ export default function App(): React.ReactElement {
             totalAttempts={stageClearedStageIds.size}
             unlockedCount={unlockOwnedCardIds.size}
             onRestart={handleRestart}
+          />
+        )
+
+      case 'runSummary':
+        return (
+          <RunSummaryScreen
+            result={runSummaryResult}
+            heroName={ctx.heroName}
+            playerElement={ctx.playerElement}
+            stagesCleared={defeatStagesCleared}
+            totalTurns={0}
+            cardsAcquired={unlockOwnedCardIds.size}
+            onNewRun={() => {
+              clearAllProgress()
+              stageResetProgress()
+              unlockResetUnlocks()
+              relicResetRelics()
+              challengeResetChallenge()
+              setUpgradeNodeCleared(false)
+              setEventNodeCleared(false)
+              setShopNodeCleared(false)
+              setCtx(prev => ({ ...prev, gold: 0 }))
+              setScene('runStart')
+            }}
+            onLobby={() => {
+              // 사주 데이터 유지, 런 데이터만 리셋
+              stageResetProgress()
+              unlockResetUnlocks()
+              relicResetRelics()
+              challengeResetChallenge()
+              setUpgradeNodeCleared(false)
+              setEventNodeCleared(false)
+              setShopNodeCleared(false)
+              setCtx(prev => ({ ...prev, gold: 0 }))
+              setScene('start')
+            }}
           />
         )
 

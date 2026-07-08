@@ -1,12 +1,10 @@
 /**
- * StartScreen — 재방문 시작 화면 (M5 신규)
- * 리라 M5 스펙 §2 기준
- * Momentor 디자인 시스템 전면 적용 (2026-07-05)
+ * StartScreen — 게임 로비 (Phase A 전면 개편)
+ * 리라 스펙 LYRA_GAMEFLOW_PHASE_A_20260708.md §A-2
  *
- * 진입 조건: localStorage에 저장 데이터 있을 때만 표시
- * 분기:
- *   이어하기 → WorldMapScreen
- *   새 게임 시작 → 확인 모달 → OnboardingFlow
+ * 단순 메뉴 → 영웅 프로필 + 4버튼 그리드 + 일일 운세
+ * 기존 props (onContinue, onNewGame, onDeckBuild) 유지
+ * 신규 prop: onDailyDraw
  */
 
 import React, { useState, useEffect } from 'react'
@@ -18,66 +16,34 @@ import {
   loadSaveTimestamp,
   loadClearedStageIds,
   loadOwnedCardIds,
-  relativeTime,
   clearAllProgress,
 } from '@/utils/persistence'
-import PrimaryButton from '@/components/ui/PrimaryButton'
+import { useUnlockStore } from '@/stores/unlockStore'
+import { calculateSaju } from '@/game/saju/manseryeok'
+import CardArtSVG from '@/components/battle/CardArtSVG'
 import SecondaryButton from '@/components/ui/SecondaryButton'
 
 // ────────────────────────────────────────────────────
-// HeroHpBar
+// hexToRgb 유틸
 // ────────────────────────────────────────────────────
 
-interface HeroHpBarProps {
-  current: number
-  max: number
-  heroName: string
+function hexToRgb(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `${r}, ${g}, ${b}`
 }
 
-function HeroHpBar({ current, max, heroName }: HeroHpBarProps): React.ReactElement {
-  const ratio = max > 0 ? current / max : 0
-  const hpColor =
-    ratio > 0.6
-      ? 'var(--gold)'
-      : ratio > 0.3
-      ? 'var(--el-earth)'
-      : 'var(--el-fire)'
+// ────────────────────────────────────────────────────
+// 오행 → 영웅 실루엣 키워드 매핑
+// ────────────────────────────────────────────────────
 
-  return (
-    <div
-      role="progressbar"
-      aria-valuenow={current}
-      aria-valuemin={0}
-      aria-valuemax={max}
-      aria-label={`${heroName} HP ${current}/${max}`}
-      style={{ width: '100%' }}
-    >
-      {/* 트랙 */}
-      <div style={{
-        width: '100%',
-        height: 6,
-        background: 'var(--border)',
-        overflow: 'hidden',
-      }}>
-        {/* 바 */}
-        <div style={{
-          width: `${ratio * 100}%`,
-          height: '100%',
-          background: hpColor,
-          transition: 'width 0.4s ease-out, background-color 0.5s',
-        }} />
-      </div>
-      <div style={{
-        marginTop: 4,
-        fontFamily: 'var(--font-mono)',
-        fontSize: 11,
-        color: 'var(--text-muted)',
-        textAlign: 'right',
-      }}>
-        {current}/{max}
-      </div>
-    </div>
-  )
+const ELEMENT_TO_HERO_KEYWORDS: Record<FiveElement, string[]> = {
+  '火': ['rush'],
+  '水': ['freeze'],
+  '木': ['lifesteal'],
+  '金': ['pierce'],
+  '土': ['taunt'],
 }
 
 // ────────────────────────────────────────────────────
@@ -127,7 +93,6 @@ function NewGameConfirmModal({ onConfirm, onCancel }: NewGameConfirmModalProps):
             fontStyle: 'italic',
             fontSize: 18,
             color: 'var(--text-headline)',
-            marginBottom: 12,
             margin: '0 0 12px',
           }}
         >
@@ -138,7 +103,6 @@ function NewGameConfirmModal({ onConfirm, onCancel }: NewGameConfirmModalProps):
           fontSize: 13,
           color: 'var(--text-secondary)',
           lineHeight: 1.6,
-          marginBottom: 20,
           margin: '0 0 20px',
         }}>
           기존 진행 데이터가 모두 삭제됩니다.<br />
@@ -174,7 +138,180 @@ function NewGameConfirmModal({ onConfirm, onCancel }: NewGameConfirmModalProps):
 }
 
 // ────────────────────────────────────────────────────
-// StartScreen 저장 데이터 타입
+// HeroProfileCard
+// ────────────────────────────────────────────────────
+
+interface HeroProfileCardProps {
+  element: FiveElement
+  heroName: string
+  ownedCardCount: number
+  highestStage: number | null
+}
+
+function HeroProfileCard({ element, heroName, ownedCardCount, highestStage }: HeroProfileCardProps): React.ReactElement {
+  const display = ELEMENT_DISPLAY[element]
+
+  return (
+    <div style={{
+      background: 'var(--surface)',
+      border: '1px solid var(--border-gold)',
+      padding: 16,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 16,
+      boxShadow: `inset 3px 0 0 ${display.color}, 0 0 20px rgba(${hexToRgb(display.color)}, 0.1)`,
+    }}>
+      {/* 영웅 SVG 아트 */}
+      <div style={{
+        width: 64,
+        height: 58,
+        flexShrink: 0,
+        borderRadius: 4,
+        overflow: 'hidden',
+        background: display.gradient,
+      }}>
+        <CardArtSVG
+          element={element}
+          rarity="common"
+          size="mini"
+          cardType="soldier"
+          keywords={ELEMENT_TO_HERO_KEYWORDS[element]}
+        />
+      </div>
+
+      {/* 정보 영역 */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontFamily: 'var(--font-serif)',
+          fontStyle: 'italic',
+          fontSize: 16,
+          color: 'var(--text-headline)',
+          marginBottom: 4,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}>
+          {heroName}
+        </div>
+        <div style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 12,
+          color: display.color,
+          marginBottom: 8,
+        }}>
+          내 천명: {element} {display.icon}
+        </div>
+        <div style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 11,
+          color: 'var(--text-secondary)',
+          display: 'flex',
+          gap: 16,
+        }}>
+          <span>보유 카드: {ownedCardCount}장</span>
+          <span>최고 스테이지: {highestStage !== null ? highestStage : '-'}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────
+// LobbyButton
+// ────────────────────────────────────────────────────
+
+interface LobbyButtonProps {
+  icon: string
+  label: string
+  onClick: () => void
+  disabled?: boolean
+  accentColor?: string
+}
+
+function LobbyButton({ icon, label, onClick, disabled = false, accentColor }: LobbyButtonProps): React.ReactElement {
+  return (
+    <button
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      aria-disabled={disabled}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        padding: '16px 8px',
+        background: 'var(--surface)',
+        border: `1px solid ${disabled ? 'var(--border)' : (accentColor ?? 'var(--border-subtle)')}`,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.45 : 1,
+        transition: 'background 0.15s, border-color 0.15s',
+        width: '100%',
+        minHeight: 72,
+        fontFamily: 'var(--font-serif)',
+        pointerEvents: disabled ? 'none' : 'auto',
+      }}
+      onMouseEnter={e => {
+        if (!disabled) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.04)'
+      }}
+      onMouseLeave={e => {
+        if (!disabled) (e.currentTarget as HTMLButtonElement).style.background = 'var(--surface)'
+      }}
+    >
+      <span style={{ fontSize: 22 }}>{icon}</span>
+      <span style={{
+        fontFamily: 'var(--font-mono)',
+        fontSize: 12,
+        color: disabled ? 'var(--text-muted)' : 'var(--text-secondary)',
+        letterSpacing: '0.05em',
+      }}>
+        {label}
+      </span>
+    </button>
+  )
+}
+
+// ────────────────────────────────────────────────────
+// DailyFortuneBar
+// ────────────────────────────────────────────────────
+
+function DailyFortuneBar(): React.ReactElement {
+  let fortuneText = '오늘의 기운을 불러오는 중...'
+  let fortuneColor = 'var(--text-muted)'
+
+  try {
+    const today = new Date()
+    const result = calculateSaju(today.getFullYear(), today.getMonth() + 1, today.getDate())
+    const el = result.primaryElement
+    const display = ELEMENT_DISPLAY[el]
+    fortuneText = `오늘은 ${el}의 날 — ${el} 카드가 강해집니다.`
+    fortuneColor = display.color
+  } catch {
+    fortuneText = '오늘의 운세를 불러올 수 없습니다.'
+  }
+
+  return (
+    <div style={{
+      padding: '12px 16px',
+      borderTop: '1px solid var(--border)',
+      background: 'rgba(0,0,0,0.2)',
+    }}>
+      <div style={{
+        fontFamily: 'var(--font-serif)',
+        fontStyle: 'italic',
+        fontSize: 13,
+        color: fortuneColor,
+        textAlign: 'center',
+        lineHeight: 1.5,
+      }}>
+        {fortuneText}
+      </div>
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────
+// SaveInfo 타입 (기존 유지)
 // ────────────────────────────────────────────────────
 
 interface SaveInfo {
@@ -189,19 +326,33 @@ interface SaveInfo {
 }
 
 // ────────────────────────────────────────────────────
-// StartScreen 메인
+// StartScreen Props
 // ────────────────────────────────────────────────────
 
 interface StartScreenProps {
-  onContinue: () => void
-  onNewGame: () => void
-  onDeckBuild?: () => void
+  onContinue: () => void    // 새 런 시작 → handleContinue
+  onNewGame: () => void     // 새 게임 → Onboarding
+  onDeckBuild?: () => void  // 덱 빌드
+  onDailyDraw?: () => void  // 일일 뽑기 (Phase A 신규)
 }
 
-export default function StartScreen({ onContinue, onNewGame, onDeckBuild }: StartScreenProps): React.ReactElement {
+// ────────────────────────────────────────────────────
+// StartScreen 메인
+// ────────────────────────────────────────────────────
+
+export default function StartScreen({
+  onContinue,
+  onNewGame,
+  onDeckBuild,
+  onDailyDraw,
+}: StartScreenProps): React.ReactElement {
   const [showConfirm, setShowConfirm] = useState(false)
   const [saveInfo, setSaveInfo] = useState<SaveInfo | null>(null)
   const [mounted, setMounted] = useState(false)
+  const [showSettingsToast, setShowSettingsToast] = useState(false)
+
+  // unlockStore에서 보유 카드 수 실시간 조회
+  const ownedCardCount = useUnlockStore(s => s.ownedCardIds.size)
 
   useEffect(() => {
     const element = loadPlayerElement()
@@ -233,7 +384,10 @@ export default function StartScreen({ onContinue, onNewGame, onDeckBuild }: Star
     onNewGame()
   }
 
-  const elementInfo = saveInfo ? ELEMENT_DISPLAY[saveInfo.element] : null
+  function handleSettingsTap(): void {
+    setShowSettingsToast(true)
+    setTimeout(() => setShowSettingsToast(false), 3000)
+  }
 
   return (
     <div style={{
@@ -246,26 +400,19 @@ export default function StartScreen({ onContinue, onNewGame, onDeckBuild }: Star
       opacity: mounted ? 1 : 0,
       transition: 'opacity 0.3s ease-out',
     }}>
-      {/* TopBar */}
+
+      {/* ── TopBar ── */}
       <header style={{
         height: 56,
         display: 'flex',
         alignItems: 'center',
+        justifyContent: 'space-between',
         paddingLeft: 20,
+        paddingRight: 16,
         background: 'var(--bg2)',
         borderBottom: '1px solid var(--border)',
         flexShrink: 0,
       }}>
-        {/* 골드 divider 라인 */}
-        <div style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          height: 1,
-          top: 56,
-          background: 'linear-gradient(90deg, transparent, var(--gold-primary), transparent)',
-          opacity: 0.3,
-        }} />
         <span style={{
           fontFamily: 'var(--font-serif)',
           fontStyle: 'italic',
@@ -275,224 +422,123 @@ export default function StartScreen({ onContinue, onNewGame, onDeckBuild }: Star
         }}>
           팔자패
         </span>
+        <button
+          onClick={handleSettingsTap}
+          aria-label="설정"
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: 20,
+            color: 'var(--text-muted)',
+            padding: 8,
+          }}
+        >
+          ⚙
+        </button>
       </header>
 
-      {/* 스크롤 컨테이너 */}
+      {/* ── 스크롤 컨테이너 ── */}
       <div style={{
         flex: 1,
         overflowY: 'auto',
-        padding: '0 24px',
-        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)',
+        padding: '16px 20px',
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
       }}>
-        {/* 타이틀 영역 */}
-        <div className="pj-certificate-frame" style={{
-          marginTop: 48,
-          textAlign: 'center',
-          animation: 'slideUp 0.4s ease-out',
-          padding: '24px 16px',
-        }}>
-          {/* 인장 엠블럼 */}
-          <div style={{
-            width: 56,
-            height: 56,
-            margin: '0 auto 16px',
-            border: '1px solid var(--border-gold)',
-            background: 'var(--surface)',
-            borderRadius: '50%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexDirection: 'column',
-          }}>
-            <span style={{
-              fontFamily: 'var(--font-serif)',
-              fontSize: 22,
-              color: 'var(--gold)',
-              lineHeight: 1,
-            }}>牌</span>
-          </div>
 
-          <div style={{
-            fontFamily: 'var(--font-serif)',
-            fontStyle: 'italic',
-            fontWeight: 300,
-            fontSize: 46,
-            color: 'var(--text-headline)',
-            letterSpacing: '0.05em',
-          }}>
-            八字牌
-          </div>
-          <div style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 11,
-            color: 'var(--text-muted)',
-            marginTop: 8,
-            letterSpacing: '0.15em',
-            textTransform: 'uppercase',
-          }}>
-            운명을 들고 싸워라
-          </div>
-        </div>
-
-        {/* 골드 구분선 */}
-        <div style={{
-          height: 1,
-          background: 'linear-gradient(90deg, transparent, var(--border-gold), transparent)',
-          margin: '24px 0',
-        }} />
-
-        {/* 저장 상태 섹션 */}
-        {saveInfo && elementInfo && (
-          <>
-            {/* 섹션 레이블 */}
-            <div style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: 10,
-              color: 'var(--text-muted)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.15em',
-              animation: 'slideUp 0.4s ease-out 0.1s both',
-            }}>
-              저장된 게임
-            </div>
-
-            {/* SaveStateCard */}
-            <div style={{
-              marginTop: 12,
-              background: 'var(--surface)',
-              border: '1px solid var(--border-gold)',
-              padding: 16,
-              animation: 'slideUp 0.4s ease-out 0.1s both',
-            }}>
-              {/* 헤더: 오행 아이콘 + 영웅명 */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{
-                  width: 32,
-                  height: 32,
-                  fontSize: 24,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}>
-                  {elementInfo.icon}
-                </div>
-                <div>
-                  <div style={{
-                    fontFamily: 'var(--font-serif)',
-                    fontStyle: 'italic',
-                    fontSize: 16,
-                    color: 'var(--text-headline)',
-                  }}>
-                    {saveInfo.heroName}
-                  </div>
-                  <div style={{
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: 11,
-                    color: 'var(--text-muted)',
-                    marginTop: 2,
-                    letterSpacing: '0.05em',
-                  }}>
-                    {elementInfo.icon} {saveInfo.element} 덱
-                  </div>
-                </div>
-              </div>
-
-              {/* HP 바 */}
-              <div style={{ marginTop: 12 }}>
-                <HeroHpBar
-                  current={saveInfo.hp}
-                  max={saveInfo.maxHp}
-                  heroName={saveInfo.heroName}
-                />
-              </div>
-
-              {/* 진행 상세 */}
-              <div style={{
-                marginTop: 8,
-                fontFamily: 'var(--font-mono)',
-                fontSize: 11,
-                color: 'var(--text-secondary)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 2,
-              }}>
-                <div>스테이지: {saveInfo.clearedCount}/7 진행 중</div>
-                <div>덱: {saveInfo.deckSize}장 ({saveInfo.unlockedCount}장 언락)</div>
-              </div>
-
-              {/* 저장 시간 */}
-              <div style={{
-                marginTop: 8,
-                fontFamily: 'var(--font-mono)',
-                fontSize: 10,
-                color: 'var(--text-muted)',
-              }}>
-                마지막 저장: {relativeTime(saveInfo.savedAt)}
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* 버튼 영역 */}
-        <div style={{
-          marginTop: 24,
-          animation: 'slideUp 0.4s ease-out 0.2s both',
-        }}>
-          <PrimaryButton onClick={onContinue}>
-            이어하기 →
-          </PrimaryButton>
-        </div>
-
-        {onDeckBuild && (
-          <div style={{
-            marginTop: 12,
-            animation: 'slideUp 0.4s ease-out 0.2s both',
-          }}>
-            <SecondaryButton
-              onClick={onDeckBuild}
-              className="w-full"
-              style={{ width: '100%', height: 44, fontSize: 13 } as React.CSSProperties}
-            >
-              덱 편집
-            </SecondaryButton>
+        {/* 영웅 프로필 카드 (saveInfo 있을 때만) */}
+        {saveInfo && (
+          <div style={{ animation: 'slideUp 0.4s ease-out 0.1s both' }}>
+            <HeroProfileCard
+              element={saveInfo.element}
+              heroName={saveInfo.heroName}
+              ownedCardCount={ownedCardCount}
+              highestStage={saveInfo.clearedCount > 0 ? saveInfo.clearedCount : null}
+            />
           </div>
         )}
 
+        {/* 4버튼 그리드 */}
         <div style={{
-          marginTop: 12,
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 12,
           animation: 'slideUp 0.4s ease-out 0.2s both',
         }}>
+          <LobbyButton
+            icon="🗡"
+            label={saveInfo ? '새 런 시작' : '새 게임 시작'}
+            onClick={onContinue}
+          />
+          <LobbyButton
+            icon="📦"
+            label="컬렉션"
+            onClick={() => {}}
+            disabled={true}
+          />
+          <LobbyButton
+            icon="🃏"
+            label="덱 빌드"
+            onClick={onDeckBuild ?? (() => {})}
+            disabled={!onDeckBuild}
+          />
+          <LobbyButton
+            icon="📅"
+            label="일일 뽑기"
+            onClick={onDailyDraw ?? (() => {})}
+            disabled={!onDailyDraw}
+          />
+        </div>
+
+        {/* 새 게임 시작 (소형 보조 버튼) */}
+        <div style={{ animation: 'slideUp 0.4s ease-out 0.3s both' }}>
           <SecondaryButton
             onClick={() => setShowConfirm(true)}
-            className="w-full"
-            style={{ width: '100%', height: 48, fontSize: 13 } as React.CSSProperties}
+            style={{ width: '100%', height: 40, fontSize: 12 } as React.CSSProperties}
           >
             새 게임 시작
           </SecondaryButton>
         </div>
 
-        {/* 하단 팁 */}
-        <div style={{
-          marginTop: 24,
-          textAlign: 'center',
-          fontFamily: 'var(--font-serif)',
-          fontStyle: 'italic',
-          fontSize: 13,
-          color: 'var(--text-muted)',
-          lineHeight: 1.6,
-        }}>
-          "운명은 바꿀 수 없다. 하지만 덱은 편집할 수 있다."
-        </div>
       </div>
 
-      {/* 새 게임 확인 모달 */}
+      {/* ── 일일 운세 배너 ── */}
+      <div style={{ animation: 'slideUp 0.4s ease-out 0.35s both', flexShrink: 0 }}>
+        <DailyFortuneBar />
+      </div>
+
+      {/* ── 새 게임 확인 모달 ── */}
       {showConfirm && (
         <NewGameConfirmModal
           onConfirm={handleConfirmNewGame}
           onCancel={() => setShowConfirm(false)}
         />
       )}
+
+      {/* ── 설정 toast (Phase A: 미구현 안내) ── */}
+      {showSettingsToast && (
+        <div style={{
+          position: 'fixed',
+          bottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'rgba(26,23,20,0.92)',
+          border: '1px solid var(--border-subtle)',
+          padding: '10px 20px',
+          fontFamily: 'var(--font-mono)',
+          fontSize: 13,
+          color: 'var(--text-secondary)',
+          zIndex: 200,
+          whiteSpace: 'nowrap',
+          animation: 'slideUp 0.2s ease-out',
+        }}>
+          설정은 곧 오픈됩니다
+        </div>
+      )}
+
     </div>
   )
 }
