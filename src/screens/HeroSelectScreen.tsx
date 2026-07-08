@@ -16,6 +16,22 @@ import { useHeroStore } from '@/stores/heroStore'
 import HeroCard from '@/components/HeroCard'
 import type { HeroData, Gender } from '@/types/hero'
 import type { WuXing } from '@/types/hero'
+import { getDailyElement } from '@/game/saju/manseryeok'
+import { GENERATES, DOMINATES } from '@/types/elements'
+
+// ────────────────────────────────────────────────────
+// Phase 2-B: 애니메이션 keyframe (HeroCard 친화도 뱃지용)
+// ────────────────────────────────────────────────────
+
+const HERO_SELECT_STYLES = `
+@keyframes scaleIn {
+  from { transform: scale(0.8); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+@keyframes slideUp {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}`
 
 // ────────────────────────────────────────────────────
 // 상수
@@ -147,6 +163,29 @@ export default function HeroSelectScreen({ onSelect, onCancel }: HeroSelectScree
   const [genderFilter, setGenderFilter] = useState<Gender | 'all'>('all')
   const [wuxingFilter, setWuxingFilter] = useState<WuXing | 'all'>('all')
 
+  // Phase 2-B: 오늘 일진 오행 (1회 계산)
+  const todayElement = useMemo(() => {
+    try {
+      return getDailyElement(new Date())
+    } catch {
+      return null
+    }
+  }, [])
+
+  // Phase 2-B: 영웅 오행과 일진 오행의 친화도 계산
+  function getHeroAffinity(heroWuxing: WuXing): 'shengsheng' | 'shengke' | null {
+    if (!todayElement) return null
+    const isShengsheng =
+      GENERATES[heroWuxing] === todayElement ||
+      GENERATES[todayElement] === heroWuxing
+    if (isShengsheng) return 'shengsheng'
+    const isShengke =
+      DOMINATES[heroWuxing] === todayElement ||
+      DOMINATES[todayElement] === heroWuxing
+    if (isShengke) return 'shengke'
+    return null
+  }
+
   // 필터 적용
   const filteredHeroes = useMemo(() => {
     return ALL_HEROES.filter(h => {
@@ -175,6 +214,7 @@ export default function HeroSelectScreen({ onSelect, onCancel }: HeroSelectScree
       maxWidth: 480,
       margin: '0 auto',
     }}>
+      <style>{HERO_SELECT_STYLES}</style>
 
       {/* ── TopBar ── */}
       <header style={{
@@ -326,6 +366,7 @@ export default function HeroSelectScreen({ onSelect, onCancel }: HeroSelectScree
                 hero={hero}
                 selected={selectedHero?.id === hero.id}
                 onClick={() => handleHeroClick(hero)}
+                affinity={getHeroAffinity(hero.wuxing)}
               />
             ))}
           </div>

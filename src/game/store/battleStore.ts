@@ -10,6 +10,8 @@ import {
   HERO_MAX_HP,
   ENERGY_CAP,
 } from '@/types/game'
+import { getDailyElement } from '@/game/saju/manseryeok'
+import type { FiveElement } from '@/types/elements'
 import type { Card, FieldUnit } from '@/types/cards'
 import { createInitialFatigue } from '@/game/engine/fatigue'
 import {
@@ -20,6 +22,8 @@ import {
   playCard as enginePlayCard,
   checkGameResult,
   createEmptyField,
+  resolveManualAttackHero,
+  resolveManualAttackUnit,
 } from '@/game/engine/turnEngine'
 import { decideAITurn } from '@/game/ai/aiPlayer'
 import type { AIAction } from '@/types/game'
@@ -49,7 +53,8 @@ export type InteractionState =
 export interface DamagePopupData {
   id: string
   value: number
-  type: 'damage' | 'heal' | 'fatigue'
+  /** Phase 2-D: 'affinity_bonus' — 사주 친화도 보너스 팝업 */
+  type: 'damage' | 'heal' | 'fatigue' | 'affinity_bonus'
   x: number
   y: number
   modifier?: 'dominate' | 'generate_defense' | 'neutral'
@@ -111,7 +116,14 @@ interface BattleStore {
   // 킬 카운트 (플레이어가 처치한 AI 유닛 수)
   playerKillCount: number
 
+  // Phase 2-4: 오행 콤보 UI 상태 (battleStore 레벨 — GameState와 별도로 UI 전용)
+  comboElement: FiveElement | null
+  comboCount: number
+
   // 액션
+  // Phase 2-4: 콤보 업데이트 (카드 플레이 시 호출)
+  updateCombo: (playedElement: FiveElement | null) => void
+  resetCombo: () => void
   initBattle: (
     playerHeroId: HeroId,
     playerDeck: Card[],
@@ -182,6 +194,8 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
   isProcessing: false,
   aiActionQueue: [],
   playerKillCount: 0,
+  comboElement: null,
+  comboCount: 0,
 
   initBattle: (playerHeroId, playerDeck, aiHeroId, aiDeck) => {
     try {
@@ -195,6 +209,15 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
       const aiDrawResult = executeDraw(ai, 1)
       const aiWithHand = executeEnergyCharge(aiDrawResult.player, 1)
 
+      // Phase 2-1: 일진 오행 계산
+      let dailyElement: FiveElement | undefined
+      try {
+        dailyElement = getDailyElement(new Date())
+      } catch (e) {
+        console.error('[battleStore] 일진 계산 오류:', e)
+        dailyElement = undefined
+      }
+
       const initialState: GameState = {
         turn: 1,
         phase: 'main',
@@ -202,6 +225,8 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
         ai: aiWithHand,
         result: null,
         log: ['게임 시작!', `카드 ${drawResult.drawnCount}장 드로우`],
+        dailyElement,
+        currentCombo: { element: null, count: 0 },
       }
 
       set({
@@ -215,6 +240,8 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
         isProcessing: false,
         aiActionQueue: [],
         playerKillCount: 0,
+        comboElement: null,
+        comboCount: 0,
       })
     } catch (err) {
       console.error('[battleStore] initBattle 오류:', err)
@@ -310,10 +337,23 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
     const result = enginePlayCard(gameState.player, selectedCardIndex, slotIdx)
     if (!result.success) return result.reason
 
+    // Phase 2-4: 콤보 업데이트
+    const cardElement = card.element ?? null
+    get().updateCombo(cardElement)
+
+    // Phase 2-4: 콤보 3회 달성 시 해당 오행 카드 비용 -1 적용은 turnEngine에서 처리
+    // currentCombo는 GameState에도 반영
+    const { comboElement, comboCount } = get()
+    const updatedCombo = {
+      element: comboElement,
+      count: comboCount,
+    }
+
     const newState: GameState = {
       ...gameState,
       player: result.player,
       log: [...gameState.log, `[소환] ${card.name} → 슬롯 ${slotIdx}`],
+      currentCombo: updatedCombo,
     }
     const finalResult = checkGameResult(newState)
 
@@ -338,178 +378,46 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
 
     await sleep(150)
 
-    // 단일 유닛 전투 처리
-    let newGameState = { ...gameState }
-    const player = { ...gameState.player }
-    const ai = { ...gameState.ai }
-
-    const { getCombatModifier: _unused, ..._ } = { getCombatModifier, ...{} }
-    void _unused, _
+    let newGameState: typeof gameState
 
     if (targetSlot === 'hero') {
-      // 영웅 직접 공격
-      const modifier = getCombatModifier(attackerUnit.card.element, ai.hero.element)
-      let dmg = attackerUnit.currentAttack
-      if (modifier === 'dominate') dmg = Math.round(dmg * 1.5)
-      if (modifier === 'generate_defense') dmg = Math.round(dmg * 0.75)
+      // 영웅 직접 공격 — turnEngine으로 위임
+      const result = resolveManualAttackHero(gameState, selectedUnitSlot)
+      newGameState = result.newGameState
 
-      const newAiHp = Math.max(0, ai.currentHp - dmg)
-
-      // 생명흡수
-      let newPlayerHp = player.currentHp
-      const hasLifesteal = attackerUnit.card.keywords.includes('lifesteal')
-        || attackerUnit.temporaryKeywords.includes('lifesteal')
-      if (hasLifesteal) {
-        newPlayerHp = Math.min(HERO_MAX_HP, newPlayerHp + dmg)
-        get().addDamagePopup({ value: dmg, type: 'heal', x: 50, y: 60 })
+      // 데미지 팝업
+      if (attackerUnit.card.keywords.includes('lifesteal') || attackerUnit.temporaryKeywords.includes('lifesteal')) {
+        get().addDamagePopup({ value: result.damage, type: 'heal', x: 50, y: 60 })
       }
-
-      get().addDamagePopup({ value: dmg, type: 'damage', x: 50, y: 20, modifier })
-
-      // 공격한 유닛 canAttack = false
-      const newPlayerField = [...player.field]
-      newPlayerField[selectedUnitSlot] = { ...attackerUnit, canAttack: false }
-
-      newGameState = {
-        ...gameState,
-        player: { ...player, field: newPlayerField, currentHp: newPlayerHp },
-        ai: { ...ai, currentHp: newAiHp },
-        log: [
-          ...gameState.log,
-          `[공격] ${attackerUnit.card.name} → AI 영웅 (${dmg} 피해${modifier === 'dominate' ? ', 상극!' : modifier === 'generate_defense' ? ', 상생' : ''})`,
-        ],
-      }
+      get().addDamagePopup({ value: result.damage, type: 'damage', x: 50, y: 20, modifier: result.modifier })
     } else {
-      // 유닛 대 유닛 전투
-      const targetUnit = ai.field[targetSlot]
-      if (!targetUnit) {
+      // 유닛 대 유닛 전투 — turnEngine으로 위임
+      if (!gameState.ai.field[targetSlot]) {
         set({ isProcessing: false, interaction: 'idle', selectedUnitSlot: null, attackingSlot: null })
         return
       }
 
-      const attackModifier = getCombatModifier(attackerUnit.card.element, targetUnit.card.element)
-      let dmg = attackerUnit.currentAttack
-      if (attackModifier === 'dominate') dmg = Math.round(dmg * 1.5)
-      if (attackModifier === 'generate_defense') dmg = Math.round(dmg * 0.75)
-
-      // 독성: 무조건 파괴
-      const hasPoison = attackerUnit.card.keywords.includes('poison')
-        || attackerUnit.temporaryKeywords.includes('poison')
-      if (hasPoison) dmg = Math.max(dmg, targetUnit.currentHealth)
-
-      // 역공 계산
-      const counterModifier = getCombatModifier(targetUnit.card.element, attackerUnit.card.element)
-      let counterDmg = targetUnit.currentAttack
-      if (counterModifier === 'dominate') counterDmg = Math.round(counterDmg * 1.5)
-      if (counterModifier === 'generate_defense') counterDmg = Math.round(counterDmg * 0.75)
-
-      get().addDamagePopup({ value: dmg, type: 'damage', x: 50, y: 25, modifier: attackModifier })
-      if (counterDmg > 0) {
-        get().addDamagePopup({ value: counterDmg, type: 'damage', x: 50, y: 75, modifier: counterModifier })
+      const result = resolveManualAttackUnit(gameState, selectedUnitSlot, targetSlot)
+      if (!result) {
+        set({ isProcessing: false, interaction: 'idle', selectedUnitSlot: null, attackingSlot: null })
+        return
       }
 
-      // 생명흡수
-      let newPlayerHp = player.currentHp
-      const hasLifesteal = attackerUnit.card.keywords.includes('lifesteal')
-        || attackerUnit.temporaryKeywords.includes('lifesteal')
-      if (hasLifesteal) {
-        newPlayerHp = Math.min(HERO_MAX_HP, newPlayerHp + dmg)
-        get().addDamagePopup({ value: dmg, type: 'heal', x: 50, y: 65 })
+      newGameState = result.newGameState
+
+      // 데미지 팝업
+      get().addDamagePopup({ value: result.damage, type: 'damage', x: 50, y: 25, modifier: result.modifier })
+      if (result.counterDamage > 0) {
+        get().addDamagePopup({ value: result.counterDamage, type: 'damage', x: 50, y: 75, modifier: result.counterModifier })
+      }
+      if (attackerUnit.card.keywords.includes('lifesteal') || attackerUnit.temporaryKeywords.includes('lifesteal')) {
+        get().addDamagePopup({ value: result.damage, type: 'heal', x: 50, y: 65 })
       }
 
-      // 냉기
-      const hasFreeze = attackerUnit.card.keywords.includes('freeze')
-        || attackerUnit.temporaryKeywords.includes('freeze')
-
-      // 소각
-      const hasIncinerate = attackerUnit.card.keywords.includes('incinerate')
-        || attackerUnit.temporaryKeywords.includes('incinerate')
-
-      // 피해 적용
-      let updatedTarget: FieldUnit | null = {
-        ...targetUnit,
-        currentHealth: targetUnit.currentHealth - dmg,
-        frozen: hasFreeze ? true : targetUnit.frozen,
+      // 킬 카운트 업데이트
+      if (result.killIncrement > 0) {
+        set({ playerKillCount: get().playerKillCount + result.killIncrement })
       }
-
-      let updatedAttacker: FieldUnit | null = {
-        ...attackerUnit,
-        currentHealth: attackerUnit.currentHealth - counterDmg,
-        canAttack: false,
-      }
-
-      // 사망 처리 — 타겟
-      let killCount = get().playerKillCount
-      if (updatedTarget.currentHealth <= 0) {
-        if (hasIncinerate) {
-          // 소각: 묘지 미추가, 부활 방지
-          updatedTarget = null
-          killCount++
-        } else if (
-          (targetUnit.card.keywords.includes('reborn') || targetUnit.temporaryKeywords.includes('reborn'))
-          && !targetUnit.rebornUsed
-        ) {
-          updatedTarget = { ...updatedTarget!, currentHealth: 1, rebornUsed: true }
-        } else {
-          killCount++
-          ai.graveyard.push(targetUnit.card)
-          updatedTarget = null
-        }
-      }
-
-      // 사망 처리 — 공격자
-      let newAiGraveyard = [...ai.graveyard]
-      if (updatedTarget === null && !hasIncinerate) {
-        // 이미 위에서 push했으니 여기서는 안 함
-      }
-
-      // 공격자 사망
-      let updatedAttackerFinal: FieldUnit | null = updatedAttacker
-      if (updatedAttacker.currentHealth <= 0) {
-        const atkTargetHasIncinerate = targetUnit.card.keywords.includes('incinerate')
-          || targetUnit.temporaryKeywords.includes('incinerate')
-        if (!atkTargetHasIncinerate) {
-          if (
-            (attackerUnit.card.keywords.includes('reborn') || attackerUnit.temporaryKeywords.includes('reborn'))
-            && !attackerUnit.rebornUsed
-          ) {
-            updatedAttackerFinal = { ...updatedAttacker, currentHealth: 1, rebornUsed: true }
-          } else {
-            player.graveyard.push(attackerUnit.card)
-            updatedAttackerFinal = null
-          }
-        } else {
-          updatedAttackerFinal = null
-        }
-      }
-
-      const newPlayerField = [...player.field]
-      newPlayerField[selectedUnitSlot] = updatedAttackerFinal
-
-      const newAiField = [...ai.field]
-      newAiField[targetSlot] = updatedTarget
-
-      newAiGraveyard = [...ai.graveyard]
-
-      const logEntry = `[공격] ${attackerUnit.card.name} → ${targetUnit.card.name} (${dmg} 피해${attackModifier === 'dominate' ? ', 상극!' : attackModifier === 'generate_defense' ? ', 상생' : ''})`
-
-      newGameState = {
-        ...gameState,
-        player: {
-          ...player,
-          field: newPlayerField,
-          graveyard: [...player.graveyard],
-          currentHp: newPlayerHp,
-        },
-        ai: {
-          ...ai,
-          field: newAiField,
-          graveyard: newAiGraveyard,
-        },
-        log: [...gameState.log, logEntry],
-      }
-
-      set({ playerKillCount: killCount })
     }
 
     await sleep(150)
@@ -529,6 +437,9 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
     const { gameState } = get()
     if (!gameState) return
     if (gameState.phase !== 'main') return
+
+    // Phase 2-4: 턴 종료 시 콤보 리셋
+    get().resetCombo()
 
     set({ isProcessing: true, interaction: 'idle', selectedCardIndex: null, selectedUnitSlot: null })
 
@@ -800,6 +711,27 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
 
   setLogOpen: (open) => set({ logOpen: open }),
 
+  // Phase 2-4: 오행 콤보 업데이트
+  updateCombo: (playedElement) => {
+    const { comboElement, comboCount } = get()
+    if (!playedElement) {
+      // 무속성 카드 — 콤보 리셋
+      set({ comboElement: null, comboCount: 0 })
+      return
+    }
+    if (comboElement === playedElement) {
+      // 같은 오행 연속 — count 증가
+      set({ comboCount: comboCount + 1 })
+    } else {
+      // 다른 오행 — 콤보 리셋 후 새 콤보 시작
+      set({ comboElement: playedElement, comboCount: 1 })
+    }
+  },
+
+  resetCombo: () => {
+    set({ comboElement: null, comboCount: 0 })
+  },
+
   resetBattle: () => {
     set({
       gameState: null,
@@ -814,6 +746,8 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
       isProcessing: false,
       aiActionQueue: [],
       playerKillCount: 0,
+      comboElement: null,
+      comboCount: 0,
     })
   },
 

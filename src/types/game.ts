@@ -154,6 +154,21 @@ export interface GameState {
   result: GameResult
   /** 로그 (디버그용) */
   log: string[]
+  /**
+   * Phase 2-1: 오늘 일진(日辰) 천간 오행
+   * 일일 전투 버프 계산에 사용 (상생 × 1.2, 상극 × 0.8)
+   * undefined이면 일진 미적용 (계산 실패 등 방어 케이스)
+   */
+  dailyElement?: FiveElement
+  /**
+   * Phase 2-4: 오행 콤보 상태
+   * 같은 오행 카드 연속 플레이 시 count 증가
+   * 3회 달성 시 해당 오행 카드 비용 -1 (그 턴)
+   */
+  currentCombo: {
+    element: FiveElement | null
+    count: number
+  }
 }
 
 // ────────────────────────────────────────────────────

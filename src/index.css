@@ -129,11 +129,25 @@
   100% { transform: translateX(var(--popup-x, 0px)) translateY(-120px) scale(0.5); opacity: 0; }
 }
 
-/* ── legendary 구슬 pulse ── */
+/* ── epic 카드 pulse (파란색) ── */
+@keyframes epicPulse {
+  0%   { box-shadow: 0 0 16px rgba(100,150,255,0.5), inset 0 0 10px rgba(100,150,255,0.15); }
+  50%  { box-shadow: 0 0 24px rgba(100,150,255,0.7), inset 0 0 14px rgba(100,150,255,0.25); }
+  100% { box-shadow: 0 0 16px rgba(100,150,255,0.5), inset 0 0 10px rgba(100,150,255,0.15); }
+}
+
+/* ── legendary 구슬 pulse (황금색) ── */
 @keyframes legendaryPulse {
   0%   { box-shadow: 0 0 20px rgba(201,168,76,0.6), 0 0 40px rgba(201,168,76,0.2); }
   50%  { box-shadow: 0 0 28px rgba(201,168,76,0.8), 0 0 56px rgba(201,168,76,0.35); }
   100% { box-shadow: 0 0 20px rgba(201,168,76,0.6), 0 0 40px rgba(201,168,76,0.2); }
+}
+
+/* ── celestial 카드 pulse (밝은 금색) ── */
+@keyframes celestialPulse {
+  0%   { box-shadow: 0 0 24px rgba(255,215,0,0.7), 0 0 48px rgba(255,215,0,0.3), inset 0 0 14px rgba(255,215,0,0.2); }
+  50%  { box-shadow: 0 0 32px rgba(255,215,0,0.9), 0 0 64px rgba(255,215,0,0.45), inset 0 0 18px rgba(255,215,0,0.3); }
+  100% { box-shadow: 0 0 24px rgba(255,215,0,0.7), 0 0 48px rgba(255,215,0,0.3), inset 0 0 14px rgba(255,215,0,0.2); }
 }
 
 /* ─── 글로벌 초기화 ─── */

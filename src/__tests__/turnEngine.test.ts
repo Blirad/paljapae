@@ -294,6 +294,7 @@ function makeGameState(
     ai: baseAi,
     result: null,
     log: [],
+    currentCombo: { element: null, count: 0 },
   }
 }
 

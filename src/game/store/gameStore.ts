@@ -97,6 +97,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ai: aiState,
       result: null,
       log: ['게임 시작!'],
+      currentCombo: { element: null, count: 0 },
     }
 
     set({ gameState: initialState })

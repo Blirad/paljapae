@@ -16,7 +16,7 @@ import {
   HERO_MAX_HP,
 } from '@/types/game'
 import { advanceFatigue, calculateFatigueDamage } from './fatigue'
-import { calculateDamage } from './elementalCombat'
+import { calculateDamage, getDailyElementModifier } from './elementalCombat'
 import type { Relic } from '@/types/relics'
 
 // ────────────────────────────────────────────────────
@@ -311,6 +311,8 @@ export function executeCombatPhase(
         effectiveAttack,
         unit.card.element,
         newDefender.hero.element,
+        1.0,
+        attackerIsPlayer ? state.dailyElement : undefined,
       )
       newDefender = {
         ...newDefender,
@@ -332,6 +334,8 @@ export function executeCombatPhase(
         effectiveAttack,
         unit.card.element,
         targetUnit.card.element,
+        1.0,
+        attackerIsPlayer ? state.dailyElement : undefined,
       )
 
       let updatedTarget: FieldUnit | null = {
@@ -421,7 +425,7 @@ export function executeCombatPhase(
 // 유닛 사망 처리
 // ────────────────────────────────────────────────────
 
-interface UnitDeathResult {
+export interface UnitDeathResult {
   /** 살아남은 유닛(부활 포함) 또는 null(완전 사망) */
   unit: FieldUnit | null
   /** 업데이트된 묘지 */
@@ -437,7 +441,7 @@ interface UnitDeathResult {
  * @param killerHasIncinerate - 처치자가 소각 키워드를 보유하는지 여부
  * @returns 유닛 상태와 업데이트된 묘지
  */
-function resolveUnitDeath(
+export function resolveUnitDeath(
   unit: FieldUnit | null,
   graveyard: Card[],
   killerHasIncinerate: boolean,
@@ -516,6 +520,215 @@ export function resetFieldForNewTurn(player: PlayerState, currentTurn: number): 
     }
   })
   return { ...player, field: newField }
+}
+
+// ────────────────────────────────────────────────────
+// 수동 공격 해결 (플레이어 직접 선택 공격)
+// ────────────────────────────────────────────────────
+
+/**
+ * 수동 공격 결과 타입
+ * battleStore.attackTarget()에서 사용
+ */
+export interface ManualAttackResult {
+  /** 업데이트된 게임 상태 */
+  newGameState: GameState
+  /** 가한 피해량 */
+  damage: number
+  /** 받은 역공 피해량 */
+  counterDamage: number
+  /** 상성 수정자 */
+  modifier: 'dominate' | 'generate_defense' | 'neutral'
+  /** 역공 상성 수정자 */
+  counterModifier: 'dominate' | 'generate_defense' | 'neutral'
+  /** 처치한 유닛 수 증가량 (0 또는 1) */
+  killIncrement: number
+}
+
+/**
+ * 플레이어 유닛이 AI 영웅을 직접 공격하는 경우 처리
+ */
+export function resolveManualAttackHero(
+  state: GameState,
+  attackerSlot: number,
+): ManualAttackResult {
+  const attacker = state.player.field[attackerSlot]!
+  const { getCombatModifier: gcm, calculateDamage: calcDmg } = {
+    getCombatModifier: (a: Parameters<typeof import('./elementalCombat')['getCombatModifier']>[0], d: Parameters<typeof import('./elementalCombat')['getCombatModifier']>[1]) => {
+      const { DOMINATES, GENERATES } = { DOMINATES: { '木': '土', '土': '水', '水': '火', '火': '金', '金': '木' } as Record<string, string>, GENERATES: { '木': '火', '火': '土', '土': '金', '金': '水', '水': '木' } as Record<string, string> }
+      if (!a || !d) return 'neutral' as const
+      if (DOMINATES[a] === d) return 'dominate' as const
+      if (GENERATES[d] === a) return 'generate_defense' as const
+      return 'neutral' as const
+    },
+    calculateDamage: (base: number, a: string | null, d: string | null) => {
+      const mod = (() => {
+        const DOMINATES: Record<string, string> = { '木': '土', '土': '水', '水': '火', '火': '金', '金': '木' }
+        const GENERATES: Record<string, string> = { '木': '火', '火': '土', '土': '金', '金': '水', '水': '木' }
+        if (!a || !d) return 'neutral'
+        if (DOMINATES[a] === d) return 'dominate'
+        if (GENERATES[d] === a) return 'generate_defense'
+        return 'neutral'
+      })()
+      if (mod === 'dominate') return Math.round(base * 1.5)
+      if (mod === 'generate_defense') return Math.round(base * 0.75)
+      return base
+    },
+  }
+  void gcm, calcDmg
+
+  const modifier = getCombatModifierInternal(attacker.card.element, state.ai.hero.element)
+  const baseDamage = applyModifier(attacker.currentAttack, modifier)
+  const dailyMod = getDailyElementModifier(attacker.card.element ?? null, state.dailyElement ?? null)
+  const damage = Math.round(baseDamage * dailyMod)
+
+  const newAiHp = Math.max(0, state.ai.currentHp - damage)
+
+  let newPlayerHp = state.player.currentHp
+  if (hasKeyword(attacker, 'lifesteal')) {
+    newPlayerHp = Math.min(HERO_MAX_HP, newPlayerHp + damage)
+  }
+
+  const newPlayerField = [...state.player.field]
+  newPlayerField[attackerSlot] = { ...attacker, canAttack: false }
+
+  const newGameState: GameState = {
+    ...state,
+    player: { ...state.player, field: newPlayerField, currentHp: newPlayerHp },
+    ai: { ...state.ai, currentHp: newAiHp },
+    log: [
+      ...state.log,
+      `[공격] ${attacker.card.name} → AI 영웅 (${damage} 피해${modifier === 'dominate' ? ', 상극!' : modifier === 'generate_defense' ? ', 상생' : ''})`,
+    ],
+  }
+
+  return {
+    newGameState,
+    damage,
+    counterDamage: 0,
+    modifier,
+    counterModifier: 'neutral',
+    killIncrement: 0,
+  }
+}
+
+/**
+ * 플레이어 유닛이 AI 유닛을 공격하는 경우 처리
+ */
+export function resolveManualAttackUnit(
+  state: GameState,
+  attackerSlot: number,
+  targetSlot: number,
+): ManualAttackResult | null {
+  const attacker = state.player.field[attackerSlot]
+  const target = state.ai.field[targetSlot]
+  if (!attacker || !target) return null
+
+  const modifier = getCombatModifierInternal(attacker.card.element, target.card.element)
+  const baseDamage = applyModifier(attacker.currentAttack, modifier)
+  const dailyMod = getDailyElementModifier(attacker.card.element ?? null, state.dailyElement ?? null)
+  let damage = Math.round(baseDamage * dailyMod)
+
+  // 독성: 무조건 파괴
+  if (hasKeyword(attacker, 'poison')) {
+    damage = Math.max(damage, target.currentHealth)
+  }
+
+  const counterModifier = getCombatModifierInternal(target.card.element, attacker.card.element)
+  const counterDamage = applyModifier(target.currentAttack, counterModifier)
+
+  // 생명흡수
+  let newPlayerHp = state.player.currentHp
+  if (hasKeyword(attacker, 'lifesteal')) {
+    newPlayerHp = Math.min(HERO_MAX_HP, newPlayerHp + damage)
+  }
+
+  // 냉기
+  const hasFreeze = hasKeyword(attacker, 'freeze')
+  // 소각 (공격자 보유)
+  const attackerHasIncinerate = hasKeyword(attacker, 'incinerate')
+
+  // 타겟 피해 적용
+  let updatedTarget: FieldUnit | null = {
+    ...target,
+    currentHealth: target.currentHealth - damage,
+    frozen: hasFreeze ? true : target.frozen,
+  }
+
+  // 공격자 역공 피해 적용
+  let updatedAttacker: FieldUnit | null = {
+    ...attacker,
+    currentHealth: attacker.currentHealth - counterDamage,
+    canAttack: false,
+  }
+
+  // 타겟 사망 처리
+  let killIncrement = 0
+  const targetDeathResult = resolveUnitDeath(updatedTarget, [...state.ai.graveyard], attackerHasIncinerate)
+  if (updatedTarget.currentHealth <= 0) {
+    updatedTarget = targetDeathResult.unit
+    if (updatedTarget === null) killIncrement = 1
+  }
+
+  // 타겟이 소각 보유 여부 (역공으로 공격자 처치 시 소각 적용)
+  const targetHasIncinerate = hasKeyword(target, 'incinerate')
+  const attackerDeathResult = resolveUnitDeath(updatedAttacker, [...state.player.graveyard], targetHasIncinerate)
+  if (updatedAttacker.currentHealth <= 0) {
+    updatedAttacker = attackerDeathResult.unit
+  }
+
+  const newPlayerField = [...state.player.field]
+  newPlayerField[attackerSlot] = updatedAttacker
+
+  const newAiField = [...state.ai.field]
+  newAiField[targetSlot] = updatedTarget
+
+  const logEntry = `[공격] ${attacker.card.name} → ${target.card.name} (${damage} 피해${modifier === 'dominate' ? ', 상극!' : modifier === 'generate_defense' ? ', 상생' : ''})`
+
+  const newGameState: GameState = {
+    ...state,
+    player: {
+      ...state.player,
+      field: newPlayerField,
+      graveyard: attackerDeathResult.graveyard,
+      currentHp: newPlayerHp,
+    },
+    ai: {
+      ...state.ai,
+      field: newAiField,
+      graveyard: targetDeathResult.graveyard,
+    },
+    log: [...state.log, logEntry],
+  }
+
+  return {
+    newGameState,
+    damage,
+    counterDamage,
+    modifier,
+    counterModifier,
+    killIncrement,
+  }
+}
+
+// 내부 헬퍼: 오행 상성 수정자
+function getCombatModifierInternal(
+  attackerElement: string | null,
+  defenderElement: string | null,
+): 'dominate' | 'generate_defense' | 'neutral' {
+  if (!attackerElement || !defenderElement) return 'neutral'
+  const DOMINATES: Record<string, string> = { '木': '土', '土': '水', '水': '火', '火': '金', '金': '木' }
+  const GENERATES: Record<string, string> = { '木': '火', '火': '土', '土': '金', '金': '水', '水': '木' }
+  if (DOMINATES[attackerElement] === defenderElement) return 'dominate'
+  if (GENERATES[defenderElement] === attackerElement) return 'generate_defense'
+  return 'neutral'
+}
+
+// 내부 헬퍼: 수정자 적용
+function applyModifier(base: number, modifier: 'dominate' | 'generate_defense' | 'neutral'): number {
+  if (modifier === 'dominate') return Math.round(base * 1.5)
+  if (modifier === 'generate_defense') return Math.round(base * 0.75)
+  return base
 }
 
 // ────────────────────────────────────────────────────

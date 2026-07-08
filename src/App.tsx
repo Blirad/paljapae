@@ -576,7 +576,7 @@ export default function App(): React.ReactElement {
         return (
           <TitleScreen
             onExistingUser={handleContinueFromTitle}
-            onNewUser={() => setScene('onboarding')}
+            onNewUser={() => setScene('heroSelect')}
           />
         )
 
@@ -815,7 +815,7 @@ export default function App(): React.ReactElement {
         return (
           <HeroSelectScreen
             onSelect={(_hero) => {
-              // 영웅 선택 완료 → 온보딩으로 이동 (Phase 1 기본 플로우)
+              // 영웅 선택 완료 → 온보딩(사주 입력)으로 이동
               setScene('onboarding')
             }}
             onCancel={() => setScene('title')}

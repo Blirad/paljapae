@@ -62,6 +62,7 @@ function makeState(
     ai,
     result: null,
     log: [],
+    currentCombo: { element: null, count: 0 },
   }
 }
 

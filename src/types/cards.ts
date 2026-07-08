@@ -6,16 +6,18 @@
 import type { FiveElement } from './elements'
 
 // ────────────────────────────────────────────────────
-// 희귀도 (마스터플랜 §4-3)
+// 희귀도 (마스터플랜 §4-3) — 6단계로 확장
 // ────────────────────────────────────────────────────
 
-export type Rarity = 'common' | 'uncommon' | 'rare' | 'legendary'
+export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'celestial'
 
 export const RARITY_LABEL: Record<Rarity, string> = {
   common:    '평범 (平凡)',
   uncommon:  '별호 (別號)',
   rare:      '고수 (高手)',
+  epic:      '영웅 (英雄)',
   legendary: '전설 (傳說)',
+  celestial: '천상 (天上)',
 }
 
 // ────────────────────────────────────────────────────
@@ -44,11 +46,11 @@ export const KEYWORD_LABEL: Record<Keyword, string> = {
 }
 
 // ────────────────────────────────────────────────────
-// 카드 타입
+// 카드 타입 — 3가지로 확장
 // ────────────────────────────────────────────────────
 
-/** 카드 종류: 병사(유닛) vs 효과(주문) */
-export type CardType = 'soldier' | 'spell'
+/** 카드 종류: 병사(유닛) vs 지휘관(고유 유닛, 최대 1개) vs 효과(주문) */
+export type CardType = 'soldier' | 'commander' | 'spell'
 
 /** 효과 카드 세부 분류 (마스터플랜 §4-1 B) */
 export type SpellSubtype =
@@ -78,7 +80,7 @@ interface CardBase {
 }
 
 // ────────────────────────────────────────────────────
-// 병사 카드
+// 병사 카드 (일반 유닛)
 // ────────────────────────────────────────────────────
 
 export interface SoldierCard extends CardBase {
@@ -94,6 +96,24 @@ export interface SoldierCard extends CardBase {
 }
 
 // ────────────────────────────────────────────────────
+// 지휘관 카드 (고유 유닛, 필드에 최대 1개만 배치 가능)
+// ────────────────────────────────────────────────────
+
+export interface CommanderCard extends CardBase {
+  cardType: 'commander'
+  /** 공격력 */
+  attack: number
+  /** 최대 체력 */
+  maxHealth: number
+  /** 보유 키워드 목록 */
+  keywords: Keyword[]
+  /** 소환 시 효과 텍스트 (표시용) */
+  battlecry?: string
+  /** 지휘관 능력 설명 */
+  commanderAbility?: string
+}
+
+// ────────────────────────────────────────────────────
 // 효과 카드
 // ────────────────────────────────────────────────────
 
@@ -106,7 +126,10 @@ export interface SpellCard extends CardBase {
 }
 
 /** 카드 유니온 타입 */
-export type Card = SoldierCard | SpellCard
+export type Card = SoldierCard | CommanderCard | SpellCard
+
+/** 유닛 카드 유니온 (병사 + 지휘관) */
+export type UnitCard = SoldierCard | CommanderCard
 
 // ────────────────────────────────────────────────────
 // 필드 위 유닛 상태 (카드 + 런타임 상태)
@@ -139,6 +162,14 @@ export function isSoldierCard(card: Card): card is SoldierCard {
   return card.cardType === 'soldier'
 }
 
+export function isCommanderCard(card: Card): card is CommanderCard {
+  return card.cardType === 'commander'
+}
+
 export function isSpellCard(card: Card): card is SpellCard {
   return card.cardType === 'spell'
+}
+
+export function isUnitCard(card: Card): card is UnitCard {
+  return card.cardType === 'soldier' || card.cardType === 'commander'
 }

@@ -4,7 +4,7 @@
  * 규칙:
  *  - 하루 1회, 3장 무료 뽑기
  *  - localStorage 'paljapae_last_draw_date' (YYYY-MM-DD) 기반 일일 초기화
- *  - 등급별 확률: common=55%, uncommon=30%, rare=13%, legendary=2%
+ *  - 등급별 확률: common=40%, uncommon=30%, rare=15%, epic=10%, legendary=4%, celestial=1%
  *  - 덱에 추가 또는 넘기기 선택
  */
 
@@ -19,12 +19,14 @@ import { ALL_CARDS } from '@/data/cards'
 const STORAGE_KEY = 'paljapae_last_draw_date'
 const DRAW_COUNT = 3
 
-/** 등급별 뽑기 가중치 */
+/** 등급별 뽑기 가중치 (합계: 100) */
 const RARITY_WEIGHTS: Record<Rarity, number> = {
-  common:    55,
+  common:    40,
   uncommon:  30,
-  rare:      13,
-  legendary:  2,
+  rare:      15,
+  epic:      10,
+  legendary:  4,
+  celestial:  1,
 }
 
 // ─────────────────────────────────────────────────────

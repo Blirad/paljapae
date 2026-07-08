@@ -188,8 +188,8 @@ export default function HandCardMini({
             element={element}
             rarity={card.rarity}
             size="mini"
-            cardType={card.cardType}
-            keywords={card.cardType === 'soldier' ? card.keywords : []}
+            cardType={card.cardType as 'soldier' | 'spell'}
+            keywords={card.cardType === 'soldier' || card.cardType === 'commander' ? 'keywords' in card ? card.keywords : [] : []}
             cost={card.cost}
           />
         ) : (
@@ -254,9 +254,9 @@ export default function HandCardMini({
           fontSize: 9,
           color: 'var(--text-muted)',
         }}>
-          {card.cardType === 'soldier' ? '병사' : '주문'}
+          {card.cardType === 'soldier' ? '병사' : card.cardType === 'commander' ? '지휘관' : '주문'}
         </span>
-        {card.cardType === 'soldier' && (
+        {(card.cardType === 'soldier' || card.cardType === 'commander') && (
           <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
             {/* 공격 뱃지 */}
             <div style={{
@@ -381,9 +381,9 @@ export default function HandCardMini({
           </div>
           <div style={{ height: 1, background: 'var(--border-subtle)', marginBottom: 6 }} />
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>
-            {card.cardType === 'soldier' ? '병사' : `주문 | ${card.subtype}`}
+            {card.cardType === 'soldier' ? '병사' : card.cardType === 'commander' ? '지휘관' : `주문 | ${'subtype' in card ? card.subtype : ''}`}
           </div>
-          {card.cardType === 'soldier' && card.battlecry && (
+          {(card.cardType === 'soldier' || card.cardType === 'commander') && 'battlecry' in card && card.battlecry && (
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-primary)', marginBottom: 4 }}>
               {card.battlecry}
             </div>
@@ -393,7 +393,7 @@ export default function HandCardMini({
               {card.effectText}
             </div>
           )}
-          {card.cardType === 'soldier' && (
+          {(card.cardType === 'soldier' || card.cardType === 'commander') && 'attack' in card && (
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: 14, color: 'var(--gold)', marginBottom: 4 }}>
               공격력 {card.attack} / 체력 {card.maxHealth}
             </div>

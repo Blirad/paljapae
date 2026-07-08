@@ -167,8 +167,8 @@ export default function CollectionScreen({
                     element={card.element ?? '火'}
                     rarity={card.rarity}
                     size="field"
-                    cardType={card.cardType}
-                    keywords={card.cardType === 'soldier' ? card.keywords : []}
+                    cardType={card.cardType as 'soldier' | 'spell'}
+                    keywords={(card.cardType === 'soldier' || card.cardType === 'commander') && 'keywords' in card ? card.keywords : []}
                     cost={card.cost}
                   />
                 </div>

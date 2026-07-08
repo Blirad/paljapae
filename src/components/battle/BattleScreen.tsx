@@ -3,7 +3,7 @@
  * 리라 스펙 §2 전체 레이아웃
  */
 
-import React, { useEffect, useRef, useState, useCallback } from 'react'
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import gsap from 'gsap'
 import { useBattleStore } from '@/game/store/battleStore'
 import type { InteractionState } from '@/game/store/battleStore'
@@ -16,6 +16,8 @@ import { useRelicStore } from '@/stores/relicStore'
 import { useChallengeStore } from '@/stores/challengeStore'
 
 import TopStatusBar from './TopStatusBar'
+import DailyElementBanner from './DailyElementBanner'
+import ComboCounter from './ComboCounter'
 import ElementMatchup from './ElementMatchup'
 import PlayerStatusBar from './PlayerStatusBar'
 import FieldArea from './FieldArea'
@@ -32,7 +34,8 @@ import HeroCharacter from './HeroCharacter'
 import type { SilhouetteVariant } from './CardArtSVG'
 import type { FieldUnit } from '@/types/cards'
 import type { FiveElement } from '@/types/elements'
-import { ELEMENT_DISPLAY } from '@/types/elements'
+import { ELEMENT_DISPLAY, GENERATES } from '@/types/elements'
+import { getDailyPillarInfo } from '@/game/saju/manseryeok'
 import { STAGES_BY_ID } from '@/data/stages'
 
 // ────────────────────────────────────────────────────
@@ -99,6 +102,15 @@ const GLOBAL_STYLES = `
 @keyframes heroGlowPulse {
   0%, 100% { filter: brightness(1); }
   50% { filter: brightness(1.2); }
+}
+@keyframes dailyBannerIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes comboCountUp {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.4); }
+  100% { transform: scale(1); }
 }
 `
 
@@ -168,6 +180,19 @@ export default function BattleScreen({ onRestart, onVictory, stageId }: BattleSc
 
   const relicStore = useRelicStore()
   const sealedElement = useChallengeStore(s => s.sealedElement)
+
+  // Phase 2-A: 일진 정보 (컴포넌트 마운트 시 1회 계산)
+  const dailyPillarInfo = useMemo(() => {
+    try {
+      return getDailyPillarInfo(new Date())
+    } catch {
+      return null
+    }
+  }, [])
+
+  // Phase 2-C: 오행 콤보 상태 구독
+  const comboElement = useBattleStore(s => s.comboElement)
+  const comboCount = useBattleStore(s => s.comboCount)
 
   // Phase 2-A: AI 턴 중 플레이어 피격 감지
   // Phase 2-C: 공격 시 오행별 파티클 이펙트 추가
@@ -419,6 +444,16 @@ export default function BattleScreen({ onRestart, onVictory, stageId }: BattleSc
           player.hero.element,
           8,
         )
+        // Phase 2-D: 사주 친화도 보너스 팝업
+        // 영웅 오행이 카드 오행을 상생(GENERATES[heroWuxing] === card.element)할 때 발동
+        if (card.element && GENERATES[player.hero.element as FiveElement] === card.element) {
+          useBattleStore.getState().addDamagePopup({
+            value: 0,
+            type: 'affinity_bonus',
+            x: 60,  // 데미지 팝업보다 우측 오프셋
+            y: 55,
+          })
+        }
       }
     }
   }
@@ -543,6 +578,15 @@ export default function BattleScreen({ onRestart, onVictory, stageId }: BattleSc
           )}
         </div>
 
+        {/* [A-2] Phase 2-A: 일진 오행 배너 — TopStatusBar 아래, ElementMatchup 위 */}
+        {dailyPillarInfo && result === null && (
+          <DailyElementBanner
+            stem={dailyPillarInfo.stem}
+            stemElement={dailyPillarInfo.stemElement}
+            heroElement={player.hero.element as FiveElement}
+          />
+        )}
+
         {/* [A-1] 오행 상성 실시간 표시 — 리라 스펙 Phase 1-B */}
         <ElementMatchup
           playerElement={player.hero.element as FiveElement}
@@ -597,11 +641,16 @@ export default function BattleScreen({ onRestart, onVictory, stageId }: BattleSc
           </div>
         </div>
 
-        {/* 중앙 FieldSeparator */}
-        <FieldSeparator
-          element={player.hero.element}
-          hintMessage={hintMessage}
-        />
+        {/* 중앙 FieldSeparator + Phase 2-C: ComboCounter 오버레이 */}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <FieldSeparator
+            element={player.hero.element}
+            hintMessage={hintMessage}
+          />
+          {comboElement && comboCount >= 2 && (
+            <ComboCounter element={comboElement} count={comboCount} />
+          )}
+        </div>
 
         {/* [D] 플레이어 영역: HeroCharacter(좌측) + 필드 3슬롯(우측) — Phase 2-A */}
         <div

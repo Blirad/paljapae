@@ -84,7 +84,9 @@ function getRarityLabel(rarity: Rarity): string {
     case 'common':    return '평범'
     case 'uncommon':  return '별호'
     case 'rare':      return '고수'
+    case 'epic':      return '영웅'
     case 'legendary': return '전설'
+    case 'celestial': return '천상'
   }
 }
 
@@ -93,7 +95,9 @@ function getRarityColor(rarity: Rarity): string {
     case 'common':    return 'rgba(160,152,128,0.9)'
     case 'uncommon':  return 'rgba(120,160,220,0.9)'
     case 'rare':      return 'rgba(120,130,255,0.95)'
+    case 'epic':      return 'rgba(100,150,255,0.95)'
     case 'legendary': return '#E8C547'
+    case 'celestial': return '#FFD700'
   }
 }
 
@@ -122,10 +126,12 @@ const SORT_OPTIONS: Array<{ key: SortOrder; label: string }> = [
 ]
 
 const RARITY_ORDER: Record<Rarity, number> = {
-  legendary: 0,
-  rare: 1,
-  uncommon: 2,
-  common: 3,
+  celestial: 0,
+  legendary: 1,
+  epic: 2,
+  rare: 3,
+  uncommon: 4,
+  common: 5,
 }
 
 function sortCards(cards: Card[], order: SortOrder): Card[] {

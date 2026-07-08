@@ -93,7 +93,9 @@ function getRarityLabel(rarity: Rarity): string {
     case 'common':    return '평범'
     case 'uncommon':  return '별호'
     case 'rare':      return '고수'
+    case 'epic':      return '영웅'
     case 'legendary': return '전설'
+    case 'celestial': return '천상'
   }
 }
 
@@ -102,7 +104,9 @@ function getRarityColor(rarity: Rarity): string {
     case 'common':    return 'rgba(160,152,128,0.9)'
     case 'uncommon':  return 'rgba(120,160,220,0.9)'
     case 'rare':      return 'rgba(120,130,255,0.95)'
+    case 'epic':      return 'rgba(100,150,255,0.95)'
     case 'legendary': return '#E8C547'
+    case 'celestial': return '#FFD700'
   }
 }
 
@@ -352,7 +356,7 @@ function DrawCardItem({
           {/* 아트 영역 */}
           <div style={{ height: 80, flexShrink: 0, position: 'relative', overflow: 'hidden' }}>
             {element ? (
-              <CardArtSVG element={element} rarity={card.rarity} size="mini" cardType={card.cardType} />
+              <CardArtSVG element={element} rarity={card.rarity} size="mini" cardType={card.cardType as 'soldier' | 'spell'} />
             ) : (
               <div style={{
                 width: '100%', height: '100%',
@@ -397,7 +401,7 @@ function DrawCardItem({
             }}>
               {getRarityLabel(card.rarity)}
             </span>
-            {card.cardType === 'soldier' && (
+            {(card.cardType === 'soldier' || card.cardType === 'commander') && 'attack' in card && (
               <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
                 <div style={{
                   width: 18, height: 18, borderRadius: '50%',

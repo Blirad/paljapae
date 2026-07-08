@@ -21,11 +21,12 @@ function getFontSize(value: number, isCrit: boolean): number {
 }
 
 function getColor(type: DamagePopupData['type'], value: number, isCrit: boolean): string {
-  if (type === 'heal')    return '#4ADE80'
-  if (type === 'fatigue') return '#F59E0B'
-  if (isCrit)             return '#FF1A1A'  // 상극: 더 진한 빨강
-  if (value >= 7)         return '#EF4444'
-  if (value >= 4)         return '#FCA5A5'
+  if (type === 'heal')           return '#4ADE80'
+  if (type === 'fatigue')        return '#F59E0B'
+  if (type === 'affinity_bonus') return '#4ADE80'
+  if (isCrit)                    return '#FF1A1A'  // 상극: 더 진한 빨강
+  if (value >= 7)                return '#EF4444'
+  if (value >= 4)                return '#FCA5A5'
   return '#FFB3B3'
 }
 
@@ -34,12 +35,20 @@ export default function DamagePopup({ popup }: DamagePopupProps): React.ReactEle
   const xOffset = useRef((Math.random() - 0.5) * 40)
 
   const isCrit = popup.modifier === 'dominate'
+  const isAffinityBonus = popup.type === 'affinity_bonus'
 
   useEffect(() => {
     const el = elRef.current
     if (!el) return
 
-    if (isCrit) {
+    if (isAffinityBonus) {
+      // Phase 2-D: 친화도 보너스 — 위로 float (리라 스펙 §AffinityBonusPopup)
+      gsap.fromTo(
+        el,
+        { y: 0, scale: 1.2, opacity: 1 },
+        { y: -90, scale: 0.8, opacity: 0, duration: 0.75, ease: 'power2.out' },
+      )
+    } else if (isCrit) {
       // 상극 — 크게 펀치인 후 위로 사라짐
       gsap.timeline()
         .fromTo(el,
@@ -61,7 +70,7 @@ export default function DamagePopup({ popup }: DamagePopupProps): React.ReactEle
           scale: 0.8, opacity: 0, duration: 0.85, ease: 'power2.out' },
       )
     }
-  }, [isCrit])
+  }, [isCrit, isAffinityBonus])
 
   const color = getColor(popup.type, popup.value, isCrit)
   const fontSize = getFontSize(popup.value, isCrit)
@@ -70,6 +79,32 @@ export default function DamagePopup({ popup }: DamagePopupProps): React.ReactEle
   const textShadow = isCrit
     ? `0 2px 12px rgba(0,0,0,0.9), 0 0 20px ${shadowColor}CC, 0 0 40px ${shadowColor}66`
     : `0 2px 8px rgba(0,0,0,0.8), 0 0 12px ${shadowColor}80`
+
+  // Phase 2-D: affinity_bonus 팝업 — 별도 스타일로 렌더
+  if (isAffinityBonus) {
+    return ReactDOM.createPortal(
+      <div
+        ref={elRef}
+        style={{
+          position: 'fixed',
+          left: `${popup.x}%`,
+          top: `${popup.y}%`,
+          transform: 'translateX(-50%)',
+          zIndex: 40,
+          pointerEvents: 'none',
+          fontFamily: 'DM Mono, monospace',
+          fontWeight: 700,
+          fontSize: 20,
+          color: '#4ADE80',
+          textShadow: '0 2px 8px rgba(0,0,0,0.8), 0 0 12px rgba(74,222,128,0.5)',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        +15% 보너스
+      </div>,
+      document.body,
+    )
+  }
 
   return ReactDOM.createPortal(
     <div

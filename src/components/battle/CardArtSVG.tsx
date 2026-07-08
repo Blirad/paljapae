@@ -82,11 +82,23 @@ export function getRarityBorderStyle(rarity: Rarity): React.CSSProperties {
         border: '2px solid rgba(201,168,76,0.8)',
         boxShadow: '0 0 14px rgba(201,168,76,0.4), inset 0 0 8px rgba(201,168,76,0.1)',
       }
+    case 'epic':
+      return {
+        border: '2px solid rgba(100,150,255,0.8)',
+        boxShadow: '0 0 16px rgba(100,150,255,0.5), inset 0 0 10px rgba(100,150,255,0.15)',
+        animation: 'epicPulse 1.5s ease-in-out infinite',
+      }
     case 'legendary':
       return {
         border: '2px solid #C9A84C',
         boxShadow: '0 0 20px rgba(201,168,76,0.6), 0 0 40px rgba(201,168,76,0.2), inset 0 0 12px rgba(201,168,76,0.15)',
         animation: 'legendaryPulse 2s ease-in-out infinite',
+      }
+    case 'celestial':
+      return {
+        border: '2.5px solid #FFD700',
+        boxShadow: '0 0 24px rgba(255,215,0,0.7), 0 0 48px rgba(255,215,0,0.3), inset 0 0 14px rgba(255,215,0,0.2)',
+        animation: 'celestialPulse 1.2s ease-in-out infinite',
       }
     default:
       return {

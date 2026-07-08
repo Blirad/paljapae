@@ -7,6 +7,7 @@
 import React, { useEffect, useRef } from 'react'
 import gsap from 'gsap'
 import type { FieldUnit } from '@/types/cards'
+import { isCommanderCard } from '@/types/cards'
 import FieldUnitCard from './FieldUnitCard'
 import EmptySlot from './EmptySlot'
 import type { InteractionState } from '@/game/store/battleStore'
@@ -125,6 +126,9 @@ export default function FieldArea({
   playerElement,
 }: FieldAreaProps): React.ReactElement {
   const isPlayerField = side === 'player'
+
+  // 지휘관 고유성 검사: 필드에 지휘관이 이미 배치되어 있는지 확인
+  const hasCommanderOnField = field.some(unit => unit && isCommanderCard(unit.card))
 
   // 소환/사망 애니메이션: 슬롯별 ref + 이전 유닛 추적
   const slotRefs = useRef<(HTMLDivElement | null)[]>([])
@@ -248,6 +252,7 @@ export default function FieldArea({
               side={side}
               isDropTarget={isDropTarget}
               isSelectable={isSelectable}
+              isCommanderOnField={hasCommanderOnField}
               onClick={isSelectable || isDropTarget ? () => onEmptySlotClick?.(slotIdx) : undefined}
               onDragOver={onDragOver ? (e) => onDragOver(e, slotIdx) : undefined}
               onDrop={onDrop ? (e) => onDrop(e, slotIdx) : undefined}

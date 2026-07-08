@@ -51,13 +51,15 @@ interface HeroCardProps {
   hero: HeroData
   selected?: boolean
   onClick: () => void
+  /** Phase 2-B: 오늘 일진과의 친화도 뱃지 */
+  affinity?: 'shengsheng' | 'shengke' | null
 }
 
 // ────────────────────────────────────────────────────
 // HeroCard
 // ────────────────────────────────────────────────────
 
-export default function HeroCard({ hero, selected = false, onClick }: HeroCardProps): React.ReactElement {
+export default function HeroCard({ hero, selected = false, onClick, affinity }: HeroCardProps): React.ReactElement {
   const [hovered, setHovered] = React.useState(false)
 
   const borderColor = selected
@@ -205,6 +207,52 @@ export default function HeroCard({ hero, selected = false, onClick }: HeroCardPr
         <span>HP {hero.baseHP}</span>
         <span>E {hero.baseEnergy}</span>
       </div>
+
+      {/* Phase 2-B: 사주 친화도 뱃지 (리라 스펙 §UI-2) */}
+      {affinity === 'shengsheng' && (
+        <div
+          title="오늘 일진과 상생 관계 — 전투 시 보너스"
+          style={{
+            position: 'absolute',
+            bottom: 6,
+            right: 4,
+            padding: '2px 5px',
+            background: 'rgba(13, 32, 13, 0.9)',
+            border: '1px solid #4db84d',
+            color: '#4db84d',
+            fontFamily: 'var(--font-mono, "DM Mono", monospace)',
+            fontSize: 9,
+            whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+            animation: 'scaleIn 0.15s ease-out',
+            lineHeight: 1.4,
+          }}
+        >
+          今日 相生 ↑
+        </div>
+      )}
+      {affinity === 'shengke' && (
+        <div
+          title="오늘 일진과 상극 관계 — 전투 시 패널티"
+          style={{
+            position: 'absolute',
+            bottom: 6,
+            right: 4,
+            padding: '2px 5px',
+            background: 'rgba(32, 13, 13, 0.9)',
+            border: '1px solid #cc0000',
+            color: '#cc0000',
+            fontFamily: 'var(--font-mono, "DM Mono", monospace)',
+            fontSize: 9,
+            whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+            animation: 'scaleIn 0.15s ease-out',
+            lineHeight: 1.4,
+          }}
+        >
+          今日 相克 ↓
+        </div>
+      )}
     </button>
   )
 }

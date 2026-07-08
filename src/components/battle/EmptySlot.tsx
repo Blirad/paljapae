@@ -11,6 +11,7 @@ interface EmptySlotProps {
   side: 'player' | 'ai'
   isDropTarget?: boolean
   isSelectable?: boolean
+  isCommanderOnField?: boolean  // 필드에 지휘관이 이미 있는지 여부
   onClick?: () => void
   onDragOver?: (e: React.DragEvent) => void
   onDrop?: (e: React.DragEvent) => void
@@ -22,6 +23,7 @@ export default function EmptySlot({
   side: _side,
   isDropTarget = false,
   isSelectable = false,
+  isCommanderOnField = false,
   onClick,
   onDragOver,
   onDrop,
@@ -29,11 +31,18 @@ export default function EmptySlot({
 }: EmptySlotProps): React.ReactElement {
   const slotRef = useRef<HTMLDivElement>(null)
 
-  const borderColor = isDropTarget || isSelectable
+  // 지휘관이 이미 필드에 있으면 비활성화
+  const isDisabled = isCommanderOnField
+
+  const borderColor = isDisabled
+    ? 'rgba(200,50,50,0.4)'
+    : isDropTarget || isSelectable
     ? 'var(--gold)'
     : 'var(--border)'
 
-  const bg = isDropTarget || isSelectable
+  const bg = isDisabled
+    ? 'rgba(200,50,50,0.02)'
+    : isDropTarget || isSelectable
     ? 'rgba(212,175,90,0.05)'
     : 'rgba(255,255,255,0.02)'
 
@@ -80,7 +89,21 @@ export default function EmptySlot({
       }}
       aria-label="빈 슬롯"
     >
-      {isSelectable && (
+      {isDisabled ? (
+        <div style={{
+          width: 28,
+          height: 28,
+          border: '1px solid rgba(200,50,50,0.6)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'rgba(200,50,50,0.6)',
+          fontSize: 16,
+          fontFamily: 'var(--font-mono)',
+        }}>
+          ✕
+        </div>
+      ) : isSelectable ? (
         <div style={{
           width: 28,
           height: 28,
@@ -94,7 +117,7 @@ export default function EmptySlot({
         }}>
           +
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

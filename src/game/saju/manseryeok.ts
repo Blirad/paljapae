@@ -229,6 +229,44 @@ export function calculateSaju(year: number, month: number, day: number): SajuRes
 }
 
 /**
+ * 오늘 날짜의 일진(日辰) 천간 오행을 반환한다.
+ *
+ * 리라 스펙 §DailyElementBanner: manseryeok.ts의 calculateSaju(year,month,day)를
+ * 오늘 날짜로 호출 → pillars.day.stemElement(일간 오행)를 일진 오행으로 채택.
+ *
+ * @param date - 기준 날짜 (기본값: 오늘)
+ * @returns 오늘 일진의 천간 오행
+ */
+export function getDailyElement(date: Date = new Date()): FiveElement {
+  const year = date.getFullYear()
+  const month = date.getMonth() + 1
+  const day = date.getDate()
+  const result = calculateSaju(year, month, day)
+  return result.pillars.day.stemElement
+}
+
+/**
+ * 오늘 날짜의 일진 전체 데이터를 반환한다.
+ * 배너 표시용 (천간 한자 + 오행)
+ *
+ * @param date - 기준 날짜 (기본값: 오늘)
+ * @returns { stem: '甲', stemElement: '木' } 형태
+ */
+export function getDailyPillarInfo(date: Date = new Date()): {
+  stem: string
+  stemElement: FiveElement
+} {
+  const year = date.getFullYear()
+  const month = date.getMonth() + 1
+  const day = date.getDate()
+  const result = calculateSaju(year, month, day)
+  return {
+    stem: result.pillars.day.stem,
+    stemElement: result.pillars.day.stemElement,
+  }
+}
+
+/**
  * 오행 점수를 백분율로 변환 (합계 6점 기준)
  * 바 차트 표시용
  */
