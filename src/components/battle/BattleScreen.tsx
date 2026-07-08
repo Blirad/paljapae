@@ -16,6 +16,7 @@ import { useRelicStore } from '@/stores/relicStore'
 import { useChallengeStore } from '@/stores/challengeStore'
 
 import TopStatusBar from './TopStatusBar'
+import ElementMatchup from './ElementMatchup'
 import PlayerStatusBar from './PlayerStatusBar'
 import FieldArea from './FieldArea'
 import HandArea from './HandArea'
@@ -28,7 +29,9 @@ import FieldSeparator from './FieldSeparator'
 import BattleParticles from './BattleParticles'
 import type { BattleParticlesRef } from './BattleParticles'
 import type { FieldUnit } from '@/types/cards'
+import type { FiveElement } from '@/types/elements'
 import { ELEMENT_DISPLAY } from '@/types/elements'
+import { STAGES_BY_ID } from '@/data/stages'
 
 // ────────────────────────────────────────────────────
 // 글로벌 CSS 애니메이션 (인라인 스타일 보조)
@@ -101,7 +104,7 @@ interface BattleScreenProps {
   stageId?: number | null     // 현재 배틀 스테이지 ID (M5)
 }
 
-export default function BattleScreen({ onRestart, onVictory, stageId: _stageId }: BattleScreenProps): React.ReactElement {
+export default function BattleScreen({ onRestart, onVictory, stageId }: BattleScreenProps): React.ReactElement {
   const onboardingResult = useOnboardingStore(s => s.onboardingResult)
   const {
     gameState,
@@ -199,6 +202,14 @@ export default function BattleScreen({ onRestart, onVictory, stageId: _stageId }
 
   const { player, ai, turn, phase, result, log } = gameState
   const isAiTurn = interaction === 'ai_turn' || phase === 'ai_turn'
+
+  // 적 오행 — stageId가 있으면 stages.ts에서 조회, 없으면 AI 영웅 오행 사용
+  const enemyElement: FiveElement | 'neutral' = (() => {
+    if (stageId != null && STAGES_BY_ID[stageId]) {
+      return STAGES_BY_ID[stageId].element
+    }
+    return ai.hero.element as FiveElement
+  })()
 
   // AI 필드에 도발 유닛 있는지
   const hasTauntInAiField = ai.field.some(
@@ -435,6 +446,12 @@ export default function BattleScreen({ onRestart, onVictory, stageId: _stageId }
             />
           )}
         </div>
+
+        {/* [A-1] 오행 상성 실시간 표시 — 리라 스펙 Phase 1-B */}
+        <ElementMatchup
+          playerElement={player.hero.element as FiveElement}
+          enemyElement={enemyElement}
+        />
 
         {/* 힌트 배너 — FieldSeparator로 통합 */}
 

@@ -88,14 +88,30 @@ export default function DamagePopup({ popup }: DamagePopupProps): React.ReactEle
         textShadow,
       }}
     >
-      {/* 숫자 + 상극/상생 레이블 수평 배치 (모바일 공간 절약) */}
+      {/* 숫자 + 배율 + 상극/상생 레이블 수평 배치 (모바일 공간 절약) */}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
         <span>{popup.type === 'damage' ? '-' : '+'}{popup.value}</span>
         {popup.modifier === 'dominate' && (
-          <span style={{ fontSize: 12, color: '#FF3333', fontWeight: 700 }}>상극!</span>
+          <>
+            <span style={{
+              fontSize: Math.round(fontSize * 0.5),
+              color: '#FF3333',
+              fontWeight: 700,
+              transform: 'scale(1.2)',
+              display: 'inline-block',
+            }}>×1.5</span>
+            <span style={{ fontSize: 12, color: '#FF3333', fontWeight: 700 }}>상극!</span>
+          </>
         )}
         {popup.modifier === 'generate_defense' && (
-          <span style={{ fontSize: 12, color: '#44CC66' }}>상생</span>
+          <>
+            <span style={{
+              fontSize: Math.round(fontSize * 0.5),
+              color: '#4488FF',
+              fontWeight: 700,
+            }}>×0.75</span>
+            <span style={{ fontSize: 12, color: '#44CC66' }}>상생</span>
+          </>
         )}
       </div>
       {popup.type === 'fatigue' && (
