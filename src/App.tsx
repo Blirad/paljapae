@@ -29,6 +29,11 @@ import HeroSelectScreen from '@/screens/HeroSelectScreen'
 import RestScreen from '@/screens/RestScreen'
 import SettingsScreen from '@/screens/SettingsScreen'
 import CollectionScreen from '@/screens/CollectionScreen'
+import LobbyScreen from '@/screens/LobbyScreen'
+import MatchmakingScreen from '@/screens/MatchmakingScreen'
+import YourTurnWaitScreen from '@/screens/YourTurnWaitScreen'
+import PvPResultScreen from '@/screens/PvPResultScreen'
+import PlayerVsPlayerScreen from '@/components/battle/PlayerVsPlayerScreen'
 import { hasDrawnToday } from '@/game/hooks/useDailyDraw'
 import { useChallengeStore } from '@/stores/challengeStore'
 import { CHALLENGE_RULES } from '@/types/challengeMode'
@@ -151,26 +156,32 @@ class GameErrorBoundary extends Component<
 // ────────────────────────────────────────────────────
 
 type AppScene =
-  | 'title'        // 신규 — 앱 최초 진입 타이틀 화면
-  | 'start'        // 기존 — 기존 유저 로비 (StartScreen 개편)
-  | 'onboarding'   // 기존
-  | 'runStart'     // 기존
-  | 'dailyDraw'    // 기존
-  | 'worldMap'     // 기존
-  | 'battle'       // 기존
-  | 'cardReward'   // 기존
-  | 'ending'       // 기존
-  | 'defeat'       // 기존
-  | 'removeCard'   // 기존
-  | 'upgrade'      // 기존
-  | 'event'        // 기존
-  | 'shop'         // 기존
-  | 'deckBuild'    // 기존
-  | 'heroSelect'   // 신규 — 타입 선언만, Phase B 구현
-  | 'rest'         // 신규 — 타입 선언만, Phase B 구현
-  | 'runSummary'   // 신규 — 타입 선언만, Phase B 구현
-  | 'collection'   // 신규 — 타입 선언만, Phase B 구현
-  | 'settings'     // 신규 — 타입 선언만, Phase B 구현
+  | 'title'          // 신규 — 앱 최초 진입 타이틀 화면
+  | 'start'          // 기존 — 기존 유저 로비 (StartScreen 개편)
+  | 'onboarding'     // 기존
+  | 'runStart'       // 기존
+  | 'dailyDraw'      // 기존
+  | 'worldMap'       // 기존
+  | 'battle'         // 기존
+  | 'cardReward'     // 기존
+  | 'ending'         // 기존
+  | 'defeat'         // 기존
+  | 'removeCard'     // 기존
+  | 'upgrade'        // 기존
+  | 'event'          // 기존
+  | 'shop'           // 기존
+  | 'deckBuild'      // 기존
+  | 'heroSelect'     // 신규 — 타입 선언만, Phase B 구현
+  | 'rest'           // 신규 — 타입 선언만, Phase B 구현
+  | 'runSummary'     // 신규 — 타입 선언만, Phase B 구현
+  | 'collection'     // 신규 — 타입 선언만, Phase B 구현
+  | 'settings'       // 신규 — 타입 선언만, Phase B 구현
+  // Phase 4 PvP (리라 스펙 §App.tsx 수정 영역)
+  | 'pvpLobby'       // LobbyScreen
+  | 'pvpMatchmaking' // MatchmakingScreen
+  | 'pvpBattle'      // PlayerVsPlayerScreen
+  | 'pvpWaiting'     // YourTurnWaitScreen
+  | 'pvpResult'      // PvPResultScreen
 
 /** 앱 초기 scene 결정 — 항상 타이틀 화면에서 시작 (리라 Phase A 스펙 §A-4) */
 function getInitialScene(): AppScene {
@@ -219,6 +230,8 @@ export default function App(): React.ReactElement {
   const [shopNodeCleared, setShopNodeCleared] = useState<boolean>(false)
   // P4-A: 튜토리얼 완료 여부
   const [tutorialDone, setTutorialDone] = useState<boolean>(() => isTutorialDone())
+  // Phase 4 PvP: 결과 (pvpStore에서도 관리하나 scene 전환용 캐시)
+  const [pvpIsWin, setPvpIsWin] = useState<boolean>(false)
   // P3-A: 유물 획득 팝업 (보스 처치 / 이벤트 경로)
   const [relicPopupId, setRelicPopupId] = useState<RelicId | null>(null)
   // P2-B: 마지막 전투 골드 보상 (CardRewardScreen 배너용)
@@ -558,6 +571,32 @@ export default function App(): React.ReactElement {
     setScene('runSummary')
   }, [stageClearedStageIds])
 
+  // ─── PvP 핸들러들 ────────────────────────────────
+  const handlePvPLobby = useCallback(() => {
+    setScene('pvpLobby')
+  }, [])
+
+  const handlePvPStartMatching = useCallback(() => {
+    setScene('pvpMatchmaking')
+  }, [])
+
+  const handlePvPMatchFound = useCallback(() => {
+    setScene('pvpBattle')
+  }, [])
+
+  const handlePvPEndGame = useCallback((isWin: boolean) => {
+    setPvpIsWin(isWin)
+    setScene('pvpResult')
+  }, [])
+
+  const handlePvPWaitTurn = useCallback(() => {
+    setScene('pvpWaiting')
+  }, [])
+
+  const handlePvPMyTurnStart = useCallback(() => {
+    setScene('pvpBattle')
+  }, [])
+
   // ErrorBoundary 리셋: 모든 진행 초기화 후 onboarding으로
   const handleErrorReset = useCallback(() => {
     clearAllProgress()
@@ -587,6 +626,7 @@ export default function App(): React.ReactElement {
             onNewGame={handleNewGame}
             onDeckBuild={() => setScene('deckBuild')}
             onDailyDraw={() => setScene('dailyDraw')}
+            onPvP={handlePvPLobby}
           />
         )
 
@@ -595,6 +635,48 @@ export default function App(): React.ReactElement {
           <DeckBuildScreen
             onComplete={() => setScene('start')}
             onCancel={() => setScene('start')}
+          />
+        )
+
+      // ─── Phase 4 PvP scenes ────────────────────────
+      case 'pvpLobby':
+        return (
+          <LobbyScreen
+            onBack={() => setScene('start')}
+            onStartMatching={handlePvPStartMatching}
+            onDeckBuild={() => setScene('deckBuild')}
+          />
+        )
+
+      case 'pvpMatchmaking':
+        return (
+          <MatchmakingScreen
+            onCancel={() => setScene('pvpLobby')}
+            onMatchFound={handlePvPMatchFound}
+          />
+        )
+
+      case 'pvpBattle':
+        return (
+          <PlayerVsPlayerScreen
+            onEndGame={handlePvPEndGame}
+            onWaitTurn={handlePvPWaitTurn}
+          />
+        )
+
+      case 'pvpWaiting':
+        return (
+          <YourTurnWaitScreen
+            onMyTurnStart={handlePvPMyTurnStart}
+          />
+        )
+
+      case 'pvpResult':
+        return (
+          <PvPResultScreen
+            isWin={pvpIsWin}
+            onRematch={() => setScene('pvpMatchmaking')}
+            onLobby={() => setScene('pvpLobby')}
           />
         )
 

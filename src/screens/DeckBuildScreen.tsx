@@ -996,9 +996,11 @@ function CancelConfirmSheet({ onLeave, onStay }: CancelConfirmSheetProps): React
 interface DeckBuildScreenProps {
   onComplete: () => void
   onCancel: () => void
+  /** PvP 진입 시 true — 헤더에 [PvP 모드] 배지 표시 (리라 스펙 §DeckBuildScreen 수정) */
+  pvpMode?: boolean
 }
 
-export default function DeckBuildScreen({ onComplete, onCancel }: DeckBuildScreenProps): React.ReactElement {
+export default function DeckBuildScreen({ onComplete, onCancel, pvpMode = false }: DeckBuildScreenProps): React.ReactElement {
   injectStyles()
 
   const [mounted, setMounted] = useState(false)
@@ -1209,8 +1211,25 @@ export default function DeckBuildScreen({ onComplete, onCancel }: DeckBuildScree
           fontSize: 18,
           color: 'var(--gold)',
           letterSpacing: '0.04em',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
         }}>
           덱 편집 (牌)
+          {pvpMode && (
+            <span style={{
+              fontFamily: 'var(--font-mono)',
+              fontStyle: 'normal',
+              fontSize: 11,
+              color: 'var(--gold)',
+              background: 'rgba(201,168,76,0.12)',
+              border: '1px solid var(--border-gold)',
+              padding: '2px 6px',
+              letterSpacing: '0.05em',
+            }}>
+              PvP 모드
+            </span>
+          )}
         </span>
 
         <button

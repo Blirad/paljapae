@@ -107,6 +107,8 @@ interface FieldAreaProps {
   dragOverSlot?: number | null
   isAiHeroTargetable?: boolean
   playerElement?: FiveElement
+  /** PvP: readonly=true이면 클릭/드래그 비활성화 (상대 필드 표시 전용) */
+  readonly?: boolean
 }
 
 export default function FieldArea({
@@ -124,6 +126,7 @@ export default function FieldArea({
   onDragLeave,
   dragOverSlot = null,
   playerElement,
+  readonly = false,
 }: FieldAreaProps): React.ReactElement {
   const isPlayerField = side === 'player'
 
@@ -232,9 +235,9 @@ export default function FieldArea({
                 slotIdx={slotIdx}
                 side={side}
                 isSelected={isPlayerField && selectedUnitSlot === slotIdx}
-                isValidAttackTarget={isValidTarget}
-                isDimmed={isDimmed}
-                onClick={onUnitClick ? () => onUnitClick(slotIdx) : undefined}
+                isValidAttackTarget={readonly ? false : isValidTarget}
+                isDimmed={readonly ? false : isDimmed}
+                onClick={readonly ? undefined : (onUnitClick ? () => onUnitClick(slotIdx) : undefined)}
               />
             </div>
           )
@@ -250,13 +253,13 @@ export default function FieldArea({
               key={slotIdx}
               slotIdx={slotIdx}
               side={side}
-              isDropTarget={isDropTarget}
-              isSelectable={isSelectable}
+              isDropTarget={readonly ? false : isDropTarget}
+              isSelectable={readonly ? false : isSelectable}
               isCommanderOnField={hasCommanderOnField}
-              onClick={isSelectable || isDropTarget ? () => onEmptySlotClick?.(slotIdx) : undefined}
-              onDragOver={onDragOver ? (e) => onDragOver(e, slotIdx) : undefined}
-              onDrop={onDrop ? (e) => onDrop(e, slotIdx) : undefined}
-              onDragLeave={onDragLeave}
+              onClick={readonly ? undefined : (isSelectable || isDropTarget ? () => onEmptySlotClick?.(slotIdx) : undefined)}
+              onDragOver={readonly ? undefined : (onDragOver ? (e) => onDragOver(e, slotIdx) : undefined)}
+              onDrop={readonly ? undefined : (onDrop ? (e) => onDrop(e, slotIdx) : undefined)}
+              onDragLeave={readonly ? undefined : onDragLeave}
             />
           )
         }

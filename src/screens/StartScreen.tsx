@@ -334,6 +334,7 @@ interface StartScreenProps {
   onNewGame: () => void     // 새 게임 → Onboarding
   onDeckBuild?: () => void  // 덱 빌드
   onDailyDraw?: () => void  // 일일 뽑기 (Phase A 신규)
+  onPvP?: () => void        // PvP 대전 진입 (Phase 4 신규)
 }
 
 // ────────────────────────────────────────────────────
@@ -345,6 +346,7 @@ export default function StartScreen({
   onNewGame,
   onDeckBuild,
   onDailyDraw,
+  onPvP,
 }: StartScreenProps): React.ReactElement {
   const [showConfirm, setShowConfirm] = useState(false)
   const [saveInfo, setSaveInfo] = useState<SaveInfo | null>(null)
@@ -490,6 +492,13 @@ export default function StartScreen({
             label="일일 뽑기"
             onClick={onDailyDraw ?? (() => {})}
             disabled={!onDailyDraw}
+          />
+          <LobbyButton
+            icon="⚔"
+            label="PvP 대전"
+            onClick={onPvP ?? (() => {})}
+            disabled={!onPvP}
+            accentColor="var(--gold)"
           />
         </div>
 
