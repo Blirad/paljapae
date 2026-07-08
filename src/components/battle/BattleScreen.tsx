@@ -170,6 +170,7 @@ export default function BattleScreen({ onRestart, onVictory, stageId }: BattleSc
   const sealedElement = useChallengeStore(s => s.sealedElement)
 
   // Phase 2-A: AI 턴 중 플레이어 피격 감지
+  // Phase 2-C: 공격 시 오행별 파티클 이펙트 추가
   const prevPlayerHpRef = useRef<number | null>(null)
   const prevAiHpRef = useRef<number | null>(null)
   useEffect(() => {
@@ -177,16 +178,36 @@ export default function BattleScreen({ onRestart, onVictory, stageId }: BattleSc
     const currentPlayerHp = gameState.player.currentHp
     const currentAiHp = gameState.ai.currentHp
 
-    // 플레이어 HP 감소 → isPlayerHit + isAiAttacking (AI 공격 애니메이션)
+    // 플레이어 HP 감소 → isPlayerHit + isAiAttacking + 파티클
     if (prevPlayerHpRef.current !== null && currentPlayerHp < prevPlayerHpRef.current) {
       setIsPlayerHit(true)
       setIsAiAttacking(true)
+
+      // Phase 2-C: AI 공격 원소 색상으로 파티클 이미션
+      const aiElement = gameState.ai.hero.element as FiveElement
+      particlesRef.current?.emit(
+        window.innerWidth * 0.5,
+        window.innerHeight * 0.5,
+        aiElement,
+        12
+      )
+
       setTimeout(() => setIsPlayerHit(false), 300)
       setTimeout(() => setIsAiAttacking(false), 400)
     }
-    // AI HP 감소 (자동 전투 페이즈) → isAiHit
+    // AI HP 감소 (자동 전투 페이즈) → isAiHit + 파티클
     if (prevAiHpRef.current !== null && currentAiHp < prevAiHpRef.current) {
       setIsAiHit(true)
+
+      // Phase 2-C: 플레이어 공격 원소 색상으로 파티클 이미션
+      const playerElement = gameState.player.hero.element as FiveElement
+      particlesRef.current?.emit(
+        window.innerWidth * 0.5,
+        window.innerHeight * 0.5,
+        playerElement,
+        12
+      )
+
       setTimeout(() => setIsAiHit(false), 300)
     }
 
