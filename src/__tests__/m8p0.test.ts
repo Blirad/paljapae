@@ -27,7 +27,7 @@ import { getAdvantageRelation, getAdvantageText } from '@/utils/advantage'
 // P0-1: 유물 20종 데이터
 // ────────────────────────────────────────────────────
 
-describe('P0-1: 유물 20종 데이터', () => {
+describe('P0-1: 유물 20종 데이터 + Phase 1-C: 오행 보완 3종', () => {
   const ALL_IDS: RelicId[] = [
     // 기존 5종
     'RELIC_HERB_POUCH', 'RELIC_DUEL_CREST', 'RELIC_JADE_BEAD', 'RELIC_ELEMENT_SEAL', 'RELIC_HELL_TALISMAN',
@@ -39,10 +39,12 @@ describe('P0-1: 유물 20종 데이터', () => {
     'RELIC_WATER_SPRING', 'RELIC_WATER_ABYSS',
     'RELIC_GENERATE_CYCLE', 'RELIC_DOMINATE_SEAL', 'RELIC_TWIN_ELEMENT',
     'RELIC_CHAOS_PENTA', 'RELIC_FATE_REVERSE',
+    // Phase 1-C: 오행 보완 3종
+    'RELIC_WEAK_ELEMENT_SEAL', 'RELIC_DOMINATE_NEUTRALIZE', 'RELIC_FIVE_ELEMENT_SPIRIT_WEAPON',
   ]
 
-  it('ALL_RELICS에 20종 정의됨', () => {
-    expect(Object.keys(ALL_RELICS)).toHaveLength(20)
+  it('ALL_RELICS에 23종 정의됨 (20 + Phase 1-C 3종)', () => {
+    expect(Object.keys(ALL_RELICS)).toHaveLength(23)
   })
 
   it.each(ALL_IDS)('%s: 필수 필드 존재', (id) => {

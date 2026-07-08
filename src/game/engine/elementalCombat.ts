@@ -49,23 +49,34 @@ export function getCombatModifier(
  * @param baseDamage - 기본 공격력
  * @param attackerElement - 공격자 오행 (null = 중립)
  * @param defenderElement - 방어자 오행 (null = 중립)
+ * @param relicModifier - Phase 1-C: 유물 기반 배율 수정자 (기본값 1.0)
  * @returns 최종 피해량 (반올림)
  */
 export function calculateDamage(
   baseDamage: number,
   attackerElement: FiveElement | null,
   defenderElement: FiveElement | null,
+  relicModifier: number = 1.0,
 ): number {
   const modifier = getCombatModifier(attackerElement, defenderElement)
+  let finalDamage = baseDamage
 
   switch (modifier) {
     case 'dominate':
       // 상극: × 1.5, 반올림
-      return Math.round(baseDamage * 1.5)
+      finalDamage = baseDamage * 1.5
+      break
     case 'generate_defense':
       // 상생 방어: × 0.75, 반올림
-      return Math.round(baseDamage * 0.75)
+      finalDamage = baseDamage * 0.75
+      break
     case 'neutral':
-      return baseDamage
+      finalDamage = baseDamage
+      break
   }
+
+  // Phase 1-C: 유물 기반 배율 수정 적용
+  finalDamage *= relicModifier
+
+  return Math.round(finalDamage)
 }

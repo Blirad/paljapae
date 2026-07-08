@@ -98,8 +98,8 @@ describe('P3: ALL_RELICS 데이터', () => {
     'RELIC_HELL_TALISMAN',
   ]
 
-  it('20종 유물 모두 정의됨 (M8 P0-1 확장)', () => {
-    expect(Object.keys(ALL_RELICS)).toHaveLength(20)
+  it('23종 유물 모두 정의됨 (M8 P0-1 확장 + Phase 1-C 3종)', () => {
+    expect(Object.keys(ALL_RELICS)).toHaveLength(23)
   })
 
   it.each(relicIds)('%s: 필수 필드 존재', (id) => {

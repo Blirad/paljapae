@@ -32,6 +32,10 @@ export type RelicId =
   | 'RELIC_TWIN_ELEMENT'
   | 'RELIC_CHAOS_PENTA'
   | 'RELIC_FATE_REVERSE'
+  // Phase 1-C: 오행 보완 유물 3종
+  | 'RELIC_WEAK_ELEMENT_SEAL'
+  | 'RELIC_DOMINATE_NEUTRALIZE'
+  | 'RELIC_FIVE_ELEMENT_SPIRIT_WEAPON'
 
 export type RelicHookPoint =
   | 'battle_start'   // 전투 시작
@@ -278,6 +282,38 @@ export const ALL_RELICS: Record<RelicId, Relic> = {
     description: '패배 직전 1회 HP 1 유지, 이후 공격력 +5 (런당 1회)',
     flavorText: '운명이 뒤집히는 순간, 강호에 전설이 탄생한다',
     hookPoints: ['battle_start', 'combat_attack'],
+    alignment: '複',
+  },
+
+  // ── Phase 1-C: 오행 보완 유물 ────────────────────────
+  RELIC_WEAK_ELEMENT_SEAL: {
+    id: 'RELIC_WEAK_ELEMENT_SEAL',
+    name: '약한 오행 인장 (弱行印)',
+    nameKey: 'RELIC_WEAK_ELEMENT_SEAL_NAME',
+    icon: '◑',
+    description: '약한 오행(점수 0) 카드 비용 -1, 드로우 시 우선권 +1',
+    flavorText: '약한 기운도 올바르게 이끌면 강해진다',
+    hookPoints: ['draw_phase', 'play_card'],
+    alignment: '吉',
+  },
+  RELIC_DOMINATE_NEUTRALIZE: {
+    id: 'RELIC_DOMINATE_NEUTRALIZE',
+    name: '상극 중화 부적 (相剋中和符)',
+    nameKey: 'RELIC_DOMINATE_NEUTRALIZE_NAME',
+    icon: '◒',
+    description: '상성 불리 시 피해 페널티 0.75 → 0.9로 완화 (20% 상향)',
+    flavorText: '역극의 기운을 가라앉혀 피해를 줄인다',
+    hookPoints: ['combat_attack'],
+    alignment: '吉',
+  },
+  RELIC_FIVE_ELEMENT_SPIRIT_WEAPON: {
+    id: 'RELIC_FIVE_ELEMENT_SPIRIT_WEAPON',
+    name: '신살 무기 (五行神殺)',
+    nameKey: 'RELIC_FIVE_ELEMENT_SPIRIT_WEAPON_NAME',
+    icon: '◓',
+    description: '약한 오행 공격 시 상성 페널티 무시 (0.75 → 1.0)',
+    flavorText: '신통이 깃든 무기는 모든 상극을 뚫는다',
+    hookPoints: ['combat_attack'],
     alignment: '複',
   },
 }
