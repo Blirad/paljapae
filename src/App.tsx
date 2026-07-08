@@ -25,6 +25,9 @@ import RunStartScreen from '@/screens/RunStartScreen'
 import DailyDrawScreen from '@/screens/DailyDrawScreen'
 import DeckBuildScreen from '@/screens/DeckBuildScreen'
 import TitleScreen from '@/screens/TitleScreen'
+import RestScreen from '@/screens/RestScreen'
+import SettingsScreen from '@/screens/SettingsScreen'
+import CollectionScreen from '@/screens/CollectionScreen'
 import { hasDrawnToday } from '@/game/hooks/useDailyDraw'
 import { useChallengeStore } from '@/stores/challengeStore'
 import { CHALLENGE_RULES } from '@/types/challengeMode'
@@ -238,6 +241,7 @@ export default function App(): React.ReactElement {
 
   const relicResetRelics = useRelicStore(s => s.resetRelics)
   const relicAddRelic = useRelicStore(s => s.addRelic)
+  const relicOwnedRelics = useRelicStore(s => s.ownedRelics)
 
   const challengeResetChallenge = useChallengeStore(s => s.resetChallenge)
 
@@ -767,6 +771,41 @@ export default function App(): React.ReactElement {
               setShopNodeCleared(false)
               setCtx(prev => ({ ...prev, gold: 0 }))
               setScene('start')
+            }}
+          />
+        )
+
+      case 'rest':
+        return (
+          <RestScreen
+            heroMaxHp={ctx.heroMaxHp}
+            heroCurrentHp={ctx.heroHp}
+            onContinue={() => {
+              // HP 회복 적용
+              const newHp = Math.min(ctx.heroHp + Math.floor(ctx.heroMaxHp * 0.3), ctx.heroMaxHp)
+              setCtx(prev => ({ ...prev, heroHp: newHp }))
+              saveHeroState(newHp, ctx.heroMaxHp, ctx.heroName)
+              setScene('worldMap')
+            }}
+            onReturn={() => setScene('worldMap')}
+          />
+        )
+
+      case 'collection':
+        return (
+          <CollectionScreen
+            ownedCardIds={unlockOwnedCardIds}
+            ownedRelics={relicOwnedRelics}
+            onClose={() => setScene('start')}
+          />
+        )
+
+      case 'settings':
+        return (
+          <SettingsScreen
+            onClose={() => setScene('start')}
+            onResetGame={() => {
+              setScene('title')
             }}
           />
         )
