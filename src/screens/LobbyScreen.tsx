@@ -7,6 +7,9 @@
 import React, { useEffect, useRef, useState } from 'react'
 import gsap from 'gsap'
 import { usePvPStore } from '@/stores/pvpStore'
+import { pvpClient } from '@/services/pvpClient'
+import { useOnboardingStore } from '@/game/store/onboardingStore'
+import { useUnlockStore } from '@/stores/unlockStore'
 
 // ────────────────────────────────────────────────────
 // Props
@@ -50,6 +53,9 @@ export default function LobbyScreen({
 
   const { myRank, myElo, myWins, myLosses, waitingCount } = usePvPStore()
   const [matchBtnScale, setMatchBtnScale] = useState(1)
+  const [isConnecting, setIsConnecting] = useState(false)
+
+  const onboardingResult = useOnboardingStore(s => s.onboardingResult)
 
   const winRate = myWins + myLosses > 0
     ? Math.round((myWins / (myWins + myLosses)) * 100)
@@ -77,12 +83,56 @@ export default function LobbyScreen({
     return () => clearInterval(poll)
   }, [])
 
-  function handleMatchClick(): void {
+  async function handleMatchClick(): Promise<void> {
     setMatchBtnScale(0.97)
-    setTimeout(() => {
-      setMatchBtnScale(1)
-      onStartMatching()
-    }, 50)
+    setTimeout(() => setMatchBtnScale(1), 50)
+
+    setIsConnecting(true)
+
+    // userId: onboarding 결과에서 가져오거나 임시 UUID 생성
+    // OnboardingResult에는 name 필드 없음 — birthYear/primaryElement 조합으로 식별
+    const userId = onboardingResult
+      ? `user_${onboardingResult.primaryElement}_${onboardingResult.birthYear}_${Date.now()}`
+      : `guest_${Date.now()}`
+
+    // heroId: 플레이어 오행 기반
+    const elementToHeroId: Record<string, string> = {
+      '木': 'wood_hero',
+      '火': 'fire_hero',
+      '土': 'earth_hero',
+      '金': 'metal_hero',
+      '水': 'water_hero',
+    }
+    const playerElement = onboardingResult?.primaryElement ?? '火'
+    const heroId = elementToHeroId[playerElement] ?? 'fire_hero'
+
+    // 덱 카드 ID 목록
+    const currentDeck = useUnlockStore.getState().getCurrentDeck()
+    const deckIds = currentDeck.length > 0
+      ? currentDeck.map(c => c.id)
+      : []
+
+    try {
+      // 서버 연결 시도
+      await pvpClient.connect(userId)
+      usePvPStore.getState().setIsServerConnected(true)
+      usePvPStore.getState().addPvPLog('[서버] WebSocket 연결 완료')
+    } catch {
+      // 서버 미연결: 목 모드로 fallback
+      console.warn('[LobbyScreen] 서버 연결 실패. 목 모드로 진행합니다.')
+      usePvPStore.getState().setIsServerConnected(false)
+      usePvPStore.getState().addPvPLog('[목 모드] 서버 미연결. 로컬 목 데이터로 진행합니다.')
+    }
+
+    if (usePvPStore.getState().isServerConnected) {
+      // 서버 연결 성공: 매칭 등록
+      await pvpClient.joinMatchmaking(heroId, deckIds).catch(err => {
+        console.error('[LobbyScreen] joinMatchmaking 실패:', err)
+      })
+    }
+
+    setIsConnecting(false)
+    onStartMatching()
   }
 
   return (
@@ -255,26 +305,30 @@ export default function LobbyScreen({
 
         {/* PvP 매칭 찾기 CTA 버튼 56px */}
         <button
-          onClick={handleMatchClick}
+          onClick={() => { void handleMatchClick() }}
+          disabled={isConnecting}
           style={{
             width: '100%',
             height: 56,
-            background: 'linear-gradient(135deg, #C9A84C, #A0822C)',
+            background: isConnecting
+              ? 'linear-gradient(135deg, #8a7030, #605020)'
+              : 'linear-gradient(135deg, #C9A84C, #A0822C)',
             border: '1px solid rgba(201,168,76,0.8)',
             color: '#1A1410',
             fontFamily: 'var(--font-mono)',
             fontSize: 16,
             fontWeight: 700,
             letterSpacing: '0.05em',
-            cursor: 'pointer',
+            cursor: isConnecting ? 'not-allowed' : 'pointer',
             transition: 'filter 0.15s',
             transform: `scale(${matchBtnScale})`,
             boxShadow: '0 2px 8px rgba(201,168,76,0.3)',
+            opacity: isConnecting ? 0.75 : 1,
           }}
-          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.filter = 'brightness(1.1)' }}
+          onMouseEnter={e => { if (!isConnecting) (e.currentTarget as HTMLButtonElement).style.filter = 'brightness(1.1)' }}
           onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.filter = 'none' }}
         >
-          PvP 매칭 찾기
+          {isConnecting ? '연결 중...' : 'PvP 매칭 찾기'}
         </button>
 
         {/* 덱 편집 secondary 버튼 44px */}

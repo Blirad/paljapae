@@ -16,6 +16,7 @@ import { useBattleStore } from '@/game/store/battleStore'
 import { useOnboardingStore, createStartingDeck } from '@/game/store/onboardingStore'
 import { useUnlockStore } from '@/stores/unlockStore'
 import { usePvPStore, mockOpponentTurn, mockGenerateResult } from '@/stores/pvpStore'
+import { pvpClient } from '@/services/pvpClient'
 import { HEROES } from '@/types/game'
 import type { HeroId } from '@/types/game'
 import { getDailyPillarInfo } from '@/game/saju/manseryeok'
@@ -112,6 +113,7 @@ export default function PlayerVsPlayerScreen({
   } = useBattleStore()
 
   const pvpStore = usePvPStore()
+  const isServerConnected = usePvPStore(s => s.isServerConnected)
   const particlesRef = useRef<BattleParticlesRef>(null)
   const screenShakeRef = useRef<HTMLDivElement>(null)
   const [dragOverSlot, setDragOverSlot] = useState<number | null>(null)
@@ -160,6 +162,52 @@ export default function PlayerVsPlayerScreen({
     }
   }, [initialized, playerElement, initBattle])
 
+  // Phase 4: 서버 연결 시 pvpClient 이벤트 콜백 등록
+  useEffect(() => {
+    if (!isServerConnected) return
+
+    // STATE_UPDATE: 서버 뷰 갱신
+    pvpClient.onStateUpdate((view) => {
+      pvpStore.setServerView(view)
+      pvpStore.addPvPLog(`[서버] 상태 업데이트 — 턴 ${view.turn}`)
+    })
+
+    // TURN_TIMER_UPDATE: 타이머 동기화
+    pvpClient.onTurnTimerUpdate((secondsLeft) => {
+      setTimerSeconds(secondsLeft)
+      pvpStore.setTurnSecondsLeft(secondsLeft)
+    })
+
+    // TURN_TIMEOUT: 서버가 타임아웃 알림
+    pvpClient.onTurnTimeout(() => {
+      pvpStore.addPvPLog('[서버] 턴 타임아웃')
+    })
+
+    // ACTION_REJECTED: 낙관적 업데이트 롤백 안내
+    pvpClient.onActionRejected((reason, message, _rejectedSeq) => {
+      pvpStore.setLastRejectionReason(reason)
+      pvpStore.addPvPLog(`[서버 거부] ${reason}: ${message}`)
+    })
+
+    // OPPONENT_DISCONNECTED: 상대 재연결 대기
+    pvpClient.onOpponentDisconnected((reconnectTimeoutIn) => {
+      pvpStore.setOpponentReconnecting(true, reconnectTimeoutIn)
+      pvpStore.addPvPLog(`[서버] 상대 재연결 대기 중... (${reconnectTimeoutIn}초)`)
+    })
+
+    // GAME_END: 게임 종료
+    pvpClient.onGameEnd(({ winner, reason, finalView }) => {
+      pvpStore.setServerView(finalView)
+      const myPlayerId = pvpClient.getPlayerId()
+      const isWin = (winner === 'player1' && finalView.viewOwner === 'player1')
+        || (winner === 'player2' && finalView.viewOwner === 'player2')
+      pvpStore.addPvPLog(`[서버] 게임 종료 — ${winner} 승. 사유: ${reason}`)
+      pvpStore.setResult(mockGenerateResult(isWin))
+      onEndGame(isWin)
+      void myPlayerId // suppress unused warning
+    })
+  }, [isServerConnected]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // PvP 턴 타이머 카운트다운
   useEffect(() => {
     if (!pvpStore.isMyTurn) return
@@ -191,28 +239,36 @@ export default function PlayerVsPlayerScreen({
   // 내 턴 종료
   const handleEndTurn = useCallback(async () => {
     if (timerRef.current) clearInterval(timerRef.current)
-    await endPlayerTurn()
-    pvpStore.setIsMyTurn(false)
-    pvpStore.addPvPLog('[나] 턴 종료')
 
-    // 목 상대 턴 시뮬레이션 (5~8초 후 내 턴으로 복귀)
-    const currentTurn = gameState?.turn ?? 0
-    if (currentTurn >= 10 && Math.random() < 0.2) {
-      const isWin = Math.random() < 0.5
-      pvpStore.setResult(mockGenerateResult(isWin))
-      onEndGame(isWin)
-      return
+    if (isServerConnected) {
+      // 서버 연결: 서버에 END_TURN 전송 (서버가 STATE_UPDATE로 응답)
+      pvpStore.dispatch({ type: 'END_TURN' })
+      pvpStore.setIsMyTurn(false)
+      pvpStore.addPvPLog('[나] 턴 종료 → 서버 전송')
+      onWaitTurn()
+    } else {
+      // 목 모드: 로컬 battleStore 처리
+      await endPlayerTurn()
+      pvpStore.setIsMyTurn(false)
+      pvpStore.addPvPLog('[나] 턴 종료')
+
+      const currentTurn = gameState?.turn ?? 0
+      if (currentTurn >= 10 && Math.random() < 0.2) {
+        const isWin = Math.random() < 0.5
+        pvpStore.setResult(mockGenerateResult(isWin))
+        onEndGame(isWin)
+        return
+      }
+
+      mockOpponentTurn(() => {
+        pvpStore.addPvPLog('[상대] 턴 종료 — 내 차례입니다')
+        pvpStore.setIsMyTurn(true)
+        setTimerSeconds(60)
+      })
+
+      onWaitTurn()
     }
-
-    mockOpponentTurn(() => {
-      pvpStore.addPvPLog('[상대] 턴 종료 — 내 차례입니다')
-      pvpStore.setIsMyTurn(true)
-      setTimerSeconds(60)
-    })
-
-    // 화면 전환 (상대 턴 대기 화면)
-    onWaitTurn()
-  }, [endPlayerTurn, pvpStore, gameState, onEndGame, onWaitTurn])
+  }, [endPlayerTurn, pvpStore, gameState, onEndGame, onWaitTurn, isServerConnected])
 
   // 카드 선택
   const handleCardPlay = useCallback((cardIndex: number) => {
@@ -221,11 +277,22 @@ export default function PlayerVsPlayerScreen({
 
   // 빈 슬롯 클릭 (소환)
   const handleEmptySlotClick = useCallback((slotIdx: number) => {
+    // 선택된 카드 ID 확인 (battleStore)
+    const { gameState: gs, selectedCardIndex: sci } = useBattleStore.getState()
+    const selectedCard = (sci !== null && gs) ? gs.player.hand[sci] : null
+
+    if (isServerConnected && selectedCard) {
+      // 서버 연결: PLAY_CARD 전송 (unitId 기반)
+      pvpStore.dispatch({ type: 'PLAY_CARD', cardId: selectedCard.id, fieldSlot: slotIdx })
+      pvpStore.addPvPLog(`[나] 카드 소환 → 서버 전송 (${selectedCard.name})`)
+    }
+
+    // 로컬 battleStore도 항상 실행 (목 모드 또는 낙관적 업데이트)
     const result = summonCard(slotIdx)
-    if (result) {
+    if (result && !isServerConnected) {
       pvpStore.addPvPLog(`[나] 카드 소환`)
     }
-  }, [summonCard, pvpStore])
+  }, [summonCard, pvpStore, isServerConnected])
 
   // 유닛 클릭
   const handlePlayerUnitClick = useCallback((slotIdx: number) => {
@@ -233,9 +300,36 @@ export default function PlayerVsPlayerScreen({
   }, [selectUnit])
 
   const handleAiUnitClick = useCallback((slotIdx: number) => {
+    if (isServerConnected) {
+      // 서버 연결: FieldUnit.unitId 사용 (서버 부여 UUID)
+      const serverView = pvpStore.serverView
+      const gs = useBattleStore.getState().gameState
+      const selectedSlot = useBattleStore.getState().selectedUnitSlot
+
+      const attackerUnit = (selectedSlot !== null && gs) ? gs.player.field[selectedSlot] : null
+      const targetUnit = serverView?.opponent.field[slotIdx] ?? (gs ? gs.ai.field[slotIdx] : null)
+
+      // unitId는 ServerFieldUnit에서만 존재 — serverView 우선 사용
+      const serverAttackerUnit = serverView?.self.field[selectedSlot ?? -1]
+      const serverTargetUnit = serverView?.opponent.field[slotIdx]
+
+      if (serverAttackerUnit && serverTargetUnit) {
+        const attackerUnitId = serverAttackerUnit.unitId
+        const targetUnitId = serverTargetUnit.unitId
+        pvpStore.dispatch({ type: 'ATTACK_UNIT', attackerUnitId, targetUnitId })
+        pvpStore.addPvPLog(`[나] 유닛 공격 → 서버 전송 (${attackerUnitId} → ${targetUnitId})`)
+      } else if (attackerUnit && targetUnit) {
+        // 서버 뷰 없을 때: unitId fallback (런타임에 서버 연결 전환 시 대비)
+        pvpStore.addPvPLog('[나] 유닛 공격 — serverView 없음, 서버 전송 생략')
+      }
+    }
+
+    // 로컬 battleStore도 항상 실행 (목 모드 또는 낙관적 업데이트)
     attackTarget(slotIdx)
-    pvpStore.addPvPLog('[나] 유닛 공격')
-  }, [attackTarget, pvpStore])
+    if (!isServerConnected) {
+      pvpStore.addPvPLog('[나] 유닛 공격')
+    }
+  }, [attackTarget, pvpStore, isServerConnected])
 
   // EffectToast 큐 관리 (battleStore toasts → queue)
   const toastsLen = useBattleStore(s => s.toasts.length)

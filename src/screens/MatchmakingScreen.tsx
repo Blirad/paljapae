@@ -8,6 +8,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import gsap from 'gsap'
 import { usePvPStore, mockStartMatching } from '@/stores/pvpStore'
+import { pvpClient } from '@/services/pvpClient'
 
 // ────────────────────────────────────────────────────
 // PvPMatchRing 컴포넌트 (오행 링 SVG 애니메이션)
@@ -207,13 +208,29 @@ export default function MatchmakingScreen({ onCancel, onMatchFound }: Matchmakin
     return () => clearInterval(timer)
   }, [])
 
-  // 목 매칭 시작
+  // 서버 연결 여부에 따라 실제 WS 이벤트 또는 목 사용
+  const isServerConnected = usePvPStore(s => s.isServerConnected)
   const cancelMockRef = useRef<(() => void) | null>(null)
+
   useEffect(() => {
-    const cancel = mockStartMatching()
-    cancelMockRef.current = cancel
-    return cancel
-  }, [])
+    if (isServerConnected) {
+      // 서버 연결 상태: pvpClient onMatchmakingUpdate 콜백으로 상태 수신
+      pvpClient.onMatchmakingUpdate((state) => {
+        if (state.status === 'found') {
+          if (state.gameId) usePvPStore.getState().setCurrentGameId(state.gameId)
+          if (state.opponentId) usePvPStore.getState().setOpponentId(state.opponentId)
+          usePvPStore.getState().setMatchStatus('found')
+        } else if (state.status === 'searching') {
+          usePvPStore.getState().setMatchStatus('searching')
+        }
+      })
+    } else {
+      // 서버 미연결: 목 매칭
+      const cancel = mockStartMatching()
+      cancelMockRef.current = cancel
+      return cancel
+    }
+  }, [isServerConnected])
 
   // 매칭 성공 감지
   useEffect(() => {
@@ -238,7 +255,13 @@ export default function MatchmakingScreen({ onCancel, onMatchFound }: Matchmakin
   }, [matchStatus, matchFoundDisplayed, onMatchFound])
 
   function handleCancel(): void {
-    cancelMockRef.current?.()
+    if (isServerConnected) {
+      pvpClient.leaveMatchmaking().catch(err =>
+        console.warn('[MatchmakingScreen] leaveMatchmaking 실패:', err),
+      )
+    } else {
+      cancelMockRef.current?.()
+    }
     usePvPStore.getState().setMatchStatus('idle')
     onCancel()
   }
