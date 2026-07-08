@@ -18,6 +18,8 @@ import {
 import { useChallengeStore } from '@/stores/challengeStore'
 import PrimaryButton from '@/components/ui/PrimaryButton'
 import SecondaryButton from '@/components/ui/SecondaryButton'
+import type { AIDifficulty } from '@/types/game'
+import { saveAIDifficulty, loadAIDifficulty } from '@/utils/persistence'
 
 // ────────────────────────────────────────────────────
 // 챌린지 목록 순서
@@ -66,9 +68,53 @@ function injectStyles() {
 interface RunStartScreenProps {
   heroName: string
   heroElement: string
-  onStart: (mode: ChallengeMode) => void
+  onStart: (mode: ChallengeMode, difficulty: AIDifficulty) => void
   onCancel: () => void
 }
+
+// ────────────────────────────────────────────────────
+// AI 난이도 버튼 정의 (리라 스펙 §2-2)
+// ────────────────────────────────────────────────────
+
+interface DifficultyDef {
+  id: AIDifficulty
+  icon: string
+  name: string
+  eng: string
+  desc: string
+  borderColor: string
+  bgTint: string
+}
+
+const DIFFICULTY_LIST: DifficultyDef[] = [
+  {
+    id: 'novice',
+    icon: '🌱',
+    name: '초견수 (初見手)',
+    eng: 'NOVICE',
+    desc: 'AI가 무작위로 행동합니다. 카드게임 입문자 추천',
+    borderColor: '#4CAF50',
+    bgTint: 'rgba(76,175,80,0.12)',
+  },
+  {
+    id: 'normal',
+    icon: '⚔',
+    name: '중견수 (中堅手)',
+    eng: 'NORMAL',
+    desc: 'AI가 전략적으로 행동합니다. 일반 플레이어',
+    borderColor: '#C9A84C',
+    bgTint: 'rgba(201,168,76,0.12)',
+  },
+  {
+    id: 'expert',
+    icon: '🔥',
+    name: '고수급 (高手級)',
+    eng: 'EXPERT',
+    desc: 'AI가 최적 수를 계산합니다. 숙련자 도전',
+    borderColor: '#FF4444',
+    bgTint: 'rgba(255,68,68,0.12)',
+  },
+]
 
 // ────────────────────────────────────────────────────
 // ChallengeRadioRow — 개별 난이도 행
@@ -277,6 +323,8 @@ export default function RunStartScreen({
   const [mounted, setMounted] = useState(false)
   const [ch5StarPulseActive, setCh5StarPulseActive] = useState(false)
   const [hasCh5BeenVisited, setHasCh5BeenVisited] = useState(false)
+  // P0: AI 난이도 상태 — localStorage에서 복원, 기본값 normal
+  const [aiDifficulty, setAiDifficulty] = useState<AIDifficulty>(() => loadAIDifficulty())
 
   useEffect(() => {
     injectStyles()
@@ -294,8 +342,13 @@ export default function RunStartScreen({
     }
   }
 
+  function handleDifficultySelect(d: AIDifficulty) {
+    setAiDifficulty(d)
+    saveAIDifficulty(d)
+  }
+
   function handleStart() {
-    onStart(mode)
+    onStart(mode, aiDifficulty)
   }
 
   return (
@@ -366,6 +419,110 @@ export default function RunStartScreen({
           background: 'linear-gradient(90deg, var(--border-gold), transparent)',
           marginBottom: 24,
         }} />
+
+        {/* P0: AI 난이도 선택 (리라 스펙 §2) */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            color: 'var(--text-muted)',
+            letterSpacing: '0.1em',
+            marginBottom: 10,
+          }}>
+            難度 선택
+          </div>
+          <div style={{
+            display: 'flex',
+            gap: 8,
+          }}>
+            {DIFFICULTY_LIST.map(def => {
+              const isSelected = aiDifficulty === def.id
+              return (
+                <button
+                  key={def.id}
+                  type="button"
+                  aria-pressed={isSelected}
+                  aria-label={`AI 난이도: ${def.name}`}
+                  onClick={() => handleDifficultySelect(def.id)}
+                  style={{
+                    flex: 1,
+                    minHeight: 80,
+                    padding: '10px 6px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 3,
+                    background: isSelected ? def.bgTint : 'rgba(255,255,255,0.02)',
+                    border: isSelected
+                      ? `2px solid ${def.borderColor}`
+                      : '2px solid var(--border)',
+                    borderRadius: 6,
+                    cursor: 'pointer',
+                    transition: 'border-color 0.15s, background 0.15s',
+                    WebkitTapHighlightColor: 'transparent',
+                  }}
+                  onMouseEnter={e => {
+                    if (!isSelected) {
+                      (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.05)'
+                      ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(255,255,255,0.3)'
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    if (!isSelected) {
+                      (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.02)'
+                      ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'
+                    }
+                  }}
+                  onMouseDown={e => {
+                    (e.currentTarget as HTMLButtonElement).style.transform = 'scale(0.97)'
+                  }}
+                  onMouseUp={e => {
+                    (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1)'
+                  }}
+                >
+                  <span style={{ fontSize: 20, lineHeight: 1 }} aria-hidden="true">{def.icon}</span>
+                  <span style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: isSelected ? def.borderColor : 'var(--text-primary)',
+                    textAlign: 'center',
+                    lineHeight: 1.3,
+                  }}>{def.name.split(' ')[0]}</span>
+                  <span style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 9,
+                    color: 'var(--text-muted)',
+                    letterSpacing: '0.08em',
+                  }}>{def.eng}</span>
+                  <span style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 9,
+                    color: 'var(--text-muted)',
+                    textAlign: 'center',
+                    lineHeight: 1.4,
+                    marginTop: 2,
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                  }}>{def.desc}</span>
+                </button>
+              )
+            })}
+          </div>
+          {/* 선택 상태 텍스트 */}
+          <div style={{
+            marginTop: 8,
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10,
+            color: 'var(--text-muted)',
+            textAlign: 'center',
+          }}>
+            현재 선택: {DIFFICULTY_LIST.find(d => d.id === aiDifficulty)?.name ?? ''} ({aiDifficulty.toUpperCase()})
+          </div>
+        </div>
 
         {/* 섹션 제목 */}
         <div style={{

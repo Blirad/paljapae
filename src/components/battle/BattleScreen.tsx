@@ -31,12 +31,28 @@ import FieldSeparator from './FieldSeparator'
 import BattleParticles from './BattleParticles'
 import type { BattleParticlesRef } from './BattleParticles'
 import HeroCharacter from './HeroCharacter'
+import RelicTooltip from './RelicTooltip'
+import EffectToast from './EffectToast'
+import DaewoonSlot from './DaewoonSlot'
 import type { SilhouetteVariant } from './CardArtSVG'
 import type { FieldUnit } from '@/types/cards'
+import type { CardEffect } from '@/game/engine/effectEngine'
 import type { FiveElement } from '@/types/elements'
 import { ELEMENT_DISPLAY, GENERATES } from '@/types/elements'
 import { getDailyPillarInfo } from '@/game/saju/manseryeok'
 import { STAGES_BY_ID } from '@/data/stages'
+import type { GameState } from '@/types/game'
+
+// ────────────────────────────────────────────────────
+// EffectToast 큐 아이템 타입
+// ────────────────────────────────────────────────────
+
+interface EffectToastItem {
+  id: string
+  effectType: CardEffect['type']
+  text: string
+  cardName?: string
+}
 
 // ────────────────────────────────────────────────────
 // 오행 → 영웅 타입 매핑 (Phase 2-A 리라 스펙 §3)
@@ -112,6 +128,34 @@ const GLOBAL_STYLES = `
   50% { transform: scale(1.4); }
   100% { transform: scale(1); }
 }
+@keyframes daewoonRipple {
+  0%   { transform: scale(1); opacity: 1; }
+  50%  { transform: scale(1.04) translateX(-3px); opacity: 0.7; filter: blur(1px) hue-rotate(-20deg); }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes relicGlow {
+  0%   { filter: brightness(1); }
+  50%  { filter: brightness(2.2); }
+  100% { filter: brightness(1); }
+}
+@keyframes energySurge {
+  0%   { filter: brightness(1); }
+  50%  { filter: brightness(2.5) drop-shadow(0 0 8px #FFD700); }
+  100% { filter: brightness(1); }
+}
+@keyframes effectToastIn {
+  from { opacity: 0; transform: translate(-50%, -40%); }
+  to   { opacity: 1; transform: translate(-50%, -50%); }
+}
+@keyframes battlecryIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes ringPulse {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
 `
 
 // ────────────────────────────────────────────────────
@@ -171,6 +215,23 @@ export default function BattleScreen({ onRestart, onVictory, stageId }: BattleSc
   const particlesRef = useRef<BattleParticlesRef>(null)
   // 화면 흔들림 ref (리라 스펙 §2-B)
   const screenShakeRef = useRef<HTMLDivElement>(null)
+
+  // P1: 유물 툴팁 상태
+  const [activeTooltipRelicId, setActiveTooltipRelicId] = useState<string | null>(null)
+  const [tooltipAnchorRect, setTooltipAnchorRect] = useState<DOMRect | null>(null)
+  const relicIconRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+
+  // P2: EffectToast 큐
+  const [effectToastQueue, setEffectToastQueue] = useState<EffectToastItem[]>([])
+  const effectToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // P3: 대운 슬롯 상태 (daewoonUsed 기본값)
+  const DEFAULT_DAEWOON_USED: NonNullable<GameState['daewoonUsed']> = {
+    daewoonje: false,
+    seunJeonhwan: false,
+    wolunGasok: false,
+    siunJeongji: false,
+  }
 
   // Phase 2-A: 영웅 공격/피격 애니메이션 상태
   const [isPlayerAttacking, setIsPlayerAttacking] = useState(false)
@@ -507,6 +568,82 @@ export default function BattleScreen({ onRestart, onVictory, stageId }: BattleSc
     onRestart()
   }
 
+  // P1: 유물 아이콘 탭 → 툴팁
+  function handleRelicIconClick(relicId: string) {
+    if (activeTooltipRelicId === relicId) {
+      setActiveTooltipRelicId(null)
+      setTooltipAnchorRect(null)
+      return
+    }
+    const el = relicIconRefs.current[relicId]
+    if (el) {
+      setTooltipAnchorRect(el.getBoundingClientRect())
+    }
+    setActiveTooltipRelicId(relicId)
+  }
+
+  // P2: EffectToast 큐에 아이템 추가
+  function addEffectToast(item: Omit<EffectToastItem, 'id'>) {
+    const newItem: EffectToastItem = { ...item, id: `et-${Date.now()}-${Math.random()}` }
+    setEffectToastQueue(prev => [...prev, newItem])
+  }
+  void addEffectToast // 미사용 경고 방지 (battlecry 연동 시 제거)
+
+  // P2: EffectToast 큐 처리 — 첫 아이템 1.8s 후 제거
+  useEffect(() => {
+    if (effectToastQueue.length === 0) return
+    if (effectToastTimerRef.current) return
+    effectToastTimerRef.current = setTimeout(() => {
+      setEffectToastQueue(prev => prev.slice(1))
+      effectToastTimerRef.current = null
+    }, 1800)
+    return () => {
+      if (effectToastTimerRef.current) {
+        clearTimeout(effectToastTimerRef.current)
+        effectToastTimerRef.current = null
+      }
+    }
+  }, [effectToastQueue])
+
+  // P3: 대운 카드 사용 핸들러
+  function handleUseDaewoon(key: keyof NonNullable<GameState['daewoonUsed']>) {
+    const currentDaewoonUsed = gameState?.daewoonUsed ?? DEFAULT_DAEWOON_USED
+    if (currentDaewoonUsed[key]) {
+      addToast('전투당 1회만 사용할 수 있습니다')
+      return
+    }
+    if (!gameState || gameState.phase !== 'main') {
+      addToast('메인 페이즈에만 사용 가능합니다')
+      return
+    }
+    // 비용 체크 (대운 카드별 비용: daewoonje=5, seunJeonhwan=4, wolunGasok=3, siunJeongji=4)
+    const COSTS: Record<string, number> = { daewoonje: 5, seunJeonhwan: 4, wolunGasok: 3, siunJeongji: 4 }
+    const cost = COSTS[key] ?? 4
+    if (gameState.player.currentEnergy < cost) {
+      addToast(`에너지가 부족합니다 (필요: ${cost})`)
+      return
+    }
+    // 토스트 표시 (실제 효과는 향후 daewoonEngine 연동)
+    const TOAST_MSGS: Record<string, string> = {
+      daewoonje: '시간을 되돌립니다',
+      seunJeonhwan: '일진 오행 변경 선택 (준비 중)',
+      wolunGasok: '다음 2턴 에너지 +2 적용',
+      siunJeongji: '상대방의 다음 턴이 정지됩니다',
+    }
+    addToast(TOAST_MSGS[key] ?? '대운 카드 사용')
+    // VFX: daewoon-active 토글
+    const el = screenShakeRef.current
+    if (el) {
+      el.setAttribute('data-daewoon-active', 'true')
+      gsap.to(el, { filter: 'hue-rotate(40deg) brightness(1.3)', duration: 0.15, yoyo: true, repeat: 3, onComplete: () => {
+        el.removeAttribute('data-daewoon-active')
+        gsap.set(el, { filter: 'none' })
+      }})
+    }
+    // 실제로는 battleStore 액션 또는 상태 직접 변경이 필요하나
+    // Phase 3 UI 단계에서는 토스트+VFX만 처리 (store 연동은 별도 작업)
+  }
+
   // 승리 시 CardRewardScreen으로 전환 (P0-B: 실측 HP 전달)
   function handleVictory() {
     // battleStore에서 전투 후 실제 잔여 HP 읽기 (gameState는 null일 수 있으므로 방어)
@@ -594,6 +731,19 @@ export default function BattleScreen({ onRestart, onVictory, stageId }: BattleSc
         />
 
         {/* 힌트 배너 — FieldSeparator로 통합 */}
+
+        {/* P2: EffectToast 큐 — 수직 중앙 */}
+        {effectToastQueue.length > 0 && (() => {
+          const current = effectToastQueue[0]
+          return (
+            <EffectToast
+              key={current.id}
+              effectType={current.effectType}
+              text={current.text}
+              cardName={current.cardName}
+            />
+          )
+        })()}
 
         {/* [C] AI 영역: HeroCharacter(우측) + 필드 3슬롯(좌측) — Phase 2-A */}
         <div
@@ -700,7 +850,7 @@ export default function BattleScreen({ onRestart, onVictory, stageId }: BattleSc
         {/* [E] 플레이어 상태 바 */}
         <PlayerStatusBar player={player} />
 
-        {/* [E-1] 유물 아이콘 바 (P3) — 보유 유물이 있을 때만 표시 */}
+        {/* [E-1] 유물 아이콘 바 (P1 강화) — glow 애니메이션 + 탭 툴팁 */}
         {relicStore.ownedRelics.length > 0 && (
           <div style={{
             display: 'flex',
@@ -711,6 +861,8 @@ export default function BattleScreen({ onRestart, onVictory, stageId }: BattleSc
             borderBottom: '1px solid var(--border)',
             flexShrink: 0,
             overflowX: 'auto',
+            // 스크롤바 숨김
+            scrollbarWidth: 'none',
           }}>
             <span style={{
               fontFamily: 'var(--font-mono)',
@@ -722,27 +874,61 @@ export default function BattleScreen({ onRestart, onVictory, stageId }: BattleSc
             }}>
               유물
             </span>
-            {relicStore.ownedRelics.map(relic => (
-              <span
-                key={relic.id}
-                aria-label={relic.name}
-                title={relic.description}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: 22,
-                  height: 22,
-                  background: 'rgba(201,168,76,0.12)',
-                  borderRadius: '50%',
-                  fontSize: 13,
-                  flexShrink: 0,
-                }}
-              >
-                {relic.icon}
-              </span>
-            ))}
+            {relicStore.ownedRelics.map(relic => {
+              const isTooltipOpen = activeTooltipRelicId === relic.id
+              // 길흉별 테두리 색상
+              const alignmentBorder: Record<string, string> = {
+                '吉': 'rgba(100,200,100,0.4)',
+                '凶': 'rgba(200,60,60,0.4)',
+                '複': 'rgba(180,140,255,0.4)',
+              }
+              const borderColor = alignmentBorder[relic.alignment] ?? 'rgba(201,168,76,0.3)'
+              return (
+                <button
+                  key={relic.id}
+                  ref={el => { relicIconRefs.current[relic.id] = el }}
+                  type="button"
+                  aria-label={`유물 정보: ${relic.name}`}
+                  aria-expanded={isTooltipOpen}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleRelicIconClick(relic.id)
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 22,
+                    height: 22,
+                    background: isTooltipOpen
+                      ? 'rgba(201,168,76,0.3)'
+                      : 'rgba(201,168,76,0.12)',
+                    borderRadius: '50%',
+                    border: `1px solid ${borderColor}`,
+                    fontSize: 13,
+                    flexShrink: 0,
+                    cursor: 'pointer',
+                    padding: 0,
+                    transition: 'background 0.15s, box-shadow 0.15s',
+                  }}
+                >
+                  {relic.icon}
+                </button>
+              )
+            })}
           </div>
+        )}
+
+        {/* [E-2] 대운 카드 슬롯 (P3) — 게임 진행 중에만 표시 */}
+        {result === null && gameState && (
+          <DaewoonSlot
+            daewoonUsed={gameState.daewoonUsed ?? DEFAULT_DAEWOON_USED}
+            currentEnergy={player.currentEnergy}
+            phase={phase}
+            isProcessing={isProcessing}
+            isAiTurn={isAiTurn}
+            onUseDaewoon={handleUseDaewoon}
+          />
         )}
 
         {/* [F] 손패 영역 */}
@@ -839,6 +1025,22 @@ export default function BattleScreen({ onRestart, onVictory, stageId }: BattleSc
           </div>
         ))}
       </div>
+
+      {/* P1: 유물 툴팁 — Portal 렌더링 */}
+      {activeTooltipRelicId && tooltipAnchorRect && (() => {
+        const relic = relicStore.ownedRelics.find(r => r.id === activeTooltipRelicId)
+        if (!relic) return null
+        return (
+          <RelicTooltip
+            relic={relic}
+            anchorRect={tooltipAnchorRect}
+            onClose={() => {
+              setActiveTooltipRelicId(null)
+              setTooltipAnchorRect(null)
+            }}
+          />
+        )
+      })()}
     </>
   )
 }

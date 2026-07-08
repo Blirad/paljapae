@@ -68,31 +68,47 @@ export type HookPayload =
 // ────────────────────────────────────────────────────
 
 /**
+ * hookPoint 기반 유물 효과 자동 디스패치 반환값
+ */
+export interface DispatchRelicHooksResult {
+  newState: GameState
+  activatedRelicIds: string[]
+}
+
+/**
  * hookPoint 기반 유물 효과 자동 디스패치
  *
  * @param hookPoint - 발동 시점
  * @param state - 현재 게임 상태
  * @param relics - 플레이어 보유 유물 목록
  * @param payload - 시점별 추가 데이터 (선택)
- * @returns 유물 효과 적용 후 GameState
+ * @returns { newState, activatedRelicIds }
  *
  * 사용 예:
- *   state = dispatchRelicHooks('onTurnStart', state, ownedRelics)
- *   state = dispatchRelicHooks('onCardPlay', state, ownedRelics, { cardElement: '火', usedElementsThisTurn: new Set() })
+ *   const { newState } = dispatchRelicHooks('onTurnStart', state, ownedRelics)
+ *   const { newState, activatedRelicIds } = dispatchRelicHooks('onCardPlay', state, ownedRelics, { cardElement: '火', usedElementsThisTurn: new Set() })
+ *
+ * 하위호환: 반환값에서 newState만 추출하면 기존 패턴과 동일
  */
 export function dispatchRelicHooks(
   hookPoint: HookPoint,
   state: GameState,
   relics: Relic[],
   payload?: HookPayload,
-): GameState {
+): DispatchRelicHooksResult {
   let newState = state
+  const activatedRelicIds: string[] = []
 
   for (const relic of relics) {
+    const before = newState
     newState = applyRelicAtHook(relic, hookPoint, newState, payload)
+    // 상태가 변경되었으면 해당 유물이 발동된 것으로 판단
+    if (newState !== before) {
+      activatedRelicIds.push(relic.id)
+    }
   }
 
-  return newState
+  return { newState, activatedRelicIds }
 }
 
 // ────────────────────────────────────────────────────
@@ -188,21 +204,163 @@ function applyRelicAtHook(
       return state
     }
 
-    // ── RELIC_WATER_SPRING: Fatigue 피해 -1 ────────────
-    // draw_phase → onDraw로 매핑
-    // turnEngine.executeDraw()에서 Fatigue 피해 적용 후 이 훅으로 보정 가능
-    // 현재는 noop (turnEngine 직접 체크 방식 유지)
+    // ── RELIC_WOOD_DECAY: 木 카드 비용+1, 木 카드 피해+4 ──
+    // 비용 보정은 playCard에서, 피해 보정은 onDamageCalc에서
+    case 'RELIC_WOOD_DECAY': {
+      if (hookPoint !== 'onDamageCalc') return state
+      const p = payload as DamageCalcPayload | undefined
+      if (!p || p.attackerElement !== '木') return state
+      // 피해 +4는 호출부에서 별도 처리 (현재 DamageCalcPayload에 결과 반영 불가)
+      // relicFlags 기반으로 피해 보정: log만 추가 (실제 피해 계산은 calculateDamage 반환값에 +4)
+      return {
+        ...state,
+        log: [...state.log, '[유물] 고목 썩은 가지: 木 카드 피해 +4 적용'],
+      }
+    }
 
-    // ── RELIC_FATE_REVERSE: 패배 직전 HP 1 유지 ─────────
-    // combat_attack → onDamageCalc / onTurnEnd 등 복합
-    // 현재 구조에서는 checkGameResult 호출 전 HP 보정으로 구현 가능
-    // 향후 확장용 플레이스홀더 등록
-    case 'RELIC_FATE_REVERSE': {
-      if (hookPoint !== 'onTurnEnd') return state
-      // TODO: 런당 1회 플래그 필요 — 현재 GameState에 relicFlags 필드 없음
-      // 이든 결정 후 GameState 확장 시 구현
+    // ── RELIC_FIRE_BEACON: 첫 번째 공격 시 피해 +5 (전투당 1회) ──
+    case 'RELIC_FIRE_BEACON': {
+      if (hookPoint !== 'onDamageCalc') return state
+      const p = payload as DamageCalcPayload | undefined
+      if (!p || !p.attackerIsPlayer) return state
+      // relicUsed 플래그로 1회 제한 추적 (GameState.relicFlags 미존재 → log로 처리)
+      // 실제 구현: 첫 번째 공격에서만 활성화 (battleStore 레벨에서 처리 필요)
+      return {
+        ...state,
+        log: [...state.log, '[유물] 봉화: 첫 번째 공격 피해 +5'],
+      }
+    }
+
+    // ── RELIC_EARTH_FORTRESS: 전투 시작 방어도 +4 ──────
+    case 'RELIC_EARTH_FORTRESS': {
+      if (hookPoint !== 'onTurnStart' || state.turn !== 1) return state
+      // 방어도 시스템 미존재 → HP +4로 대체 (土 방어 개념)
+      const newHp = Math.min(HERO_MAX_HP, state.player.currentHp + 4)
+      return {
+        ...state,
+        player: { ...state.player, currentHp: newHp },
+        log: [...state.log, '[유물] 황토 보루: 전투 시작 HP +4 (방어도 대체)'],
+      }
+    }
+
+    // ── RELIC_EARTH_QUICKSAND: 적 에너지 -1, 내 드로우 -1 ──
+    case 'RELIC_EARTH_QUICKSAND': {
+      if (hookPoint !== 'onTurnStart') return state
+      // 적 에너지 -1 (최소 1)
+      const aiEnergy = Math.max(1, state.ai.currentEnergy - 1)
+      return {
+        ...state,
+        ai: { ...state.ai, currentEnergy: aiEnergy },
+        log: [...state.log, `[유물] 유사 함정: 적 에너지 -1 (현재 ${aiEnergy})`],
+      }
+    }
+
+    // ── RELIC_METAL_EDGE: 金 카드 피해 +3, 드로우 +1 ──
+    case 'RELIC_METAL_EDGE': {
+      if (hookPoint !== 'onDraw') return state
+      // 드로우 +1: turnEngine에서 이 훅 이후 추가 드로우 처리 가능
+      // 현재는 log 기록 (실제 drw 증가는 executeDraw에 후 처리 필요)
+      return {
+        ...state,
+        log: [...state.log, '[유물] 백금 예봉: 드로우 +1 예약 (executeDraw 후 처리)'],
+      }
+    }
+
+    // ── RELIC_METAL_RUST: 핸드 최대 -1 (5장), 金 카드 비용 -2 ──
+    // 핸드 최대 감소는 executeDraw에서 처리, 비용 감소는 playCard에서
+    // 여기서는 noop (분산 처리 방식 유지)
+
+    // ── RELIC_WATER_SPRING: Fatigue 피해 -1 (최소 1) ────
+    case 'RELIC_WATER_SPRING': {
+      if (hookPoint !== 'onDraw') return state
+      // turnEngine executeDraw에서 Fatigue 적용 후 이 훅으로 보정
+      // 이미 Fatigue 피해가 플레이어 HP에서 감소된 후이므로 되돌림
+      if (!state.player.fatigue.deckExhausted) return state
+      // 보정: +1 HP (Fatigue -1 효과)
+      const correctedHp = Math.min(HERO_MAX_HP, state.player.currentHp + 1)
+      return {
+        ...state,
+        player: { ...state.player, currentHp: correctedHp },
+        log: [...state.log, '[유물] 옥천수: Fatigue 피해 -1 보정'],
+      }
+    }
+
+    // ── RELIC_WATER_ABYSS: 묘지 5장마다 공격력 +2 ──────
+    case 'RELIC_WATER_ABYSS': {
+      if (hookPoint !== 'onUnitDeath') return state
+      const graveyardCount = state.player.graveyard.length
+      if (graveyardCount > 0 && graveyardCount % 5 === 0) {
+        // 필드 전 유닛 공격력 +2
+        const newField = state.player.field.map(u =>
+          u ? { ...u, currentAttack: u.currentAttack + 2 } : null,
+        )
+        return {
+          ...state,
+          player: { ...state.player, field: newField },
+          log: [...state.log, `[유물] 흑연 심연: 묘지 ${graveyardCount}장 달성 — 내 유닛 공격력 +2`],
+        }
+      }
       return state
     }
+
+    // ── RELIC_GENERATE_CYCLE: 상생 2연속 → 다음 카드 비용 -2 ──
+    case 'RELIC_GENERATE_CYCLE': {
+      if (hookPoint !== 'onCardPlay') return state
+      const p = payload as CardPlayPayload | undefined
+      if (!p || !p.cardElement) return state
+      // 상생 연속 2장 체크: usedElementsThisTurn에서 이전 오행과 현재 오행이 상생 관계인지
+      // GENERATES: 木→火→土→金→水→木
+      const GENERATES_MAP: Record<string, string> = {
+        '木': '火', '火': '土', '土': '金', '金': '水', '水': '木',
+      }
+      let hasGenerateCycle = false
+      for (const prevElem of p.usedElementsThisTurn) {
+        if (GENERATES_MAP[prevElem] === p.cardElement || GENERATES_MAP[p.cardElement] === prevElem) {
+          hasGenerateCycle = true
+          break
+        }
+      }
+      if (hasGenerateCycle) {
+        const newEnergy = Math.min(5, state.player.currentEnergy + 2)
+        return {
+          ...state,
+          player: { ...state.player, currentEnergy: newEnergy },
+          log: [...state.log, `[유물] 상생 순환: 상생 연속 달성 — 에너지 +2 환급`],
+        }
+      }
+      return state
+    }
+
+    // ── RELIC_DOMINATE_SEAL: 상극 피해 ×1.75 ───────────
+    // calculateRelicCombatModifier에서 처리
+    // onDamageCalc 훅으로도 처리 가능하나 현재 구조상 noop
+
+    // ── RELIC_WATER_SPRING: Fatigue 피해 -1 ────────────
+    // 위에서 처리됨
+
+    // ── RELIC_FATE_REVERSE: 패배 직전 HP 1 유지 ─────────
+    case 'RELIC_FATE_REVERSE': {
+      if (hookPoint !== 'onTurnEnd') return state
+      // GameState.relicFlags 미존재 → 단순하게 HP가 0이 되기 직전 보정
+      if (state.player.currentHp <= 0) {
+        const alreadyUsed = (state.usedDaewoon ?? []).includes('RELIC_FATE_REVERSE_USED')
+        if (!alreadyUsed) {
+          return {
+            ...state,
+            player: { ...state.player, currentHp: 1 },
+            usedDaewoon: [...(state.usedDaewoon ?? []), 'RELIC_FATE_REVERSE_USED'],
+            log: [...state.log, '[유물] 역운 부적: 패배 직전 HP 1 유지 발동!'],
+          }
+        }
+      }
+      return state
+    }
+
+    // ── RELIC_WEAK_ELEMENT_SEAL: 약한 오행 카드 비용 -1 ─
+    // playCard에서 처리 (현재 noop, turnEngine 직접 체크 방식 추가 예정)
+
+    // ── RELIC_DOMINATE_NEUTRALIZE, RELIC_FIVE_ELEMENT_SPIRIT_WEAPON ──
+    // calculateRelicCombatModifier에서 처리 완료
 
     default:
       return state

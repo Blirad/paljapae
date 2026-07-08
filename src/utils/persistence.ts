@@ -10,12 +10,14 @@
  */
 
 import type { FiveElement } from '@/types/elements'
+import type { AIDifficulty } from '@/types/game'
 
 // ────────────────────────────────────────────────────
 // LocalStorage 키
 // ────────────────────────────────────────────────────
 
 const STORAGE_KEYS = {
+  AI_DIFFICULTY: 'unmyeong_ai_difficulty',
   OWNED_CARD_IDS: 'paljapae_owned_card_ids',
   CLEARED_STAGE_IDS: 'paljapae_cleared_stage_ids',
   CURRENT_DECK_IDS: 'paljapae_current_deck_ids',
@@ -64,6 +66,22 @@ function safeRemove(key: string): void {
   } catch {
     // 무시
   }
+}
+
+// ────────────────────────────────────────────────────
+// AI 난이도 저장/복원 (리라 스펙 Phase 3 §2)
+// ────────────────────────────────────────────────────
+
+/** AI 난이도 localStorage 저장 (키: unmyeong_ai_difficulty) */
+export function saveAIDifficulty(difficulty: AIDifficulty): void {
+  safeSet(STORAGE_KEYS.AI_DIFFICULTY, difficulty)
+}
+
+/** AI 난이도 복원. 없으면 'normal' 반환 */
+export function loadAIDifficulty(): AIDifficulty {
+  const raw = safeGet<string | null>(STORAGE_KEYS.AI_DIFFICULTY, null)
+  if (raw === 'novice' || raw === 'normal' || raw === 'expert') return raw
+  return 'normal'
 }
 
 // ────────────────────────────────────────────────────

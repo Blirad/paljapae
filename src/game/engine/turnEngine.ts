@@ -18,6 +18,8 @@ import {
 import { advanceFatigue, calculateFatigueDamage } from './fatigue'
 import { calculateDamage, getDailyElementModifier } from './elementalCombat'
 import type { Relic } from '@/types/relics'
+import { applyEffects, parseEffectText } from './effectEngine'
+import type { EffectContext } from './effectEngine'
 
 // ────────────────────────────────────────────────────
 // 초기화 헬퍼
@@ -231,6 +233,132 @@ export function playCard(
       currentEnergy: player.currentEnergy - effectiveCost,
     },
   }
+}
+
+// ────────────────────────────────────────────────────
+// 카드 플레이 — GameState 레벨 (effectEngine 연결)
+// ────────────────────────────────────────────────────
+
+export type PlayCardInStateResult =
+  | { success: true; state: GameState }
+  | { success: false; reason: string }
+
+/**
+ * GameState 레벨 카드 플레이
+ * - 병사 카드: 소환 후 battlecry effectEngine 적용
+ * - 주문 카드: effectEngine 적용 후 묘지
+ *
+ * @param state - 현재 게임 상태
+ * @param casterSide - 시전자 ('player' | 'ai')
+ * @param cardIndex - 핸드에서의 카드 인덱스
+ * @param fieldSlot - 병사 카드 배치 슬롯 (선택)
+ * @param targetUnitIdx - 단일 타겟 효과용 적 유닛 슬롯 (선택)
+ * @param relics - 유물 목록 (선택)
+ */
+export function playCardInState(
+  state: GameState,
+  casterSide: 'player' | 'ai',
+  cardIndex: number,
+  fieldSlot?: number,
+  targetUnitIdx?: number,
+  relics?: Relic[],
+): PlayCardInStateResult {
+  const casterPlayer = casterSide === 'player' ? state.player : state.ai
+
+  const card = casterPlayer.hand[cardIndex]
+  if (!card) return { success: false, reason: '유효하지 않은 카드 인덱스' }
+
+  // 에너지 비용 계산 (RELIC_ELEMENT_SEAL 포함)
+  let effectiveCost = card.cost
+  if (relics && relics.some(r => r.id === 'RELIC_ELEMENT_SEAL') && card.element === casterPlayer.hero.element) {
+    effectiveCost = Math.max(0, effectiveCost - 1)
+  }
+
+  if (casterPlayer.currentEnergy < effectiveCost) {
+    return { success: false, reason: `에너지 부족 (필요: ${effectiveCost}, 현재: ${casterPlayer.currentEnergy})` }
+  }
+
+  const newHand = [...casterPlayer.hand]
+  newHand.splice(cardIndex, 1)
+
+  let newField = [...casterPlayer.field]
+  let newGraveyard = [...casterPlayer.graveyard]
+  let newState: GameState
+
+  if (card.cardType === 'soldier') {
+    // 병사 카드 소환
+    const slot = fieldSlot !== undefined ? fieldSlot : newField.findIndex(s => s === null)
+    if (slot === -1 || slot >= FIELD_SLOTS) {
+      return { success: false, reason: '필드가 가득 찼습니다 (최대 4슬롯)' }
+    }
+    if (newField[slot] !== null) {
+      return { success: false, reason: '해당 슬롯이 이미 점유되어 있습니다' }
+    }
+
+    const unit: FieldUnit = {
+      card,
+      currentHealth: card.maxHealth,
+      currentAttack: card.attack,
+      canAttack: card.keywords.includes('rush'),
+      frozen: false,
+      rebornUsed: false,
+      summonedOnTurn: state.turn,
+      temporaryKeywords: [],
+    }
+
+    newField = [...newField]
+    newField[slot] = unit
+
+    const updatedCasterPlayer = {
+      ...casterPlayer,
+      hand: newHand,
+      field: newField,
+      graveyard: newGraveyard,
+      currentEnergy: casterPlayer.currentEnergy - effectiveCost,
+    }
+
+    newState = casterSide === 'player'
+      ? { ...state, player: updatedCasterPlayer }
+      : { ...state, ai: updatedCasterPlayer }
+
+    // battlecry 효과 적용 (소환 시 1회)
+    if (card.cardType === 'soldier' && card.battlecry) {
+      const effects = parseEffectText(card.battlecry)
+      if (effects.length > 0) {
+        const ctx: EffectContext = { casterSide, casterSlot: slot, targetUnitIdx, sourceCard: card }
+        newState = applyEffects(effects, newState, ctx)
+        newState = { ...newState, log: [...newState.log, `[전투cry] ${card.name}: ${card.battlecry}`] }
+      }
+    }
+  } else {
+    // 주문 카드 → effectEngine 적용 후 묘지
+    newGraveyard.push(card)
+
+    const updatedCasterPlayer = {
+      ...casterPlayer,
+      hand: newHand,
+      field: newField,
+      graveyard: newGraveyard,
+      currentEnergy: casterPlayer.currentEnergy - effectiveCost,
+    }
+
+    newState = casterSide === 'player'
+      ? { ...state, player: updatedCasterPlayer }
+      : { ...state, ai: updatedCasterPlayer }
+
+    // effectText 효과 적용 (주문) — SpellCard만 effectText 보유
+    const spellEffectText = card.cardType === 'spell' ? card.effectText : undefined
+    if (spellEffectText) {
+      const effects = parseEffectText(spellEffectText)
+      if (effects.length > 0) {
+        const ctx: EffectContext = { casterSide, targetUnitIdx, sourceCard: card }
+        newState = applyEffects(effects, newState, ctx)
+        newState = { ...newState, log: [...newState.log, `[주문] ${card.name}: ${spellEffectText}`] }
+      }
+    }
+  }
+
+  return { success: true, state: newState }
 }
 
 // ────────────────────────────────────────────────────

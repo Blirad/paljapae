@@ -169,6 +169,44 @@ export interface GameState {
     element: FiveElement | null
     count: number
   }
+  /**
+   * Phase 3-2: undo용 히스토리 스택 (최대 3개)
+   * 대운 카드 '시간역행' 사용 시 직전 상태로 복원
+   */
+  stateHistory?: GameState[]
+  /**
+   * Phase 3-2: 이미 사용한 대운 카드 ID 목록 (전투당 1회 제한)
+   */
+  usedDaewoon?: string[]
+  /**
+   * Phase 3-2: 남은 에너지 보너스 턴 수 (월운가속: 다음 N턴 에너지 +2)
+   */
+  energyBonusNextTurns?: number
+  /**
+   * Phase 3-2: 오행 상성 역전 남은 턴 수 (운명반전: 상극/상생 뒤바뀜)
+   */
+  elementalReversedTurns?: number
+  /**
+   * Phase 3-2: AI 다음 턴 스킵 플래그 (시운정지 카드)
+   */
+  aiTurnSkipped?: boolean
+  /**
+   * Phase 3 UI: 대운 카드 4종 사용 여부 추적 (리라 스펙 §1-5)
+   */
+  daewoonUsed?: {
+    daewoonje: boolean    // 대운제 (大運制) — undo
+    seunJeonhwan: boolean // 세운 전환 (歲運轉換) — dailyElement 변경
+    wolunGasok: boolean   // 월운 가속 (月運加速) — 에너지 +2 2턴
+    siunJeongji: boolean  // 시운 정지 (時運停止) — AI 턴 스킵
+  }
+  /**
+   * Phase 3 UI: 월운 가속 남은 턴 수
+   */
+  wolunGasokTurnsRemaining?: number
+  /**
+   * Phase 3 UI: undo용 직전 상태 (최대 1개)
+   */
+  previousState?: GameState | null
 }
 
 // ────────────────────────────────────────────────────

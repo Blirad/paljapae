@@ -608,8 +608,9 @@ export default function App(): React.ReactElement {
           <RunStartScreen
             heroName={ctx.heroName}
             heroElement={ctx.playerElement}
-            onStart={(mode) => {
+            onStart={(mode, _difficulty) => {
               // 챌린지 모드 저장 + 봉인 오행 결정
+              // _difficulty는 battleStore.initBattle 연동 시 사용 예정 (Phase 3 P0)
               useChallengeStore.getState().setMode(mode)
               useChallengeStore.getState().initRun()
               // Challenge HP 반영
