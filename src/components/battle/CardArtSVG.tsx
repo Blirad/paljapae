@@ -272,7 +272,7 @@ function WaterPattern({ accent }: { accent: string }): React.ReactElement {
 // 실루엣 SVG (7종) — M8 P0 키워드 기반 캐릭터 실루엣
 // ────────────────────────────────────────────────────
 
-type SilhouetteVariant = 'shield' | 'spear' | 'poison' | 'rush' | 'taoist' | 'iceblade' | 'swordsman'
+export type SilhouetteVariant = 'shield' | 'spear' | 'poison' | 'rush' | 'taoist' | 'iceblade' | 'swordsman'
 
 function selectSilhouetteVariant(keywords: string[], _cost: number): SilhouetteVariant {
   if (keywords.includes('taunt'))     return 'shield'

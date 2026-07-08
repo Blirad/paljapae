@@ -28,10 +28,32 @@ import DamagePopup from './DamagePopup'
 import FieldSeparator from './FieldSeparator'
 import BattleParticles from './BattleParticles'
 import type { BattleParticlesRef } from './BattleParticles'
+import HeroCharacter from './HeroCharacter'
+import type { SilhouetteVariant } from './CardArtSVG'
 import type { FieldUnit } from '@/types/cards'
 import type { FiveElement } from '@/types/elements'
 import { ELEMENT_DISPLAY } from '@/types/elements'
 import { STAGES_BY_ID } from '@/data/stages'
+
+// ────────────────────────────────────────────────────
+// 오행 → 영웅 타입 매핑 (Phase 2-A 리라 스펙 §3)
+// ────────────────────────────────────────────────────
+
+const ELEMENT_HERO_MAP: Record<FiveElement, SilhouetteVariant> = {
+  '火': 'rush',
+  '水': 'iceblade',
+  '木': 'taoist',
+  '金': 'swordsman',
+  '土': 'shield',
+}
+
+// AI 영웅 타입: 오행 기반 (neutral이면 'spear' 기본값)
+function getAiHeroType(element: string): SilhouetteVariant {
+  if (element in ELEMENT_HERO_MAP) {
+    return ELEMENT_HERO_MAP[element as FiveElement]
+  }
+  return 'spear'
+}
 
 // ────────────────────────────────────────────────────
 // 글로벌 CSS 애니메이션 (인라인 스타일 보조)
@@ -73,6 +95,10 @@ const GLOBAL_STYLES = `
   0%   { transform: scale(0.4) translateY(12px); opacity: 0; }
   60%  { transform: scale(1.12) translateY(-4px); opacity: 1; }
   100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+@keyframes heroGlowPulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.2); }
 }
 `
 
@@ -134,8 +160,39 @@ export default function BattleScreen({ onRestart, onVictory, stageId }: BattleSc
   // 화면 흔들림 ref (리라 스펙 §2-B)
   const screenShakeRef = useRef<HTMLDivElement>(null)
 
+  // Phase 2-A: 영웅 공격/피격 애니메이션 상태
+  const [isPlayerAttacking, setIsPlayerAttacking] = useState(false)
+  const [isPlayerHit, setIsPlayerHit] = useState(false)
+  const [isAiAttacking, setIsAiAttacking] = useState(false)
+  const [isAiHit, setIsAiHit] = useState(false)
+
   const relicStore = useRelicStore()
   const sealedElement = useChallengeStore(s => s.sealedElement)
+
+  // Phase 2-A: AI 턴 중 플레이어 피격 감지
+  const prevPlayerHpRef = useRef<number | null>(null)
+  const prevAiHpRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (!gameState) return
+    const currentPlayerHp = gameState.player.currentHp
+    const currentAiHp = gameState.ai.currentHp
+
+    // 플레이어 HP 감소 → isPlayerHit + isAiAttacking (AI 공격 애니메이션)
+    if (prevPlayerHpRef.current !== null && currentPlayerHp < prevPlayerHpRef.current) {
+      setIsPlayerHit(true)
+      setIsAiAttacking(true)
+      setTimeout(() => setIsPlayerHit(false), 300)
+      setTimeout(() => setIsAiAttacking(false), 400)
+    }
+    // AI HP 감소 (자동 전투 페이즈) → isAiHit
+    if (prevAiHpRef.current !== null && currentAiHp < prevAiHpRef.current) {
+      setIsAiHit(true)
+      setTimeout(() => setIsAiHit(false), 300)
+    }
+
+    prevPlayerHpRef.current = currentPlayerHp
+    prevAiHpRef.current = currentAiHp
+  }, [gameState?.player.currentHp, gameState?.ai.currentHp])
 
   // 게임 초기화
   useEffect(() => {
@@ -211,6 +268,12 @@ export default function BattleScreen({ onRestart, onVictory, stageId }: BattleSc
     return ai.hero.element as FiveElement
   })()
 
+  // Phase 2-A: 오행 → 영웅 타입 결정
+  const playerHeroType = ELEMENT_HERO_MAP[player.hero.element as FiveElement] ?? 'swordsman'
+  const aiHeroType = getAiHeroType(
+    enemyElement !== 'neutral' ? enemyElement : ai.hero.element,
+  )
+
   // AI 필드에 도발 유닛 있는지
   const hasTauntInAiField = ai.field.some(
     u => u !== null && [...u.card.keywords, ...u.temporaryKeywords].includes('taunt'),
@@ -258,6 +321,12 @@ export default function BattleScreen({ onRestart, onVictory, stageId }: BattleSc
       }
     }
 
+    // Phase 2-A: 플레이어 공격 → isAttacking, AI 피격 → isHit
+    setIsPlayerAttacking(true)
+    setIsAiHit(true)
+    setTimeout(() => setIsPlayerAttacking(false), 400)
+    setTimeout(() => setIsAiHit(false), 300)
+
     attackTarget(slotIdx)
     // 화면 흔들림 + 충격파 (리라 스펙 §2-B, §2-C)
     emitScreenShake()
@@ -284,6 +353,12 @@ export default function BattleScreen({ onRestart, onVictory, stageId }: BattleSc
       addToast('적 유닛을 먼저 처치하거나 관통 유닛을 사용하세요')
       return
     }
+
+    // Phase 2-A: 플레이어 공격 → isAttacking, AI 영웅 피격 → isHit
+    setIsPlayerAttacking(true)
+    setIsAiHit(true)
+    setTimeout(() => setIsPlayerAttacking(false), 400)
+    setTimeout(() => setIsAiHit(false), 300)
 
     attackTarget('hero')
     // 화면 흔들림 (리라 스펙 §2-B)
@@ -455,24 +530,50 @@ export default function BattleScreen({ onRestart, onVictory, stageId }: BattleSc
 
         {/* 힌트 배너 — FieldSeparator로 통합 */}
 
-        {/* [C] AI 필드 */}
-        <div style={{ flexShrink: 0 }}>
-          {/* AI 영웅 클릭 타겟 — 4px 보조 영역 유지 (오버레이가 주 타겟) */}
+        {/* [C] AI 영역: HeroCharacter(우측) + 필드 3슬롯(좌측) — Phase 2-A */}
+        <div
+          style={{
+            flexShrink: 0,
+            display: 'flex',
+            flexDirection: 'row-reverse',
+            alignItems: 'center',
+            gap: 6,
+            padding: '4px 8px',
+            margin: '0 0',
+            position: 'relative',
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* AI 영웅 캐릭터 — 우측, 좌측 바라봄 (scaleX(-1)) */}
           <div
-            style={{ height: 4, cursor: interaction === 'unit_selected' ? 'crosshair' : 'default' }}
+            style={{ cursor: interaction === 'unit_selected' ? 'crosshair' : 'default', flexShrink: 0 }}
             onClick={(e) => { e.stopPropagation(); handleAiHeroClick() }}
-          />
-          <FieldArea
-            field={ai.field}
-            side="ai"
-            interaction={interaction as InteractionState}
-            selectedUnitSlot={selectedUnitSlot}
-            selectedCardIndex={selectedCardIndex}
-            hasTauntInAiField={hasTauntInAiField}
-            attackerHasPierce={attackerHasPierce}
-            onUnitClick={(slotIdx) => { handleAiUnitClick(slotIdx) }}
-            playerElement={player.hero.element}
-          />
+          >
+            <HeroCharacter
+              heroType={aiHeroType}
+              side="ai"
+              hp={ai.currentHp}
+              maxHp={ai.hero.maxHp}
+              isAttacking={isAiAttacking}
+              isHit={isAiHit}
+              element={enemyElement !== 'neutral' ? enemyElement : ai.hero.element as FiveElement}
+            />
+          </div>
+
+          {/* AI 필드 3슬롯 (좌측) */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <FieldArea
+              field={ai.field.slice(0, 3)}
+              side="ai"
+              interaction={interaction as InteractionState}
+              selectedUnitSlot={selectedUnitSlot}
+              selectedCardIndex={selectedCardIndex}
+              hasTauntInAiField={hasTauntInAiField}
+              attackerHasPierce={attackerHasPierce}
+              onUnitClick={(slotIdx) => { handleAiUnitClick(slotIdx) }}
+              playerElement={player.hero.element}
+            />
+          </div>
         </div>
 
         {/* 중앙 FieldSeparator */}
@@ -481,22 +582,49 @@ export default function BattleScreen({ onRestart, onVictory, stageId }: BattleSc
           hintMessage={hintMessage}
         />
 
-        {/* [D] 플레이어 필드 */}
-        <div style={{ flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-          <FieldArea
-            field={player.field}
-            side="player"
-            interaction={interaction as InteractionState}
-            selectedUnitSlot={selectedUnitSlot}
-            selectedCardIndex={selectedCardIndex}
-            onUnitClick={(slotIdx) => { handlePlayerUnitClick(slotIdx) }}
-            onEmptySlotClick={handleEmptySlotClick}
-            onDragOver={handleDragOver}
-            onDrop={handleDrop}
-            onDragLeave={handleDragLeave}
-            dragOverSlot={dragOverSlot}
-            playerElement={player.hero.element}
-          />
+        {/* [D] 플레이어 영역: HeroCharacter(좌측) + 필드 3슬롯(우측) — Phase 2-A */}
+        <div
+          style={{
+            flexShrink: 0,
+            display: 'flex',
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            padding: '4px 8px',
+            margin: '0 0',
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* 플레이어 영웅 캐릭터 — 좌측, 우측 바라봄 */}
+          <div style={{ flexShrink: 0 }}>
+            <HeroCharacter
+              heroType={playerHeroType}
+              side="player"
+              hp={player.currentHp}
+              maxHp={player.hero.maxHp}
+              isAttacking={isPlayerAttacking}
+              isHit={isPlayerHit}
+              element={player.hero.element as FiveElement}
+            />
+          </div>
+
+          {/* 플레이어 필드 3슬롯 (우측) */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <FieldArea
+              field={player.field.slice(0, 3)}
+              side="player"
+              interaction={interaction as InteractionState}
+              selectedUnitSlot={selectedUnitSlot}
+              selectedCardIndex={selectedCardIndex}
+              onUnitClick={(slotIdx) => { handlePlayerUnitClick(slotIdx) }}
+              onEmptySlotClick={handleEmptySlotClick}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              onDragLeave={handleDragLeave}
+              dragOverSlot={dragOverSlot}
+              playerElement={player.hero.element}
+            />
+          </div>
         </div>
 
         {/* [E] 플레이어 상태 바 */}
