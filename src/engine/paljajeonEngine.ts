@@ -85,7 +85,14 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
 
   const newEnemyHp = Math.max(0, state.enemyHp - damage)
   const counterDamage = floorConfig.counterDamage
-  const newPlayerHp = Math.max(0, state.playerHp - counterDamage)
+
+  // lifesteal: 출수한 카드 중 lifesteal 카드가 있으면 데미지의 30%를 HP 회복
+  const hasLifesteal = playedCards.some(c => c.lifesteal === true)
+  const lifestealHeal = hasLifesteal ? Math.floor(damage * 0.3) : 0
+  const newPlayerHp = Math.min(
+    state.playerMaxHp,
+    Math.max(0, state.playerHp - counterDamage + lifestealHeal)
+  )
   const newPlaysLeft = state.playsLeft - 1
 
   // 덱에서 플레이한 장수만큼 다시 뽑기

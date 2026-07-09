@@ -18,6 +18,7 @@ export interface Card {
   rarity: Rarity
   name?: string
   flavorText?: string
+  lifesteal?: boolean  // lifesteal: 데미지의 30%를 HP 회복으로 전환
 }
 
 export type HandRank =

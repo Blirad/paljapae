@@ -18,6 +18,11 @@ interface GameStore extends GameState {
   // 실시간 족보 미리보기
   previewResult: HandJudgeResult | null
 
+  // 인라인 안내 3종 플래그 (한 번만 표시)
+  hasShownFirstHand: boolean
+  hasShownFirstDiscard: boolean
+  hasShownFirstAffinity: boolean
+
   // 액션
   startGame: () => void
   toggleCardSelect: (cardId: string) => void
@@ -25,11 +30,19 @@ interface GameStore extends GameState {
   discardSelectedCards: () => void
   proceedToNextFloor: () => void
   resetGame: () => void
+  markFirstHandShown: () => void
+  markFirstDiscardShown: () => void
+  markFirstAffinityShown: () => void
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
   ...createInitialGameState(),
   previewResult: null,
+
+  // 인라인 안내 플래그 초기값
+  hasShownFirstHand: false,
+  hasShownFirstDiscard: false,
+  hasShownFirstAffinity: false,
 
   startGame: () => {
     set({ ...createInitialGameState(), previewResult: null })
@@ -77,4 +90,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   resetGame: () => {
     set({ ...createInitialGameState(), previewResult: null })
   },
+
+  markFirstHandShown: () => set({ hasShownFirstHand: true }),
+  markFirstDiscardShown: () => set({ hasShownFirstDiscard: true }),
+  markFirstAffinityShown: () => set({ hasShownFirstAffinity: true }),
 }))

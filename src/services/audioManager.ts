@@ -121,6 +121,10 @@ function playFilteredNoise(
   source.stop(now + duration + 0.05)
 }
 
+// BGM 루프용 싱글턴 노드 보관
+let _bgmOscillator: OscillatorNode | null = null
+let _bgmGain: GainNode | null = null
+
 export const audioManager = {
   /**
    * 1. 카드 선택 틱
@@ -467,6 +471,134 @@ export const audioManager = {
 
     // 통이 흔들리는 셰이크 배경 노이즈 (전체)
     playFilteredNoise(0.9, 0.08, 3500)
+  },
+
+  /**
+   * 13. 배경음 (BGM) — 전투 중 저주파 루프
+   * 60Hz 저주파 명상/배경음 톤, volume 0.35, loop true
+   * 출처: Web Audio 합성 (상업 사용 무제한)
+   */
+  playBGM(): void {
+    // 이미 재생 중이면 중복 시작 방지
+    if (_bgmOscillator !== null) return
+    const ctx = getCtx()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(60, ctx.currentTime)
+
+    gain.gain.setValueAtTime(0, ctx.currentTime)
+    gain.gain.linearRampToValueAtTime(0.35, ctx.currentTime + 1.5)
+
+    osc.start(ctx.currentTime)
+    // loop: OscillatorNode는 stop 전까지 자동 루프
+
+    _bgmOscillator = osc
+    _bgmGain = gain
+  },
+
+  /**
+   * BGM 정지 — fadeout 후 노드 해제
+   */
+  stopBGM(): void {
+    if (_bgmGain === null || _bgmOscillator === null) return
+    const ctx = getCtx()
+    const gain = _bgmGain
+    const osc = _bgmOscillator
+
+    gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime)
+    gain.gain.linearRampToValueAtTime(0.001, ctx.currentTime + 0.8)
+    osc.stop(ctx.currentTime + 0.85)
+
+    _bgmOscillator = null
+    _bgmGain = null
+  },
+
+  /**
+   * 14. 파티클음 — 오행파티클 발동 시 효과음 (0.5초 burst)
+   * 오행별 frequency: 木150 / 火250 / 土200 / 金350 / 水100 Hz
+   * 출처: Web Audio 합성 (상업 사용 무제한)
+   *
+   * @param element 오행 Element 타입
+   */
+  playParticleSFX(element: 'mok' | 'hwa' | 'to' | 'geum' | 'su'): void {
+    const ELEMENT_FREQ: Record<string, number> = {
+      mok: 150,
+      hwa: 250,
+      to: 200,
+      geum: 350,
+      su: 100,
+    }
+    const frequency = ELEMENT_FREQ[element] ?? 200
+
+    const ctx = getCtx()
+    const now = ctx.currentTime
+
+    // ADSR: attack 50ms / sustain ~400ms / release 50ms — 총 0.5초
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+
+    osc.type = 'triangle'
+    osc.frequency.setValueAtTime(frequency, now)
+    osc.frequency.exponentialRampToValueAtTime(frequency * 1.05, now + 0.05)
+    osc.frequency.setValueAtTime(frequency, now + 0.45)
+
+    gain.gain.setValueAtTime(0, now)
+    gain.gain.linearRampToValueAtTime(0.4, now + 0.05)     // attack 50ms
+    gain.gain.setValueAtTime(0.4, now + 0.45)              // sustain
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5) // release 50ms
+
+    osc.start(now)
+    osc.stop(now + 0.52)
+  },
+
+  /**
+   * 15. 회복음 — lifesteal 발동 시 밝은 상승음 (440→880Hz, 0.6초)
+   * 출처: Web Audio 합성 (상업 사용 무제한)
+   */
+  playHealSFX(): void {
+    const ctx = getCtx()
+    const now = ctx.currentTime
+
+    // 소프라노 스윕: 440Hz → 880Hz
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(440, now)
+    osc.frequency.exponentialRampToValueAtTime(880, now + 0.55)
+
+    gain.gain.setValueAtTime(0, now)
+    gain.gain.linearRampToValueAtTime(0.5, now + 0.05)
+    gain.gain.setValueAtTime(0.5, now + 0.45)
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6)
+
+    osc.start(now)
+    osc.stop(now + 0.62)
+
+    // 배음 레이어 (맑음 강화)
+    const osc2 = ctx.createOscillator()
+    const gain2 = ctx.createGain()
+    osc2.connect(gain2)
+    gain2.connect(ctx.destination)
+    osc2.type = 'sine'
+    osc2.frequency.setValueAtTime(880, now)
+    osc2.frequency.exponentialRampToValueAtTime(1760, now + 0.55)
+    gain2.gain.setValueAtTime(0, now)
+    gain2.gain.linearRampToValueAtTime(0.18, now + 0.05)
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.6)
+    osc2.start(now)
+    osc2.stop(now + 0.62)
   },
 }
 
