@@ -30,8 +30,9 @@ import RestScreen from '@/screens/RestScreen'
 import SettingsScreen from '@/screens/SettingsScreen'
 import CollectionScreen from '@/screens/CollectionScreen'
 import LobbyScreen from '@/screens/LobbyScreen'
-import STSBattleScreen from '@/screens/STSBattleScreen'
 import G05StyleMockup from '@/screens/G05StyleMockup'
+import PaljapaeBattleScreen from '@/screens/PaljapaeBattleScreen'
+import PaljapaeRewardScreen from '@/screens/PaljapaeRewardScreen'
 import MatchmakingScreen from '@/screens/MatchmakingScreen'
 import YourTurnWaitScreen from '@/screens/YourTurnWaitScreen'
 import PvPResultScreen from '@/screens/PvPResultScreen'
@@ -184,15 +185,16 @@ type AppScene =
   | 'pvpBattle'      // PlayerVsPlayerScreen
   | 'pvpWaiting'     // YourTurnWaitScreen
   | 'pvpResult'      // PvPResultScreen
-  | 'stsBattle'      // Phase 4 — STS 전투 화면
   | 'g05'            // G0.5 스타일 시안 (디버그 전용)
+  | 'paljapaeBattle' // 팔자전 전투 화면
+  | 'paljapaeReward' // 팔자전 층간 보상 화면
 
 /** 앱 초기 scene 결정 — 항상 타이틀 화면에서 시작 (리라 Phase A 스펙 §A-4) */
 function getInitialScene(): AppScene {
   // 디버그 진입: ?scene=stsBattle | ?scene=g05
   const params = new URLSearchParams(window.location.search)
   const debug = params.get('scene') as AppScene | null
-  if (debug === 'stsBattle') return 'stsBattle'
+  if (debug === 'paljapaeBattle') return 'paljapaeBattle'
   if (debug === 'g05') return 'g05'
   return 'title'  // 항상 타이틀 화면에서 시작
 }
@@ -914,15 +916,26 @@ export default function App(): React.ReactElement {
           />
         )
 
-      // ─── Phase 4 STS 전투 씬 ──────────────────────
-      case 'stsBattle':
+      // ─── 팔자전 전투 씬 ───────────────────────────
+      case 'paljapaeBattle':
         return (
-          <STSBattleScreen
-            heroElement={ctx.playerElement}
-            heroHp={ctx.heroHp}
-            heroMaxHp={ctx.heroMaxHp}
-            onVictory={() => setScene('cardReward')}
+          <PaljapaeBattleScreen
+            floor={1}
+            onVictory={() => setScene('paljapaeReward')}
             onDefeat={() => setScene('runSummary')}
+          />
+        )
+
+      // ─── 팔자전 보상 씬 ──────────────────────────
+      case 'paljapaeReward':
+        return (
+          <PaljapaeRewardScreen
+            floor={1}
+            passives={[]}
+            ownedRelics={[]}
+            hand={[]}
+            onSelect={() => setScene('paljapaeBattle')}
+            onSkip={() => setScene('paljapaeBattle')}
           />
         )
 
