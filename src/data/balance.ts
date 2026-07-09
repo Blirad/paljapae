@@ -3,6 +3,7 @@
 // v1.1: 클리어율 96.7% (적 HP 380/720/1200/2000, retaliation 22/32/45/60)
 // v1.2: 클리어율 6.3%  (적 HP 800/1800/3200/5500, retaliation 30/42/55/70)
 // v1.3: 중간값 조정 (적 HP ~1.7x v1.1)
+// v1.4: 3~4층 강화 — 목표 클리어율 35~45% (2026-07-09)
 
 export const BALANCE = {
   // 플레이어
@@ -11,9 +12,9 @@ export const BALANCE = {
   // 층별 설정
   FLOORS: [
     { enemyHp: 600,  playsAllowed: 3, retaliation: 26 },   // 1층
-    { enemyHp: 1100, playsAllowed: 3, retaliation: 36 },   // 2층
-    { enemyHp: 1900, playsAllowed: 3, retaliation: 48 },   // 3층 (정예)
-    { enemyHp: 3200, playsAllowed: 4, retaliation: 62 },   // 4층 (보스)
+    { enemyHp: 1200, playsAllowed: 3, retaliation: 40 },   // 2층
+    { enemyHp: 2200, playsAllowed: 3, retaliation: 56 },   // 3층 (정예)
+    { enemyHp: 3800, playsAllowed: 4, retaliation: 72 },   // 4층 (보스)
   ],
   DISCARD_LIMIT: 3,
   HAND_SIZE: 8,

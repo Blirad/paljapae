@@ -26,11 +26,13 @@ export function createTempDeck(seed?: number): PaljapaeCard[] {
     for (const yy of ['양', '음'] as const) {
       for (let i = 0; i < 2; i++) {
         const value = Math.floor(rand() * 10) + 1
+        // 임의 결정: 임시 덱이므로 전부 'normal' rarity 설정 (사주 시스템 연동 시 재배분 예정)
         deck.push({
           id: `${el}_${yy}_${i}_${Math.floor(rand() * 9999)}`,
           element: el,
           yinYang: yy,
           value,
+          rarity: 'normal',
         })
       }
     }

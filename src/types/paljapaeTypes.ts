@@ -3,12 +3,16 @@ export type Element = '木' | '火' | '土' | '金' | '水'
 // 음양
 export type YinYang = '양' | '음'
 
+// 카드 등급
+export type CardRarity = 'normal' | 'rare' | 'hero'
+
 // 카드 (속성×음양×값)
 export interface PaljapaeCard {
   id: string
   element: Element
   yinYang: YinYang
   value: number  // 1~10
+  rarity?: CardRarity  // 기본값 'normal'
 }
 
 // 족보 타입 (C-3 전체)

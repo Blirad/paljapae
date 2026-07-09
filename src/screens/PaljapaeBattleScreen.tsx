@@ -83,6 +83,20 @@ function PaljapaeCardDisplay({ card, isSelected, isCounter, rotate, fanOffset, o
   const ec = elColor(card.element as El5)
   const eg = elGlow(card.element as El5)
   const tc = elTextColor(card.element as El5)
+  const rarity = card.rarity ?? 'normal'
+
+  // 등급별 테두리 스타일
+  const rarityBorder = rarity === 'hero'
+    ? `2px solid ${C.heroFrame}`
+    : rarity === 'rare'
+      ? `2px solid ${C.juSa}`
+      : `1px solid ${C.ink}`
+
+  const resolvedBoxShadow = isSelected
+    ? `0 0 8px ${eg}88, 0 0 20px ${eg}50`
+    : rarity === 'hero'
+      ? `0 0 8px #C9A22760`
+      : `0 0 4px ${ec}30`
 
   return (
     <div
@@ -91,14 +105,14 @@ function PaljapaeCardDisplay({ card, isSelected, isCounter, rotate, fanOffset, o
         width: 72,
         height: 101,
         borderRadius: 8,
-        border: `1px solid ${C.ink}`,
+        border: rarityBorder,
         background: C.hanji,
         position: 'relative',
         flexShrink: 0,
         cursor: 'pointer',
         transform: `rotate(${rotate}deg) translateY(${isSelected ? fanOffset - 16 : fanOffset}px)`,
         transition: 'transform 0.12s ease-out, box-shadow 0.12s ease-out',
-        boxShadow: isSelected ? `0 0 8px ${eg}88, 0 0 20px ${eg}50` : `0 0 4px ${ec}30`,
+        boxShadow: resolvedBoxShadow,
         overflow: 'hidden',
         opacity: isCounter ? 0.4 : 1,
         userSelect: 'none',
@@ -117,6 +131,16 @@ function PaljapaeCardDisplay({ card, isSelected, isCounter, rotate, fanOffset, o
       {/* 역극 오버레이 */}
       {isCounter && (
         <div style={{ position: 'absolute', inset: 0, background: `${C.bg}99`, filter: 'saturate(0.3)', borderRadius: 6, zIndex: 10 }} />
+      )}
+
+      {/* 희귀 등급: 4모서리 ✚ 문양 */}
+      {rarity === 'rare' && (
+        <>
+          <span style={{ position: 'absolute', top: 2, left: 2, color: C.juSa, fontSize: 7, lineHeight: 1, zIndex: 6, userSelect: 'none' }}>✚</span>
+          <span style={{ position: 'absolute', top: 2, right: 2, color: C.juSa, fontSize: 7, lineHeight: 1, zIndex: 6, userSelect: 'none' }}>✚</span>
+          <span style={{ position: 'absolute', bottom: 2, left: 2, color: C.juSa, fontSize: 7, lineHeight: 1, zIndex: 6, userSelect: 'none' }}>✚</span>
+          <span style={{ position: 'absolute', bottom: 2, right: 2, color: C.juSa, fontSize: 7, lineHeight: 1, zIndex: 6, userSelect: 'none' }}>✚</span>
+        </>
       )}
 
       {/* 좌상단: 값 */}
