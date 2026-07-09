@@ -32,6 +32,10 @@ import { useGameContext } from '../context/GameContext'
 import { audioManager } from '../services/audioManager'
 import { judgeHand } from '../engine/pokerHandJudge'
 import type { Element } from '../types/game'
+import { useDragAndDrop, checkFusionCompatibility } from '../hooks/useDragAndDrop'
+import PassiveSlot, { PassiveActivationBanner } from './PassiveSlot'
+import { usePassiveAnimation } from '../hooks/usePassiveAnimation'
+import type { Passive } from '../types/passive'
 
 const ELEMENT_LABELS: Record<string, string> = {
   mok: '木', hwa: '火', to: '土', geum: '金', su: '水',
@@ -818,9 +822,10 @@ const FLOOR_ENEMY_INFO: Record<number, {
 interface BattleScreenProps {
   onFloorClear: () => void
   onResult: (victory: boolean) => void
+  passives?: Passive[]  // 드래프트에서 선택한 패시브 (옵셔널, 없으면 빈 슬롯)
 }
 
-export default function BattleScreen({ onFloorClear, onResult }: BattleScreenProps) {
+export default function BattleScreen({ onFloorClear, onResult, passives = [] }: BattleScreenProps) {
   const {
     currentFloor,
     playerHp,
@@ -919,6 +924,17 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
   // D11: 영웅 전방 모션 상태
   const [heroCharge, setHeroCharge] = useState(false)
   const [spiritOrbs, setSpiritOrbs] = useState<string[]>([]) // 정령 구체 속성 목록
+
+  // 2번: 드래그 앤 드롭 훅 (합성 소환 인터랙션)
+  const { dragState, handleDragStart, handleDragOver, handleDragEnd, handleDragCancel, rejectAnimCardId } = useDragAndDrop()
+
+  // 드래그 겹치기 불가 안내 메시지
+  const [fusionRejectMsg, setFusionRejectMsg] = useState<string | null>(null)
+  const fusionRejectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // 3번: 패시브 애니메이션 훅
+  const { activationState, clearActivation } = usePassiveAnimation()
+  void clearActivation // 향후 패시브 발동 시 사용
 
   // A5: 첫 판 가이드
   const [tutorialStep, setTutorialStep] = useState<0 | 1 | 2 | null>(() => {
@@ -1624,6 +1640,12 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
           ...shakeStyle,
         }}
       >
+        {/* 3-B: 패시브 발동 배너 */}
+        <PassiveActivationBanner
+          passiveName={activationState.passiveName}
+          visible={activationState.bannerVisible}
+        />
+
         {/* B6: 남은 공격 횟수 — 중앙 상단 크게 */}
         <div style={{
           textAlign: 'center',
@@ -2074,6 +2096,28 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
             />
           )}
 
+          {/* 드래그 융합 불가 안내 */}
+          {fusionRejectMsg && (
+            <div
+              style={{
+                position: 'absolute',
+                top: '-28px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                backgroundColor: 'rgba(179,58,43,0.9)',
+                color: '#E8DCC4',
+                fontSize: '11px',
+                padding: '4px 10px',
+                borderRadius: '2px',
+                whiteSpace: 'nowrap',
+                zIndex: 60,
+                pointerEvents: 'none',
+              }}
+            >
+              {fusionRejectMsg}
+            </div>
+          )}
+
           {hand.map((card, idx) => {
             const isSelected = selectedCards.includes(card.id)
             const elColor = ELEMENT_COLORS[card.element]
@@ -2089,27 +2133,66 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
             // A4: 훈수 하이라이트
             const isHinted = hintActive && hintCards.includes(card.id)
 
+            // 드래그 상태
+            const isDraggingThis = dragState.draggingCardId === card.id
+            const isDropTarget = dragState.overCardId === card.id
+            const isRejectAnim = rejectAnimCardId === card.id
+
             return (
               <button
                 key={card.id}
-                onClick={() => handleCardSelect(card.id)}
+                draggable
+                onClick={() => !isDraggingThis && handleCardSelect(card.id)}
+                onDragStart={() => handleDragStart(card.id)}
+                onDragOver={e => { e.preventDefault(); handleDragOver(card.id, hand) }}
+                onDrop={() => {
+                  const fusion = (cards: typeof hand) => {
+                    // 드래그로 선택한 카드 2장을 탭 선택 방식으로 전환
+                    cards.forEach(c => {
+                      if (!selectedCards.includes(c.id)) {
+                        toggleCardSelect(c.id)
+                      }
+                    })
+                    // 불가능 조합 시 안내 (rejectAnimCardId로 처리됨)
+                    const result = checkFusionCompatibility(cards)
+                    if (result.type === 'reject' && result.message) {
+                      if (fusionRejectTimerRef.current) clearTimeout(fusionRejectTimerRef.current)
+                      setFusionRejectMsg(result.message)
+                      fusionRejectTimerRef.current = setTimeout(() => setFusionRejectMsg(null), 2000)
+                    }
+                  }
+                  handleDragEnd(fusion, hand)
+                }}
+                onDragEnd={handleDragCancel}
                 style={{
                   width: w,
                   height: h,
                   backgroundColor: isYeokgeukInHand ? '#1A1614' : '#E8DCC4',
                   border: isHinted
                     ? `2px solid #D9A441`
+                    : isDropTarget && dragState.fusionPreview?.type !== 'reject'
+                    ? `2px solid #D9A441`
                     : `2px solid ${isSelected ? elColor : isYeokgeukInHand ? '#2A2620' : '#2A2620'}`,
                   borderRadius: '2px',
                   position: 'relative',
-                  cursor: 'pointer',
-                  transform: `rotate(${angle}deg) translateY(${isSelected ? -14 : 0}px)`,
-                  transition: `transform ${getCssDuration(120)} ease-out, border-color ${getCssDuration(120)} ease-out`,
-                  boxShadow: isHinted ? `0 0 12px #D9A441` : isSelected ? `0 0 8px ${glowColor}` : 'none',
+                  cursor: 'grab',
+                  transform: isDraggingThis
+                    ? `rotate(${angle}deg) scale(0.9) translateY(${isSelected ? -14 : 0}px)`
+                    : isRejectAnim
+                    ? `rotate(${angle}deg) translateX(8px) translateY(${isSelected ? -14 : 0}px)`
+                    : `rotate(${angle}deg) translateY(${isSelected ? -14 : 0}px)`,
+                  transition: isRejectAnim
+                    ? `transform 0.1s ease-out`
+                    : `transform ${getCssDuration(120)} ease-out, border-color ${getCssDuration(120)} ease-out`,
+                  boxShadow: isHinted
+                    ? `0 0 12px #D9A441`
+                    : isDropTarget && dragState.fusionPreview?.type !== 'reject'
+                    ? `0 0 14px #D9A441`
+                    : isSelected ? `0 0 8px ${glowColor}` : 'none',
                   flexShrink: 0,
                   padding: 0,
                   // G1 수정: 역극 opacity 0.35, 필터 강화
-                  opacity: isYeokgeukInHand ? 0.35 : 1,
+                  opacity: isDraggingThis ? 0.5 : isYeokgeukInHand ? 0.35 : 1,
                   filter: isYeokgeukInHand ? 'grayscale(0.85) brightness(0.4)' : 'none',
                 }}
               >
@@ -2239,37 +2322,11 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
           </button>
         </div>
 
-        {/* 패시브 슬롯 */}
-        <div
-          style={{
-            height: '12vh',
-            minHeight: '56px',
-            backgroundColor: '#181410',
-            borderTop: '1px solid #2A2620',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px',
-            padding: '0 16px',
-          }}
-        >
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div
-              key={i}
-              style={{
-                width: '44px',
-                height: '44px',
-                border: '1px solid #2A2620',
-                backgroundColor: '#1C1710',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <span style={{ color: '#2A2620', fontSize: '10px' }}>패</span>
-            </div>
-          ))}
-        </div>
+        {/* 패시브 슬롯 (3-A: 실제 카드로 표시) */}
+        <PassiveSlot
+          passives={passives}
+          flashCardId={activationState.flashCardId}
+        />
       </div>
     </>
   )

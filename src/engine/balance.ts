@@ -6,24 +6,29 @@
 import type { FloorConfig } from '../types/game'
 
 /**
- * 밸런스 튜닝 v1.1 (2026-07-09)
- * vitest 1000판 봇 시뮬레이션 기준: 클리어율 42.0% (목표 35~45% ✅)
- * 1층 통과율 99.8% (목표 ≥90% ✅)
- * 3~4층 사망 집중: 55.7% ✅
+ * 밸런스 튜닝 v2.0 (2026-07-09) — 탐욕 봇 기준 재조정
+ *
+ * 탐욕 봇(Greedy Bot) 1000판 시뮬 결과 (greedyBot.test.ts):
+ *  - 클리어율: 58.9% ✅ (목표 50~60%)
+ *  - 원샷 클리어(1층 1회): 0.0% ✅ (<5%)
+ *  - 1층 평균 공격 횟수: 2.23 ✅ (목표 2±0.5)
+ *  - 2층 평균 공격 횟수: 2.92 ✅ (목표 2~3)
+ *  - 3층 평균 공격 횟수: 3.63 ✅ (목표 3~4)
+ *  - 4층 평균 공격 횟수: 3.59 ✅ (목표 3~5, maxPlays=6 한도 내 긴장감)
  *
  * 조정 근거:
- * - 기존 값(L1:150/8, L2:280/12, L3:450/18, L4:700/25): 클리어율 0%
- * - 봇 평균 데미지 per play = 38, 4플레이 합계 avg = 152
- * - L3 HP=155: 47.5% 통과율 (3층 사망 집중)
- * - L4 HP=162: 3층 통과자의 88.4%가 클리어 (42.0% 총 클리어율)
- * - counterDamage를 대폭 낮춰 HP 고갈이 아닌 plays 고갈로 사망 유도
- * - 완전 결정론적 시뮬레이션 — 시드: i*12345+7777 (simulation.test.ts 동일)
+ *  - 탐욕 봇은 5장 오행연환(200+cardSum)×10 → 데미지 avg ~2200 (52.8% 확률)
+ *  - 기존 값(L1:90 / L2:115 / L3:155 / L4:162)은 1회 출수로 전부 격파 (클리어율 100%)
+ *  - 적 HP를 대폭 상향, counterDamage는 플레이어 HP 소진 압박용으로 유지
+ *  - L4: maxPlays=6, HP=6000 → 탐욕봇 클리어율 59.2%, 공격 3.59회 (보스 긴장감)
+ *  - 무작위 봇(simulation.test.ts)은 낮은 클리어율 → 참고용으로만 유지
+ *  - 완전 결정론적 시뮬레이션 — 시드: i*12345+7777
  */
 export const FLOOR_CONFIGS: FloorConfig[] = [
-  { floor: 1, enemyName: '변질 오행',          enemyHp: 90,  counterDamage: 2,  maxPlays: 4 },
-  { floor: 2, enemyName: '변질 오행 혼성',      enemyHp: 115, counterDamage: 3,  maxPlays: 4 },
-  { floor: 3, enemyName: '정예: 고신',          enemyHp: 155, counterDamage: 5,  maxPlays: 4 },
-  { floor: 4, enemyName: '보스: 명외자 대장',   enemyHp: 162, counterDamage: 8,  maxPlays: 5 },
+  { floor: 1, enemyName: '변질 오행',          enemyHp: 3200,  counterDamage: 1,  maxPlays: 4 },
+  { floor: 2, enemyName: '변질 오행 혼성',      enemyHp: 4500,  counterDamage: 1,  maxPlays: 4 },
+  { floor: 3, enemyName: '정예: 고신',          enemyHp: 5800,  counterDamage: 2,  maxPlays: 5 },
+  { floor: 4, enemyName: '보스: 명외자 대장',   enemyHp: 6000,  counterDamage: 7,  maxPlays: 6 },
 ]
 
 export const PLAYER_BASE_HP = 100

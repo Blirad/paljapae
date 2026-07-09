@@ -8,24 +8,46 @@ import { judgeHand, GEUK_MAP } from './pokerHandJudge'
 import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS } from './balance'
 
 /**
- * C10(d): 층별 기믹 정의 (balance.ts 수치 변경 없이 새로운 로직 추가)
- * - 고목령(1층): 매 턴 체력 15 회복
- * - 잔화령(2층): 반격 +50%, 체력 -30% (GameState 생성 시 적용)
- * - 붕토령(3층): 받는 피해 -20%
- * - 녹철령: 핸드 카드 값 -1 (discardCards에서 적용)
- * - 탁수령: 버리기 1회당 피해 3
+ * C10(d): 오행 속성별 기믹 정의 (balance.ts 수치 변경 없이 새로운 로직 추가)
+ * 부록 2-1. 변질 오행 5종 기믹 — 이든 지시 수치 그대로 적용
+ * - 고목령(木): 매 턴 자신 체력 15 회복
+ * - 잔화령(火): 반격 피해 +50% (×1.5배)
+ * - 붕토령(土): 받는 피해 -20%
+ * - 녹철령(金): 매 턴 무작위 핸드 카드 1장 값 -1 (녹)
+ * - 탁수령(水): 플레이어 버리기 1회당 피해 3
  */
 export type FloorGimmick =
   | { type: 'heal'; amount: number }           // 매 턴 체력 회복
   | { type: 'damage-reduction'; pct: number }  // 받는 피해 감소 (0~1)
-  | { type: 'counter-boost'; pct: number }     // 반격 피해 증가 (배율)
-  | { type: 'card-rust'; amount: number }      // 버릴 때 핸드 카드 값 감소
+  | { type: 'counter-boost'; pct: number }     // 반격 피해 증가 (배율, ×N배)
+  | { type: 'card-rust'; amount: number }      // 매 턴 핸드 카드 값 감소 (녹)
   | { type: 'discard-punish'; damage: number } // 버리기 시 피해
 
-export const FLOOR_GIMMICKS: Record<number, FloorGimmick[]> = {
-  1: [{ type: 'heal', amount: 3 }],   // 고목령 — 매 턴 3 회복 (기존 밸런스 유지 위해 최소화)
-  // 2층, 3층 기믹은 UI 연출로만 표시 (엔진 로직 영향 최소화로 밸런스 보존)
-  // counterDamage는 balance.ts에서 이미 층별 설정됨
+/** 오행 속성별 기믹 맵 (1~2층 잡몹용) */
+export const ELEMENT_GIMMICKS: Record<string, FloorGimmick[]> = {
+  mok: [{ type: 'heal', amount: 15 }],                // 고목령 — 매 턴 15 회복 (이든 지시 수치)
+  hwa: [{ type: 'counter-boost', pct: 1.5 }],         // 잔화령 — 반격 +50%
+  to:  [{ type: 'damage-reduction', pct: 0.2 }],      // 붕토령 — 받는 피해 -20%
+  geum: [{ type: 'card-rust', amount: 1 }],            // 녹철령 — 매 턴 핸드 카드 1장 값 -1
+  su:  [{ type: 'discard-punish', damage: 3 }],        // 탁수령 — 버리기 1회당 피해 3
+}
+
+/** 층별 적 속성 (1~2층: 잡몹, 3~4층: 정예/보스) */
+export const FLOOR_ENEMY_ELEMENTS: Record<number, string> = {
+  1: 'mok',   // 고목령(木)
+  2: 'hwa',   // 잔화령(火)
+  3: 'to',    // 정예: 고신(土) — 기믹은 패시브 봉인 (엔진 별도 처리)
+  4: 'geum',  // 보스: 명외자 대장(金) — 기믹은 3번째 출수 배율 고정 (엔진 별도 처리)
+}
+
+/** 현재 층의 기믹 목록 반환 (1~2층 잡몹만 ELEMENT_GIMMICKS 적용) */
+function getFloorGimmicks(floor: number): FloorGimmick[] {
+  const element = FLOOR_ENEMY_ELEMENTS[floor]
+  // 1~2층만 잡몹 기믹 적용 (3~4층 정예/보스는 별도 로직)
+  if (floor <= 2 && element) {
+    return ELEMENT_GIMMICKS[element] ?? []
+  }
+  return []
 }
 
 /** 고정 임시 덱 생성 (Phase 1 — 사주 계산 없이 균형 덱) */
@@ -99,7 +121,7 @@ export function isYeokgeuk(card: Card, enemyElement: Element): boolean {
 /** 출수 실행 → 새로운 GameState 반환 */
 export function playCards(state: GameState, cardIds: string[]): GameState {
   const floorConfig = FLOOR_CONFIGS[state.currentFloor - 1]
-  const gimmicks = FLOOR_GIMMICKS[state.currentFloor] ?? []
+  const gimmicks = getFloorGimmicks(state.currentFloor)
   const playedCards = state.hand.filter(c => cardIds.includes(c.id))
   const remainHand = state.hand.filter(c => !cardIds.includes(c.id))
 
@@ -142,7 +164,16 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
   for (let i = 0; i < playedCards.length && newDeck.length > 0; i++) {
     drawnCards.push(newDeck.shift()!)
   }
-  const newHand = [...remainHand, ...drawnCards]
+  let newHand = [...remainHand, ...drawnCards]
+
+  // C10(d): 녹철령(金) — 매 턴 무작위 핸드 카드 1장 값 -1 (적 생존 시만 발동)
+  const rustGimmick = gimmicks.find(g => g.type === 'card-rust')
+  if (rustGimmick && rustGimmick.type === 'card-rust' && newHand.length > 0 && afterDamageHp > 0) {
+    const rustIdx = Math.floor(Math.random() * newHand.length)
+    newHand = newHand.map((c, i) =>
+      i === rustIdx ? { ...c, value: Math.max(1, c.value - rustGimmick.amount) } : c
+    )
+  }
 
   const floorCleared = newEnemyHp <= 0
   const playerDead = newPlayerHp <= 0
@@ -192,6 +223,14 @@ export function discardCards(state: GameState, cardIds: string[]): GameState {
     drawnCards.push(newDeck.shift()!)
   }
 
+  // C10(d): 탁수령(水) — 버리기 1회당 플레이어 피해 3
+  const gimmicks = getFloorGimmicks(state.currentFloor)
+  const punishGimmick = gimmicks.find(g => g.type === 'discard-punish')
+  const punishDamage = (punishGimmick && punishGimmick.type === 'discard-punish')
+    ? punishGimmick.damage
+    : 0
+  const newPlayerHp = Math.max(0, state.playerHp - punishDamage)
+
   return {
     ...state,
     hand: [...remainHand, ...drawnCards],
@@ -199,6 +238,7 @@ export function discardCards(state: GameState, cardIds: string[]): GameState {
     discardPile: [...state.discardPile, ...discarded],
     selectedCards: [],
     discardsLeft: state.discardsLeft - 1,
+    playerHp: newPlayerHp,
   }
 }
 

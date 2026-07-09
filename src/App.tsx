@@ -16,15 +16,18 @@ import DeckPrepScreen from './components/DeckPrepScreen'
 import BattleScreen from './components/BattleScreen'
 import FloorRewardScreen from './components/FloorRewardScreen'
 import ResultScreen from './components/ResultScreen'
+import PassiveDraftScreen from './components/PassiveDraftScreen'
 
 import type { SajuInfo, Card } from './types/game'
+import type { Passive } from './types/passive'
 import { useGameStore } from './stores/gameStore'
 
 type Screen =
   | 'title'
   | 'sajuInput'
   | 'home'
-  | 'dailyDraw'
+  | 'dailyDraw'      // 오늘의 패
+  | 'passiveDraft'   // 패시브 드래프트
   | 'deckPrep'
   | 'battle'
   | 'floorReward'
@@ -34,6 +37,7 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>('title')
   const [sajuInfo, setSajuInfo] = useState<SajuInfo | null>(null)
   const [drawnCards, setDrawnCards] = useState<Card[]>([])
+  const [selectedPassives, setSelectedPassives] = useState<Passive[]>([])
   const [wins, setWins] = useState(0)
   const [losses, setLosses] = useState(0)
 
@@ -65,6 +69,11 @@ export default function App() {
 
   const handleDailyDrawProceed = useCallback((cards: Card[]) => {
     setDrawnCards(cards)
+    setScreen('passiveDraft')
+  }, [])
+
+  const handlePassiveDraftComplete = useCallback((passives: Passive[]) => {
+    setSelectedPassives(passives)
     setScreen('deckPrep')
   }, [])
 
@@ -114,11 +123,18 @@ export default function App() {
       {screen === 'dailyDraw' && (
         <DailyDrawScreen onProceed={handleDailyDrawProceed} />
       )}
+      {screen === 'passiveDraft' && (
+        <PassiveDraftScreen onComplete={handlePassiveDraftComplete} />
+      )}
       {screen === 'deckPrep' && (
         <DeckPrepScreen hand={drawnCards} onStartBattle={handleDeckPrepStart} />
       )}
       {screen === 'battle' && (
-        <BattleScreen onFloorClear={handleFloorClear} onResult={handleResult} />
+        <BattleScreen
+          onFloorClear={handleFloorClear}
+          onResult={handleResult}
+          passives={selectedPassives}
+        />
       )}
       {screen === 'floorReward' && (
         <FloorRewardScreen currentFloor={currentFloor} onProceed={handleFloorRewardProceed} />

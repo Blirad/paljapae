@@ -1,7 +1,11 @@
 /**
- * 팔자전 — (4) 일일뽑기 화면
+ * 팔자전 — (4) 오늘의 패 화면
  * 고정 임시 덱만. 영웅 선택 화면 금지.
  * 카드 8장 노출
+ *
+ * ※ 명칭 보호 (G1 2차):
+ *   "일일 뽑기" → "오늘의 패" (매일 갱신, 일회성)
+ *   "일일 뽑기"는 Phase 3 영구 수집 뽑기 예약
  */
 
 import { useState } from 'react'
@@ -90,7 +94,7 @@ export default function DailyDrawScreen({ onProceed }: DailyDrawScreenProps) {
         className="text-center"
         style={{ color: '#E8DCC4', fontSize: '20px', letterSpacing: '0.15em', marginTop: '24px' }}
       >
-        일일 뽑기
+        오늘의 패
       </h2>
 
       {/* 산가지통 */}
@@ -120,7 +124,7 @@ export default function DailyDrawScreen({ onProceed }: DailyDrawScreenProps) {
             <span style={{ color: '#B33A2B', fontSize: '28px' }}>筮</span>
           </div>
           <span style={{ color: '#D8CCB4', fontSize: '13px', letterSpacing: '0.1em' }}>
-            {drawn.length > 0 ? '뽑기 완료' : '흔들기'}
+            {drawn.length > 0 ? '패 확인 완료' : '흔들기'}
           </span>
         </button>
       </div>
