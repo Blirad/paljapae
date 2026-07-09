@@ -30,8 +30,10 @@ import { FLOOR_CONFIGS, GEUK_BONUS_MULTIPLIER } from '../engine/balance'
 import { FLOOR_ENEMY_ELEMENTS as ENGINE_FLOOR_ENEMY_ELEMENTS } from '../engine/paljajeonEngine'
 import { useGameContext } from '../context/GameContext'
 import { audioManager } from '../services/audioManager'
-import { judgeHand } from '../engine/pokerHandJudge'
+import { judgeHand, detectElementClash, calcGeukBonusMultiplier, detectYeokgeukPenalty, determinePrimaryElement } from '../engine/pokerHandJudge'
 import type { Element } from '../types/game'
+import TalismanBar from './TalismanBar'
+import type { TalismanId } from '../engine/talismans'
 import { useDragAndDrop, checkFusionCompatibility } from '../hooks/useDragAndDrop'
 import PassiveSlot, { PassiveActivationBanner } from './PassiveSlot'
 import { usePassiveAnimation } from '../hooks/usePassiveAnimation'
@@ -839,6 +841,8 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     playsLeft,
     phase,
     isVictory,
+    talismans,
+    amplifyActive,
     toggleCardSelect,
     playSelectedCards,
     discardSelectedCards,
@@ -849,6 +853,9 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     markFirstDiscardShown,
     markFirstAffinityShown,
     updateBattleStats,
+    useJeonghwa,
+    useHwanpae,
+    useJeungpok,
   } = useGameStore()
 
   const { getCssDuration, getDuration, playbackSpeed, togglePlaybackSpeed } = useGameContext()
@@ -1410,22 +1417,70 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
   const hasGeukOnEnemy = selectedCardObjs.some(c => GEUK_MAP[c.element] === enemyElement)
   const geukAttacker = selectedCardObjs.find(c => GEUK_MAP[c.element] === enemyElement)
 
+  // Phase 1.6 A — 새 전투 규칙 미리보기 계산
+  const clashInfo = selectedCardObjs.length > 0 ? detectElementClash(selectedCardObjs) : []
+  const geukCalcInfo = selectedCardObjs.length > 0 ? calcGeukBonusMultiplier(selectedCardObjs, enemyElement) : null
+  const yeokgeukInfo = selectedCardObjs.length > 0 ? detectYeokgeukPenalty(selectedCardObjs, [enemyElement]) : null
+  const primaryEl = selectedCardObjs.length > 0 ? determinePrimaryElement(selectedCardObjs) : null
+
   // A1: 조합 미리보기 실체화 텍스트
   const getPreviewBannerText = () => {
     if (!previewResult || selectedCards.length === 0) return null
-    if (previewResult.rank === 'none') {
-      return '조합 없음 — 낱장 합산'
+    const parts: string[] = []
+    if (previewResult.rank !== 'none') {
+      parts.push(`${previewResult.description} · 공격력 ${previewResult.baseScore} × ${previewResult.multiplier}배`)
+    } else {
+      parts.push('조합 없음 — 낱장 합산')
     }
-    return `${previewResult.description} · 공격력 ${previewResult.baseScore} × ${previewResult.multiplier}배 = 예상 ${previewResult.totalScore} 피해`
+    return parts.join(' ')
+  }
+
+  const getWarningTexts = () => {
+    const warnings: string[] = []
+    // 기운 충돌 경고
+    if (clashInfo.length > 0) {
+      const pair = clashInfo[0]
+      warnings.push(`${ELEMENT_KO[pair.attacker]}과 ${ELEMENT_KO[pair.victim]}이 부딪힌다 −30%`)
+    }
+    // 적의 반극 경고
+    if (yeokgeukInfo?.hasPenalty && yeokgeukInfo.enemyStrongest && yeokgeukInfo.myPrimary) {
+      warnings.push(`적의 ${ELEMENT_KO[yeokgeukInfo.enemyStrongest]}이 내 ${ELEMENT_KO[yeokgeukInfo.myPrimary.element]}을 누른다 −30%`)
+    }
+    return warnings
+  }
+
+  const getBoostTexts = () => {
+    const boosts: string[] = []
+    // 주 기운 원칙 극 보너스
+    if (geukCalcInfo && geukCalcInfo.multiplier > 1.0) {
+      const pct = Math.round((geukCalcInfo.multiplier - 1) * 100)
+      if (geukCalcInfo.isMainGeuk) {
+        boosts.push(`주 기운 ${ELEMENT_KO[geukCalcInfo.primaryElement?.element ?? 'mok']}이 이긴다 +${pct}%`)
+      } else {
+        boosts.push(`이기는 기운 있음(주 기운 아님) +${pct}%`)
+      }
+    }
+    // 증폭부 활성
+    if (amplifyActive) {
+      boosts.push('증폭부 발동 중 ×2')
+    }
+    return boosts
   }
 
   const previewBannerText = getPreviewBannerText()
+  const warningTexts = getWarningTexts()
+  const boostTexts = getBoostTexts()
 
-  // A1: 극 뱃지 — "물이 불을 이긴다 +50%" 형식
+  // A1: 극 뱃지 — 주 기운 원칙 반영으로 boostTexts로 대체됨 (참고용 유지)
   const bonusPct = Math.round((GEUK_BONUS_MULTIPLIER - 1) * 100)
-  const geukBadgeText = hasGeukOnEnemy && geukAttacker
-    ? ` · ${getGeukKoLabel(geukAttacker.element, enemyElement, bonusPct)}`
-    : ''
+  void bonusPct  // 미리보기 콘솔 디버깅용 유지
+  void hasGeukOnEnemy
+  void geukAttacker
+
+  // 주 기운 표시 텍스트
+  const primaryElText = primaryEl
+    ? `주 기운: ${ELEMENT_KO[primaryEl.element]}(${primaryEl.count}장, 합 ${primaryEl.totalValue})`
+    : null
 
   // G1 수정 #6 — 배경 격자: 4층은 붉은 격자
   const isBossFloor = currentFloor === 4
@@ -1987,11 +2042,23 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                     <span style={{ color: '#E8DCC4' }}>{previewResult?.multiplier}배</span>
                     <span style={{ color: '#6A6560' }}> = </span>
                     <span style={{ color: '#D9A441', fontWeight: 'bold' }}>예상 {previewResult?.totalScore} 피해</span>
-                    {/* A1: 극 정보 — "물이 불을 이긴다 +50%" 형식 */}
-                    {geukBadgeText && (
-                      <span style={{ color: '#FF7A5C', fontWeight: 'bold' }}>{geukBadgeText}</span>
-                    )}
+                    {/* A1: 극 정보 — 주 기운 원칙 반영 */}
+                    {boostTexts.length > 0 && boostTexts.map((t, i) => (
+                      <span key={i} style={{ color: '#FF7A5C', fontWeight: 'bold' }}> · {t}</span>
+                    ))}
                   </div>
+                  {/* Phase 1.6 A: 주 기운 표시 */}
+                  {primaryElText && selectedCards.length > 0 && (
+                    <div style={{ fontSize: '11px', color: '#6A6560', marginTop: '2px' }}>
+                      {primaryElText}
+                    </div>
+                  )}
+                  {/* Phase 1.6 A: 기운 충돌 경고 (붉은색) */}
+                  {warningTexts.map((w, i) => (
+                    <div key={i} style={{ fontSize: '11px', color: '#C63D2F', marginTop: '1px', fontWeight: 'bold' }}>
+                      {w}
+                    </div>
+                  ))}
                 </>
               ) : (
                 <span style={{ color: '#6A6560', fontSize: '14px' }}>
@@ -2008,6 +2075,20 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
 
         {/* G1 수정 #4 — 인라인 안내 배너 (핸드 위) */}
         <InlineBanner message={bannerMessage} visible={bannerVisible} getCssDuration={getCssDuration} />
+
+        {/* 핸드 + 부적 슬롯 (가로 배치) */}
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+
+        {/* Phase 1.6 B — 부적 슬롯 바 (우측) */}
+        <TalismanBar
+          talismans={talismans}
+          amplifyActive={amplifyActive}
+          onUse={(id: TalismanId) => {
+            if (id === 'jeonghwa') useJeonghwa()
+            else if (id === 'hwanpae') useHwanpae()
+            else if (id === 'jeungpok') useJeungpok()
+          }}
+        />
 
         {/* 핸드 부채꼴 + Chain Glow SVG */}
         <div
@@ -2270,6 +2351,8 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
               </button>
             )
           })}
+        </div>
+        {/* 핸드+부적슬롯 외부 flex 컨테이너 닫기 */}
         </div>
 
         {/* 버리기·출수 버튼 */}

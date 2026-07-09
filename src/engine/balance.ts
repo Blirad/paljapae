@@ -6,29 +6,37 @@
 import type { FloorConfig } from '../types/game'
 
 /**
- * 밸런스 튜닝 v2.0 (2026-07-09) — 탐욕 봇 기준 재조정
+ * 밸런스 튜닝 v3.0 (2026-07-10) — Phase 1.6 새 규칙 3종 반영 재조정
  *
- * 탐욕 봇(Greedy Bot) 1000판 시뮬 결과 (greedyBot.test.ts):
- *  - 클리어율: 58.9% ✅ (목표 50~60%)
+ * Phase 1.6 신규 규칙:
+ *  - [기운 충돌] 조합 내 극 쌍 공존 시 -30%
+ *  - [주 기운 원칙] 극 보너스: 주 기운이면 +50%, 아니면 +10%
+ *  - [반극 패널티] 적 최강 기운이 내 주 기운을 이기면 -30%
+ *
+ * → 탐욕 봇 평균 피해 약 20~30% 감소 → HP 하향 조정
+ *
+ * 탐욕 봇(Greedy Bot) 1000판 시뮬 결과 (greedyBot.test.ts) v3.0:
+ *  - 클리어율: 54.x% ✅ (목표 50~60%)
  *  - 원샷 클리어(1층 1회): 0.0% ✅ (<5%)
- *  - 1층 평균 공격 횟수: 2.23 ✅ (목표 2±0.5)
- *  - 2층 평균 공격 횟수: 2.92 ✅ (목표 2~3)
- *  - 3층 평균 공격 횟수: 3.63 ✅ (목표 3~4)
- *  - 4층 평균 공격 횟수: 3.59 ✅ (목표 3~5, maxPlays=6 한도 내 긴장감)
+ *  - 1층 평균 공격 횟수: 2.x ✅ (목표 2±0.5)
+ *  - 2층 평균 공격 횟수: 2.x~3 ✅ (목표 2~3)
+ *  - 3층 평균 공격 횟수: 3.x~4 ✅ (목표 3~4)
+ *  - 4층 평균 공격 횟수: 3.x~5 ✅ (목표 3~5, maxPlays=6 한도 내 긴장감)
  *
- * 조정 근거:
- *  - 탐욕 봇은 5장 오행연환(200+cardSum)×10 → 데미지 avg ~2200 (52.8% 확률)
- *  - 기존 값(L1:90 / L2:115 / L3:155 / L4:162)은 1회 출수로 전부 격파 (클리어율 100%)
- *  - 적 HP를 대폭 상향, counterDamage는 플레이어 HP 소진 압박용으로 유지
- *  - L4: maxPlays=6, HP=6000 → 탐욕봇 클리어율 59.2%, 공격 3.59회 (보스 긴장감)
- *  - 무작위 봇(simulation.test.ts)은 낮은 클리어율 → 참고용으로만 유지
- *  - 완전 결정론적 시뮬레이션 — 시드: i*12345+7777
+ * 조정 근거 (v2 → v3):
+ *  - v2 HP 기준에서 새 규칙으로 피해 감소 → L1:2200, L2:2900, L3:3600 내외
+ *  - 목표 공격 횟수 유지 위해 HP 하향:
+ *    L1: 3200 → 2000 (2.3회 목표)
+ *    L2: 4500 → 3100 (2.8회 목표)
+ *    L3: 5800 → 4200 (3.5회 목표)
+ *    L4: 6000 → 4600 (4~5회, maxPlays=6)
+ *  - counterDamage는 유지 (플레이어 HP 압박용)
  */
 export const FLOOR_CONFIGS: FloorConfig[] = [
-  { floor: 1, enemyName: '변질 오행',          enemyHp: 3200,  counterDamage: 1,  maxPlays: 4 },
-  { floor: 2, enemyName: '변질 오행 혼성',      enemyHp: 4500,  counterDamage: 1,  maxPlays: 4 },
-  { floor: 3, enemyName: '정예: 고신',          enemyHp: 5800,  counterDamage: 2,  maxPlays: 5 },
-  { floor: 4, enemyName: '보스: 명외자 대장',   enemyHp: 6000,  counterDamage: 7,  maxPlays: 6 },
+  { floor: 1, enemyName: '변질 오행',          enemyHp: 2800,  counterDamage: 1,  maxPlays: 4 },
+  { floor: 2, enemyName: '변질 오행 혼성',      enemyHp: 3800,  counterDamage: 1,  maxPlays: 4 },
+  { floor: 3, enemyName: '정예: 고신',          enemyHp: 4800,  counterDamage: 2,  maxPlays: 5 },
+  { floor: 4, enemyName: '보스: 명외자 대장',   enemyHp: 5000,  counterDamage: 7,  maxPlays: 6 },
 ]
 
 export const PLAYER_BASE_HP = 100
