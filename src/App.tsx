@@ -31,6 +31,7 @@ import SettingsScreen from '@/screens/SettingsScreen'
 import CollectionScreen from '@/screens/CollectionScreen'
 import LobbyScreen from '@/screens/LobbyScreen'
 import STSBattleScreen from '@/screens/STSBattleScreen'
+import G05StyleMockup from '@/screens/G05StyleMockup'
 import MatchmakingScreen from '@/screens/MatchmakingScreen'
 import YourTurnWaitScreen from '@/screens/YourTurnWaitScreen'
 import PvPResultScreen from '@/screens/PvPResultScreen'
@@ -184,13 +185,15 @@ type AppScene =
   | 'pvpWaiting'     // YourTurnWaitScreen
   | 'pvpResult'      // PvPResultScreen
   | 'stsBattle'      // Phase 4 — STS 전투 화면
+  | 'g05'            // G0.5 스타일 시안 (디버그 전용)
 
 /** 앱 초기 scene 결정 — 항상 타이틀 화면에서 시작 (리라 Phase A 스펙 §A-4) */
 function getInitialScene(): AppScene {
-  // 디버그 진입: ?scene=stsBattle
+  // 디버그 진입: ?scene=stsBattle | ?scene=g05
   const params = new URLSearchParams(window.location.search)
   const debug = params.get('scene') as AppScene | null
   if (debug === 'stsBattle') return 'stsBattle'
+  if (debug === 'g05') return 'g05'
   return 'title'  // 항상 타이틀 화면에서 시작
 }
 
@@ -922,6 +925,10 @@ export default function App(): React.ReactElement {
             onDefeat={() => setScene('runSummary')}
           />
         )
+
+      // ─── G0.5 스타일 시안 (디버그 전용) ──────────
+      case 'g05':
+        return <G05StyleMockup />
 
       default:
         return <OnboardingFlow onGameStart={handleOnboardingComplete} />
