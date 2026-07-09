@@ -79,9 +79,16 @@ function getGeukLabel(attacker: Element, victim: Element): string {
   return `${ELEMENT_LABELS[attacker]}克${ELEMENT_LABELS[victim]}`
 }
 
+// 한국어 조사 처리 (받침 유무)
+function josa(word: string, withBatchim: string, withoutBatchim: string): string {
+  const last = word.charCodeAt(word.length - 1)
+  const hasBatchim = last >= 0xAC00 && (last - 0xAC00) % 28 !== 0
+  return word + (hasBatchim ? withBatchim : withoutBatchim)
+}
+
 // A1: 극 관계 한글 표현 — "물이 불을 이긴다 +50%"
 function getGeukKoLabel(attacker: Element, victim: Element, bonusPct: number): string {
-  return `${ELEMENT_KO[attacker]}이 ${ELEMENT_KO[victim]}을 이긴다 +${bonusPct}%`
+  return `${josa(ELEMENT_KO[attacker], '이', '가')} ${josa(ELEMENT_KO[victim], '을', '를')} 이긴다 +${bonusPct}%`
 }
 
 // A2: 순환 도표 오버레이 (탭하면 반화면)
