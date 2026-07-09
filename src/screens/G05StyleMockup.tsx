@@ -84,12 +84,6 @@ function PaljapaeCard({
   const isSelected = state === 'selected'
   const isCounter  = state === 'counter'
 
-  // 프레임 테두리 색
-  const frameColor =
-    rarity === 'hero'   ? C.heroFrame  :
-    rarity === 'rare'   ? C.rareFrame  :
-    C.hanji
-
   // 영웅 등급 금박 반짝임 효과 (CSS keyframe은 인라인 불가, style tag로 처리)
   const heroGlow = rarity === 'hero'
     ? `0 0 8px 2px ${C.heroFrame}88, 0 0 16px 4px ${C.heroFrame}44`
@@ -99,18 +93,16 @@ function PaljapaeCard({
     width: 72,
     height: 101,   // 5:7 비율 (72 × 1.4 = 100.8)
     borderRadius: 8,
-    border: isSelected
-      ? `2px solid ${elGlow}`
-      : `2px solid ${frameColor}`,
-    background: C.bgCard,
+    border: `2px solid ${C.juSa}`,
+    background: C.hanji,
     position: 'relative',
     flexShrink: 0,
     cursor: 'pointer',
     transform: `rotate(${rotate}deg) translateY(${isSelected ? fanOffset - 16 : fanOffset}px)`,
     transition: 'transform 0.18s ease, box-shadow 0.18s ease',
     boxShadow: isSelected
-      ? `0 0 12px 3px ${elGlow}88`
-      : heroGlow ?? undefined,
+      ? `0 0 8px ${elGlow}88, 0 0 20px ${elGlow}50`
+      : heroGlow ?? `0 0 4px ${elColor}30`,
     overflow: 'hidden',
     opacity: isCounter ? 0.4 : 1,
   }
@@ -126,6 +118,17 @@ function PaljapaeCard({
         borderRadius: 6,
       }} />
 
+      {/* 한지 노이즈 텍스처 오버레이 */}
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='80' height='80' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E")`,
+        opacity: 0.06,
+        borderRadius: 6,
+        pointerEvents: 'none',
+        zIndex: 2,
+      }} />
+
       {/* 역극 오버레이 */}
       {isCounter && (
         <div style={{
@@ -138,6 +141,12 @@ function PaljapaeCard({
         }} />
       )}
 
+      {/* 4모서리 부적 문양 */}
+      <span style={{ position: 'absolute', top: 2, left: 2, color: C.juSa, fontSize: 7, lineHeight: 1, zIndex: 6, userSelect: 'none' }}>✚</span>
+      <span style={{ position: 'absolute', top: 2, right: 2, color: C.juSa, fontSize: 7, lineHeight: 1, zIndex: 6, userSelect: 'none' }}>✚</span>
+      <span style={{ position: 'absolute', bottom: 2, left: 2, color: C.juSa, fontSize: 7, lineHeight: 1, zIndex: 6, userSelect: 'none' }}>✚</span>
+      <span style={{ position: 'absolute', bottom: 2, right: 2, color: C.juSa, fontSize: 7, lineHeight: 1, zIndex: 6, userSelect: 'none' }}>✚</span>
+
       {/* 좌상단: 값 */}
       <div style={{
         position: 'absolute',
@@ -146,7 +155,7 @@ function PaljapaeCard({
         fontSize: 16,
         fontWeight: 700,
         fontFamily: 'Pretendard, sans-serif',
-        color: C.hanjiText,
+        color: C.ink,
         lineHeight: 1,
         zIndex: 5,
       }}>
@@ -159,7 +168,7 @@ function PaljapaeCard({
         top: 4,
         right: 5,
         fontSize: 12,
-        color: C.hanjiText,
+        color: C.ink,
         lineHeight: 1,
         zIndex: 5,
       }}>
@@ -300,7 +309,7 @@ function BattleScreenMockup() {
         {/* 적 이름 + 체력바 */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
           <span style={{ color: C.hanjiText, fontFamily: 'Pretendard, sans-serif', fontSize: 13 }}>
-            화염귀병 (金속성)
+            고신 (孤辰)
           </span>
           <div style={{
             width: 160, height: 10, background: '#ffffff22', borderRadius: 5, overflow: 'hidden',
@@ -645,7 +654,7 @@ function TypographyShowcase() {
             덱에 남은 카드: 24장 / 버린 카드: 8장
           </span>
           <span style={{ fontFamily: 'Pretendard, sans-serif', fontSize: 14, color: C.hanjiText, opacity: 0.75 }}>
-            출수 가능 횟수 3/4 · 에너지 2/3
+            버리기 0/3 · 출수 0/4
           </span>
         </div>
       </div>
