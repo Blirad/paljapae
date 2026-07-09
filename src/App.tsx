@@ -30,6 +30,7 @@ import RestScreen from '@/screens/RestScreen'
 import SettingsScreen from '@/screens/SettingsScreen'
 import CollectionScreen from '@/screens/CollectionScreen'
 import LobbyScreen from '@/screens/LobbyScreen'
+import STSBattleScreen from '@/screens/STSBattleScreen'
 import MatchmakingScreen from '@/screens/MatchmakingScreen'
 import YourTurnWaitScreen from '@/screens/YourTurnWaitScreen'
 import PvPResultScreen from '@/screens/PvPResultScreen'
@@ -182,6 +183,7 @@ type AppScene =
   | 'pvpBattle'      // PlayerVsPlayerScreen
   | 'pvpWaiting'     // YourTurnWaitScreen
   | 'pvpResult'      // PvPResultScreen
+  | 'stsBattle'      // Phase 4 — STS 전투 화면
 
 /** 앱 초기 scene 결정 — 항상 타이틀 화면에서 시작 (리라 Phase A 스펙 §A-4) */
 function getInitialScene(): AppScene {
@@ -902,6 +904,18 @@ export default function App(): React.ReactElement {
               setScene('onboarding')
             }}
             onCancel={() => setScene('title')}
+          />
+        )
+
+      // ─── Phase 4 STS 전투 씬 ──────────────────────
+      case 'stsBattle':
+        return (
+          <STSBattleScreen
+            heroElement={ctx.playerElement}
+            heroHp={ctx.heroHp}
+            heroMaxHp={ctx.heroMaxHp}
+            onVictory={() => setScene('cardReward')}
+            onDefeat={() => setScene('runSummary')}
           />
         )
 
