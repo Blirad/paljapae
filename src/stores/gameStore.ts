@@ -10,6 +10,10 @@ import {
   playCards,
   discardCards,
   advanceToNextFloor,
+  activateJeonghwa,
+  activateHwanpae,
+  activateJeungpok,
+  acquireTalisman,
 } from '../engine/paljajeonEngine'
 import { judgeHand } from '../engine/pokerHandJudge'
 import type { HandJudgeResult } from '../types/game'
@@ -44,6 +48,11 @@ interface GameStore extends GameState {
   markFirstDiscardShown: () => void
   markFirstAffinityShown: () => void
   updateBattleStats: (stats: Partial<BattleStats>) => void
+  // Phase 1.6 B — 부적술
+  useJeonghwa: () => void
+  useHwanpae: () => void
+  useJeungpok: () => void
+  gainTalisman: (talismanId: string) => void
 }
 
 const INITIAL_BATTLE_STATS: BattleStats = {
@@ -118,5 +127,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
   updateBattleStats: (stats: Partial<BattleStats>) => {
     const current = get().battleStats
     set({ battleStats: { ...current, ...stats } })
+  },
+
+  // Phase 1.6 B — 부적술 액션
+  useJeonghwa: () => {
+    const newState = activateJeonghwa(get())
+    set(newState)
+  },
+  useHwanpae: () => {
+    const newState = activateHwanpae(get())
+    set({ ...newState, previewResult: null })
+  },
+  useJeungpok: () => {
+    const newState = activateJeungpok(get())
+    set(newState)
+  },
+  gainTalisman: (talismanId: string) => {
+    const newState = acquireTalisman(get(), talismanId)
+    set(newState)
   },
 }))

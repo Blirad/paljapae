@@ -1,18 +1,30 @@
 /**
  * 팔자전 — 패시브 타입 정의
+ * Phase 1.6 C항목: 바이블 3-4 십성(十星) 7종으로 교체
+ *
+ * 교체 이력:
+ *  - 주작(朱雀)   → 식신(食神)  : 바이블 3-4 조식명 정책 준수
+ *  - 귀하(貴河)   → 비견(比肩)  : 바이블 3-4 조식명 정책 준수
+ *  - 현무(玄武)   → 겁재(劫財)  : 바이블 3-4 조식명 정책 준수
+ *  - 구황(勾黃)   → 상관(傷官)  : 바이블 3-4 조식명 정책 준수
+ *  - 청룡(靑龍)   → 편재(偏財)  : 바이블 3-4 조식명 정책 준수
+ *  - (신규) 정재(正財), 편인(偏印) 추가
  */
 
 export type PassiveRarity = 'common' | 'rare' | 'hero'
 
 export interface Passive {
   id: string
-  name: string          // "식신", "귀문" 등
+  name: string          // "식신", "비견" 등
   effect: string        // 1줄 효과 설명
   rarity: PassiveRarity
   element?: string      // 관련 오행 (있을 시)
 }
 
-/** 기본 패시브 풀 (Phase 1 — 4종 이상) */
+/**
+ * 바이블 3-4 정식 7종 십성(十星) 패시브 풀
+ * 식신·비견·겁재·상관·편재·정재·편인
+ */
 export const PASSIVE_POOL: Passive[] = [
   {
     id: 'sikshin',
@@ -21,42 +33,42 @@ export const PASSIVE_POOL: Passive[] = [
     rarity: 'common',
   },
   {
-    id: 'gwiha',
-    name: '귀하(貴河)',
+    id: 'bigyeon',
+    name: '비견(比肩)',
     effect: '같은 기운 모으기 3 이상 시 적 반격 -1',
     rarity: 'common',
   },
   {
-    id: 'cheongryong',
-    name: '청룡(靑龍)',
+    id: 'geoptae',
+    name: '겁재(劫財)',
     effect: '나무 기운 카드 포함 시 첫 출수 피해 +30%',
     rarity: 'rare',
     element: 'mok',
   },
   {
-    id: 'jujak',
-    name: '주작(朱雀)',
+    id: 'sanggwan',
+    name: '상관(傷官)',
     effect: '불 기운 카드 2장 이상 시 피해 ×1.5',
     rarity: 'rare',
     element: 'hwa',
   },
   {
-    id: 'baekho',
-    name: '백호(白虎)',
+    id: 'pyeonjae',
+    name: '편재(偏財)',
     effect: '쇠 기운으로 이기는 기운 발동 시 체력 3 회복',
     rarity: 'rare',
     element: 'geum',
   },
   {
-    id: 'hyeonmu',
-    name: '현무(玄武)',
+    id: 'jeongjae',
+    name: '정재(正財)',
     effect: '물 기운 5장 이상 시 오행연환 배율 +2',
     rarity: 'hero',
     element: 'su',
   },
   {
-    id: 'guhwang',
-    name: '구황(勾黃)',
+    id: 'pyeonin',
+    name: '편인(偏印)',
     effect: '흙 기운 결집 시 마지막 출수 피해 +50%',
     rarity: 'hero',
     element: 'to',

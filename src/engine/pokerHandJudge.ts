@@ -24,6 +24,117 @@ const GEUK_MAP: Record<Element, Element> = {
   su: 'hwa',
 }
 
+// --- A. 전투 규칙 3종 ---
+
+/**
+ * [기운 충돌] 판정: 조합 내 서로 극하는 기운이 공존하는 카드 쌍 탐색
+ * 반환: 충돌하는 (공격자, 피해자) 오행 쌍 목록
+ */
+export interface ClashPair {
+  attacker: Element  // 극하는 기운
+  victim: Element    // 극 당하는 기운
+}
+
+export function detectElementClash(cards: Card[]): ClashPair[] {
+  const elements = new Set(cards.map(c => c.element))
+  const clashes: ClashPair[] = []
+  for (const el of elements) {
+    const target = GEUK_MAP[el]
+    if (elements.has(target)) {
+      clashes.push({ attacker: el, victim: target })
+    }
+  }
+  return clashes
+}
+
+/**
+ * [주 기운 원칙] 주 기운 결정:
+ * 카드 수 최다 → 동수 시 합산값 최대 → 동점 시 첫 번째
+ */
+export interface PrimaryElement {
+  element: Element
+  count: number
+  totalValue: number
+}
+
+export function determinePrimaryElement(cards: Card[]): PrimaryElement | null {
+  if (cards.length === 0) return null
+  const map: Record<string, { count: number; totalValue: number }> = {}
+  for (const card of cards) {
+    if (!map[card.element]) map[card.element] = { count: 0, totalValue: 0 }
+    map[card.element].count++
+    map[card.element].totalValue += card.value
+  }
+  let best: PrimaryElement | null = null
+  for (const [el, stats] of Object.entries(map)) {
+    if (
+      !best ||
+      stats.count > best.count ||
+      (stats.count === best.count && stats.totalValue > best.totalValue)
+    ) {
+      best = { element: el as Element, count: stats.count, totalValue: stats.totalValue }
+    }
+  }
+  return best
+}
+
+/**
+ * [주 기운 원칙] 극 보너스 배율 계산:
+ * 내 주 기운이 적 속성을 극하면 +50%, 아니면 +10%
+ * (적을 이기는 기운이 존재하지만 주 기운이 아닌 경우 +10%)
+ */
+export function calcGeukBonusMultiplier(
+  cards: Card[],
+  enemyElement: Element,
+): { multiplier: number; isMainGeuk: boolean; primaryElement: PrimaryElement | null } {
+  // 조합에 극 관계가 있는지 확인
+  const hasAnyGeuk = cards.some(c => GEUK_MAP[c.element] === enemyElement)
+  if (!hasAnyGeuk) {
+    return { multiplier: 1.0, isMainGeuk: false, primaryElement: null }
+  }
+  const primary = determinePrimaryElement(cards)
+  if (!primary) {
+    return { multiplier: 1.1, isMainGeuk: false, primaryElement: null }
+  }
+  const isMainGeuk = GEUK_MAP[primary.element] === enemyElement
+  return {
+    multiplier: isMainGeuk ? 1.5 : 1.1,
+    isMainGeuk,
+    primaryElement: primary,
+  }
+}
+
+/**
+ * [적의 반극] 판정:
+ * 적의 주요 기운(카운트 최다)이 내 주 기운을 이기면 -30% 패널티
+ */
+export function detectYeokgeukPenalty(
+  myCards: Card[],
+  enemyElements: Element[],  // 적이 보유한 기운 목록
+): { hasPenalty: boolean; enemyStrongest: Element | null; myPrimary: PrimaryElement | null } {
+  if (enemyElements.length === 0) return { hasPenalty: false, enemyStrongest: null, myPrimary: null }
+  const myPrimary = determinePrimaryElement(myCards)
+  if (!myPrimary) return { hasPenalty: false, enemyStrongest: null, myPrimary: null }
+
+  // 적의 최강 기운: 카운트 최다 기운
+  const enemyCount: Record<string, number> = {}
+  for (const el of enemyElements) {
+    enemyCount[el] = (enemyCount[el] || 0) + 1
+  }
+  let enemyStrongest: Element | null = null
+  let maxCount = 0
+  for (const [el, cnt] of Object.entries(enemyCount)) {
+    if (cnt > maxCount) {
+      maxCount = cnt
+      enemyStrongest = el as Element
+    }
+  }
+  if (!enemyStrongest) return { hasPenalty: false, enemyStrongest: null, myPrimary }
+
+  const hasPenalty = GEUK_MAP[enemyStrongest] === myPrimary.element
+  return { hasPenalty, enemyStrongest, myPrimary }
+}
+
 // 족보 기본점수 및 배율 (A1: 용어 한글화 — 사주 모르는 사람 기준)
 const RANK_CONFIG: Record<HandRank, { baseScore: number; multiplier: number; description: string }> = {
   'ohang-yeonhwan':  { baseScore: 200, multiplier: 10, description: '오행연환(五行連環) — 천지를 뒤흔들다' },

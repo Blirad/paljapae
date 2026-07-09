@@ -1,19 +1,31 @@
 /**
  * 팔자전 — 탐욕 봇 (Greedy Bot)
- * 매 턴 가능한 모든 조합을 열거해 최고 데미지 조합을 선택한다.
+ * Phase 1.6 D: 새 규칙 3종 반영
+ *  - 기운 충돌 -30% (충돌 조합 회피)
+ *  - 주 기운 원칙 +50%/+10% (주 기운 극 우선)
+ *  - 적의 반극 -30% (반극 조합 회피)
  *
  * 목표:
  *  - 1층 평균 격파 공격 횟수: 2회 (±0.5)
  *  - 2층: 2~3회, 3층: 3~4회, 4층: 4~5회
  *  - 탐욕 봇 전체 클리어율: 50~60%
  *  - 원샷 클리어(1층 1회): <5%
- *
- * 엔진 불변 원칙: pokerHandJudge.ts, paljajeonEngine.ts 수정 없음.
- * 탐욕 봇은 표현/시뮬레이션 레이어만 담당.
  */
 
-import { judgeHand } from './pokerHandJudge'
-import type { Card, GameState } from '../types/game'
+import {
+  judgeHand,
+  detectElementClash,
+  calcGeukBonusMultiplier,
+  detectYeokgeukPenalty,
+} from './pokerHandJudge'
+import type { Card, Element, GameState } from '../types/game'
+import {
+  createFixedDeck,
+  shuffleDeck,
+  playCards,
+  FLOOR_ENEMY_ELEMENTS,
+} from './paljajeonEngine'
+import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS } from './balance'
 
 /**
  * 조합(combination) 유틸: n장 중 k장 뽑기
@@ -28,14 +40,41 @@ function combinations<T>(arr: T[], k: number): T[][] {
 }
 
 /**
- * 탐욕 봇 핸드 선택:
- *  1. 현재 핸드(1~5장)의 모든 조합 열거
- *  2. 각 조합의 judgeHand totalScore 계산
- *  3. 최고 점수 조합 반환
- *
- * 동점 시 카드 수가 적은 쪽 선택 (버리기 보존)
+ * Phase 1.6 D — 새 규칙 3종을 반영한 예상 데미지 계산
  */
-export function greedySelectCards(hand: Card[]): string[] {
+export function calcExpectedDamage(
+  combo: Card[],
+  enemyElement: Element,
+): number {
+  const result = judgeHand(combo)
+  let damage = result.totalScore
+
+  // A-1: 기운 충돌 -30%
+  const clashes = detectElementClash(combo)
+  if (clashes.length > 0) {
+    damage = Math.round(damage * 0.7)
+  }
+
+  // A-2: 주 기운 원칙 극 보너스 (+50% or +10%)
+  const geukCalc = calcGeukBonusMultiplier(combo, enemyElement)
+  if (geukCalc.multiplier !== 1.0) {
+    damage = Math.round(damage * geukCalc.multiplier)
+  }
+
+  // A-3: 적의 반극 -30%
+  const yeokgeuk = detectYeokgeukPenalty(combo, [enemyElement])
+  if (yeokgeuk.hasPenalty) {
+    damage = Math.round(damage * 0.7)
+  }
+
+  return damage
+}
+
+/**
+ * 탐욕 봇 핸드 선택 (Phase 1.6 D — 새 규칙 반영)
+ * enemyElement 없으면 기존 judgeHand totalScore만 사용 (하위호환)
+ */
+export function greedySelectCards(hand: Card[], enemyElement?: Element): string[] {
   if (hand.length === 0) return []
 
   let bestIds: string[] = []
@@ -45,12 +84,14 @@ export function greedySelectCards(hand: Card[]): string[] {
   for (let k = 1; k <= maxCards; k++) {
     const combos = combinations(hand, k)
     for (const combo of combos) {
-      const result = judgeHand(combo)
+      const score = enemyElement
+        ? calcExpectedDamage(combo, enemyElement)
+        : judgeHand(combo).totalScore
       if (
-        result.totalScore > bestScore ||
-        (result.totalScore === bestScore && combo.length < bestIds.length)
+        score > bestScore ||
+        (score === bestScore && combo.length < bestIds.length)
       ) {
-        bestScore = result.totalScore
+        bestScore = score
         bestIds = combo.map(c => c.id)
       }
     }
@@ -70,19 +111,9 @@ export function makeLcg(seed: number): () => number {
   }
 }
 
-/**
- * 단일 런 시뮬레이션 (탐욕 봇 — 매 층 공격 횟수 추적)
- */
-import {
-  createFixedDeck,
-  shuffleDeck,
-  playCards,
-} from './paljajeonEngine'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS } from './balance'
-
 export interface FloorStats {
   floor: number
-  attackCount: number  // 해당 층 격파까지 사용한 공격 횟수 (격파 실패 시 maxPlays)
+  attackCount: number
   cleared: boolean
 }
 
@@ -115,6 +146,8 @@ function createDeterministicState(floorIndex: number, rng: () => number): GameSt
     phase: 'select',
     isVictory: false,
     floorsCleared: 0,
+    talismans: [],
+    amplifyActive: false,
   }
 }
 
@@ -130,7 +163,6 @@ export function simulateGreedyRun(seed: number): RunResult {
   let playerHp = PLAYER_BASE_HP
 
   while (floor <= 4) {
-    // 층 전환 시 상태 재구성
     if (floor > 1) {
       const nextSeed = Math.floor(rng() * 0xffffffff)
       const deck = shuffleDeck(createFixedDeck(), nextSeed)
@@ -149,6 +181,8 @@ export function simulateGreedyRun(seed: number): RunResult {
         playsLeft: floorConfig.maxPlays,
         playerHp,
         phase: 'select',
+        talismans: [],
+        amplifyActive: false,
       }
     } else {
       state = { ...state, playerHp }
@@ -158,7 +192,6 @@ export function simulateGreedyRun(seed: number): RunResult {
     let floorDone = false
 
     while (!floorDone) {
-      // 종료 조건 확인
       if (state.phase === 'floor-reward') {
         floorsCleared++
         floorStats.push({ floor, attackCount, cleared: true })
@@ -191,8 +224,9 @@ export function simulateGreedyRun(seed: number): RunResult {
         return { victory: false, floorsCleared, deathFloor, floorStats }
       }
 
-      // 탐욕 봇: 버리기는 사용하지 않음 (항상 최선 조합 출수)
-      const selectedIds = greedySelectCards(state.hand)
+      // Phase 1.6 D: 층별 적 기운을 봇에 전달
+      const enemyEl = (FLOOR_ENEMY_ELEMENTS[state.currentFloor] as Element | undefined) ?? 'mok'
+      const selectedIds = greedySelectCards(state.hand, enemyEl)
       if (selectedIds.length === 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
@@ -231,15 +265,14 @@ function calcStats(values: number[]): DistStats {
 
 /**
  * 탐욕 봇 1000판 시뮬레이션 실행
- * @returns 층별 공격 횟수 분포, 클리어율, 원샷 클리어율
  */
 export interface SimulationReport {
   runs: number
-  clearRate: number          // %
-  oneShotClearRate: number   // % — 1층 1회 격파
-  floorAttacks: Record<number, DistStats>   // floor → 격파 성공 시 공격 횟수 분포
+  clearRate: number
+  oneShotClearRate: number
+  floorAttacks: Record<number, DistStats>
   deathsByFloor: Record<number, number>
-  csvLines: string[]         // CSV 출력용
+  csvLines: string[]
 }
 
 export function runGreedySimulation(runs = 1000): SimulationReport {
@@ -269,7 +302,6 @@ export function runGreedySimulation(runs = 1000): SimulationReport {
     floorAttacks[f] = calcStats(floorAttackData[f])
   }
 
-  // CSV 생성
   const csvLines = [
     'floor,mean_attacks,min_attacks,max_attacks,stddev_attacks,cleared_runs',
     ...([1, 2, 3, 4].map(f => {

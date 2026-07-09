@@ -87,6 +87,8 @@ function createDeterministicState(floorIndex: number, rng: () => number): GameSt
     phase: 'select',
     isVictory: false,
     floorsCleared: 0,
+    talismans: [],
+    amplifyActive: false,
   }
 }
 

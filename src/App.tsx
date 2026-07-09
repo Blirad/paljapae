@@ -16,7 +16,8 @@ import DeckPrepScreen from './components/DeckPrepScreen'
 import BattleScreen from './components/BattleScreen'
 import FloorRewardScreen from './components/FloorRewardScreen'
 import ResultScreen from './components/ResultScreen'
-import PassiveDraftScreen from './components/PassiveDraftScreen'
+import PreBattleScreen from './components/PreBattleScreen'
+// PassiveDraftScreen은 PreBattleScreen으로 대체됨 (Phase 1.6 C)
 
 import type { SajuInfo, Card } from './types/game'
 import type { Passive } from './types/passive'
@@ -27,7 +28,7 @@ type Screen =
   | 'sajuInput'
   | 'home'
   | 'dailyDraw'      // 오늘의 패
-  | 'passiveDraft'   // 패시브 드래프트
+  | 'preBattle'      // 출전준비 (Phase 1.6 C — 패시브 드래프트 통합)
   | 'deckPrep'
   | 'battle'
   | 'floorReward'
@@ -69,10 +70,10 @@ export default function App() {
 
   const handleDailyDrawProceed = useCallback((cards: Card[]) => {
     setDrawnCards(cards)
-    setScreen('passiveDraft')
+    setScreen('preBattle')  // Phase 1.6 C: passiveDraft → preBattle
   }, [])
 
-  const handlePassiveDraftComplete = useCallback((passives: Passive[]) => {
+  const handlePreBattleComplete = useCallback((passives: Passive[]) => {
     setSelectedPassives(passives)
     setScreen('deckPrep')
   }, [])
@@ -123,8 +124,8 @@ export default function App() {
       {screen === 'dailyDraw' && (
         <DailyDrawScreen onProceed={handleDailyDrawProceed} />
       )}
-      {screen === 'passiveDraft' && (
-        <PassiveDraftScreen onComplete={handlePassiveDraftComplete} />
+      {screen === 'preBattle' && (
+        <PreBattleScreen hand={drawnCards} onComplete={handlePreBattleComplete} />
       )}
       {screen === 'deckPrep' && (
         <DeckPrepScreen hand={drawnCards} onStartBattle={handleDeckPrepStart} />

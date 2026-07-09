@@ -66,6 +66,9 @@ export interface GameState {
   phase: 'draw' | 'select' | 'play' | 'enemy' | 'floor-reward' | 'result'
   isVictory: boolean
   floorsCleared: number
+  // Phase 1.6 B — 부적술
+  talismans: string[]       // 보유 부적 id 목록 (TalismanId[])
+  amplifyActive: boolean    // 증폭부 발동 중 (다음 공격 ×2)
 }
 
 export type FortuneLevel = 'daegil' | 'gil' | 'pyeong' | 'hyung' | 'daehyung'

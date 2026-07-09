@@ -4,7 +4,13 @@
  */
 
 import type { Card, GameState, Element } from '../types/game'
-import { judgeHand, GEUK_MAP } from './pokerHandJudge'
+import {
+  judgeHand,
+  GEUK_MAP,
+  detectElementClash,
+  calcGeukBonusMultiplier,
+  detectYeokgeukPenalty,
+} from './pokerHandJudge'
 import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS } from './balance'
 
 /**
@@ -110,6 +116,8 @@ export function createInitialGameState(floorIndex = 0): GameState {
     phase: 'select',
     isVictory: false,
     floorsCleared: 0,
+    talismans: [],
+    amplifyActive: false,
   }
 }
 
@@ -127,6 +135,37 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
 
   const result = judgeHand(playedCards)
   let damage = result.totalScore
+
+  // Phase 1.6 A — 전투 규칙 3종
+  const floorEnemyEl = FLOOR_ENEMY_ELEMENTS[state.currentFloor] as Element | undefined
+
+  // A-1: [기운 충돌] 조합 내 서로 극하는 기운 공존 시 -30%
+  const clashes = detectElementClash(playedCards)
+  if (clashes.length > 0) {
+    damage = Math.round(damage * 0.7)
+  }
+
+  // A-2: [주 기운 원칙] 내 카드가 적 기운을 극할 때:
+  //      주 기운이 극하면 +50%, 아닌 기운이 극하면 +10%
+  if (floorEnemyEl) {
+    const geukCalc = calcGeukBonusMultiplier(playedCards, floorEnemyEl)
+    if (geukCalc.multiplier !== 1.0) {
+      damage = Math.round(damage * geukCalc.multiplier)
+    }
+  }
+
+  // A-3: [적의 반극] 적 기운이 내 주 기운을 이기면 최종 피해 -30%
+  if (floorEnemyEl) {
+    const yeokgeuk = detectYeokgeukPenalty(playedCards, [floorEnemyEl])
+    if (yeokgeuk.hasPenalty) {
+      damage = Math.round(damage * 0.7)
+    }
+  }
+
+  // Phase 1.6 B — 증폭부: 다음 공격 ×2
+  if (state.amplifyActive) {
+    damage = damage * 2
+  }
 
   // C10(d): 붕토령 — 받는 피해 -20%
   const reductionGimmick = gimmicks.find(g => g.type === 'damage-reduction')
@@ -208,6 +247,7 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     phase,
     isVictory,
     floorsCleared,
+    amplifyActive: false,  // 증폭부 1회 소모
   }
 }
 
@@ -241,6 +281,79 @@ export function discardCards(state: GameState, cardIds: string[]): GameState {
     playerHp: newPlayerHp,
   }
 }
+
+// --------------- Phase 1.6 B — 부적술 발동 함수 ---------------
+
+/**
+ * 정화부(淨化符) 발동: 무덤 맨 위 카드 최대 3장을 손으로 복구
+ */
+export function activateJeonghwa(state: GameState): GameState {
+  if (!state.talismans.includes('jeonghwa')) return state
+  if (state.discardPile.length === 0) return state
+
+  const recoverCount = Math.min(3, state.discardPile.length)
+  const recovered = state.discardPile.slice(-recoverCount)
+  const newDiscard = state.discardPile.slice(0, state.discardPile.length - recoverCount)
+  const newHand = [...state.hand, ...recovered]
+  const newTalismans = state.talismans.filter(id => id !== 'jeonghwa')
+
+  return {
+    ...state,
+    hand: newHand,
+    discardPile: newDiscard,
+    talismans: newTalismans,
+  }
+}
+
+/**
+ * 환패부(換牌符) 발동: 핸드 전체를 버리고 덱에서 같은 수만큼 다시 뽑음
+ */
+export function activateHwanpae(state: GameState): GameState {
+  if (!state.talismans.includes('hwanpae')) return state
+
+  const handSize = state.hand.length
+  const newDiscard = [...state.discardPile, ...state.hand]
+  const newDeck = [...state.deck]
+  const drawnCards: Card[] = []
+  for (let i = 0; i < handSize && newDeck.length > 0; i++) {
+    drawnCards.push(newDeck.shift()!)
+  }
+  const newTalismans = state.talismans.filter(id => id !== 'hwanpae')
+
+  return {
+    ...state,
+    hand: drawnCards,
+    deck: newDeck,
+    discardPile: newDiscard,
+    talismans: newTalismans,
+  }
+}
+
+/**
+ * 증폭부(增幅符) 발동: 다음 공격 데미지 ×2 버프 활성화
+ */
+export function activateJeungpok(state: GameState): GameState {
+  if (!state.talismans.includes('jeungpok')) return state
+  const newTalismans = state.talismans.filter(id => id !== 'jeungpok')
+  return {
+    ...state,
+    talismans: newTalismans,
+    amplifyActive: true,
+  }
+}
+
+/**
+ * 부적 획득: 부적 id를 talismans 목록에 추가
+ */
+export function acquireTalisman(state: GameState, talismanId: string): GameState {
+  if (state.talismans.includes(talismanId)) return state  // 중복 불가
+  return {
+    ...state,
+    talismans: [...state.talismans, talismanId],
+  }
+}
+
+// --------------- 다음 층으로 전환 ---------------
 
 /** 다음 층으로 전환 */
 export function advanceToNextFloor(state: GameState): GameState {
