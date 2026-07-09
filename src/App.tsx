@@ -187,6 +187,10 @@ type AppScene =
 
 /** 앱 초기 scene 결정 — 항상 타이틀 화면에서 시작 (리라 Phase A 스펙 §A-4) */
 function getInitialScene(): AppScene {
+  // 디버그 진입: ?scene=stsBattle
+  const params = new URLSearchParams(window.location.search)
+  const debug = params.get('scene') as AppScene | null
+  if (debug === 'stsBattle') return 'stsBattle'
   return 'title'  // 항상 타이틀 화면에서 시작
 }
 
