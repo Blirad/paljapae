@@ -1158,9 +1158,9 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
       // 피해 내역 패널 표시 (3초)
       if (previewResult) {
         const selectedCardObjs = hand.filter(c => selectedCards.includes(c.id))
-        const hasGeuk = selectedCardObjs.some(c => GEUK_MAP[c.element] === enemyElement)
+        const geukCalcForPanel = calcGeukBonusMultiplier(selectedCardObjs, enemyElement)
+        const geukBonus = geukCalcForPanel.multiplier
         const geukCard = selectedCardObjs.find(c => GEUK_MAP[c.element] === enemyElement)
-        const geukBonus = hasGeuk ? GEUK_BONUS_MULTIPLIER : 1.0
         const geukLabel = geukCard ? getGeukLabel(geukCard.element, enemyElement) : ''
 
         setDamageBreakdown({
@@ -1440,11 +1440,11 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     // 기운 충돌 경고
     if (clashInfo.length > 0) {
       const pair = clashInfo[0]
-      warnings.push(`${ELEMENT_KO[pair.attacker]}과 ${ELEMENT_KO[pair.victim]}이 부딪힌다 −30%`)
+      warnings.push(`${josa(ELEMENT_KO[pair.attacker], '과', '와')} ${josa(ELEMENT_KO[pair.victim], '이', '가')} 부딪힌다 −30%`)
     }
     // 적의 반극 경고
     if (yeokgeukInfo?.hasPenalty && yeokgeukInfo.enemyStrongest && yeokgeukInfo.myPrimary) {
-      warnings.push(`적의 ${ELEMENT_KO[yeokgeukInfo.enemyStrongest]}이 내 ${ELEMENT_KO[yeokgeukInfo.myPrimary.element]}을 누른다 −30%`)
+      warnings.push(`적의 ${josa(ELEMENT_KO[yeokgeukInfo.enemyStrongest], '이', '가')} 내 ${josa(ELEMENT_KO[yeokgeukInfo.myPrimary.element], '을', '를')} 누른다 −30%`)
     }
     return warnings
   }
@@ -1455,7 +1455,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     if (geukCalcInfo && geukCalcInfo.multiplier > 1.0) {
       const pct = Math.round((geukCalcInfo.multiplier - 1) * 100)
       if (geukCalcInfo.isMainGeuk) {
-        boosts.push(`주 기운 ${ELEMENT_KO[geukCalcInfo.primaryElement?.element ?? 'mok']}이 이긴다 +${pct}%`)
+        boosts.push(`주 기운 ${josa(ELEMENT_KO[geukCalcInfo.primaryElement?.element ?? 'mok'], '이', '가')} 이긴다 +${pct}%`)
       } else {
         boosts.push(`이기는 기운 있음(주 기운 아님) +${pct}%`)
       }
