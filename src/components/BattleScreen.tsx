@@ -1755,11 +1755,15 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
               backgroundColor: 'transparent',
               border: '1px solid #4A4540',
               color: '#8A8580',
-              fontSize: '11px',
-              padding: '2px 8px',
+              fontSize: '12px',
               cursor: 'pointer',
               letterSpacing: '0.08em',
-              minHeight: '22px',
+              width: '48px',
+              height: '48px',
+              padding: '0',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
           >
             훈수
@@ -1910,7 +1914,7 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
                 animation: 'geukPulse 1.5s ease-in-out infinite',
               } as React.CSSProperties}
             >
-              {ELEMENT_KO[geukAttacker.element]}이 {ELEMENT_KO[enemyElement]}을 이긴다 +{Math.round((GEUK_BONUS_MULTIPLIER - 1) * 100)}%
+              {getGeukKoLabel(geukAttacker.element, enemyElement, bonusPct)}
             </div>
           )}
 
