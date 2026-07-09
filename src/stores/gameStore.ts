@@ -45,7 +45,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   hasShownFirstAffinity: false,
 
   startGame: () => {
-    set({ ...createInitialGameState(), previewResult: null })
+    set({ ...createInitialGameState(), previewResult: null, hasShownFirstHand: false, hasShownFirstDiscard: false, hasShownFirstAffinity: false })
   },
 
   toggleCardSelect: (cardId: string) => {
@@ -88,7 +88,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   resetGame: () => {
-    set({ ...createInitialGameState(), previewResult: null })
+    set({ ...createInitialGameState(), previewResult: null, hasShownFirstHand: false, hasShownFirstDiscard: false, hasShownFirstAffinity: false })
   },
 
   markFirstHandShown: () => set({ hasShownFirstHand: true }),
