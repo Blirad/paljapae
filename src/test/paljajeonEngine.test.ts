@@ -56,7 +56,7 @@ describe('createInitialGameState', () => {
     expect(state.hand).toHaveLength(8)
     expect(state.playerHp).toBe(100)
     expect(state.currentFloor).toBe(1)
-    expect(state.enemyHp).toBe(150)
+    expect(state.enemyHp).toBe(90)  // balance v1.1: L1 HP=90
   })
 
   it('에너지 개념 없음 — energy 필드 없어야', () => {
@@ -120,7 +120,7 @@ describe('advanceToNextFloor', () => {
     const state = { ...createInitialGameState(0), currentFloor: 1, floorsCleared: 1 }
     const newState = advanceToNextFloor(state)
     expect(newState.currentFloor).toBe(2)
-    expect(newState.enemyHp).toBe(280)
+    expect(newState.enemyHp).toBe(115)  // balance v1.1: L2 HP=115
   })
 
   it('4층 클리어 → 결과 화면 (승리)', () => {

@@ -1,15 +1,77 @@
 /**
  * 팔자전 — (8) 결과 화면
  * 클리어율 % 표시 / "다시 도전" / "홈" 버튼
+ *
+ * VFX: 배율 곱셈 카운트업 (Section 5, line 89)
+ *  - 600ms 기본, 피해 1000 이상 시 900ms, 상한 1200ms
+ *  - tabular-nums 적용 (자리 흔들림 방지)
  */
 
-
+import { useEffect, useState, useRef } from 'react'
+import { useGameContext } from '../context/GameContext'
+import { audioManager } from '../services/audioManager'
 
 interface ResultScreenProps {
   isVictory: boolean
   floorsCleared: number
   onRetry: () => void
   onHome: () => void
+  /** 마지막 전투 총 데미지 (배율 카운트업 타이밍 계산용) */
+  lastTotalDamage?: number
+  /** 마지막 배율 값 (기본 1.0) */
+  lastMultiplier?: number
+}
+
+/**
+ * 배율 카운트업 훅
+ * Section 5, line 89: 600ms 기본, 피해 1000 이상 시 900ms, 상한 1200ms
+ */
+function useMultiplierCountUp(
+  targetMultiplier: number,
+  totalDamage: number,
+  getDuration: (ms: number) => number
+): string {
+  const [displayValue, setDisplayValue] = useState(1.0)
+  const rafRef = useRef<number>(0)
+
+  useEffect(() => {
+    const startValue = 1.0
+
+    // 타이밍 계산 (Section 5, line 89)
+    let baseDuration = 600
+    if (totalDamage >= 1000) {
+      baseDuration = Math.min(900 + ((totalDamage - 1000) / 1000) * 200, 1200)
+    }
+    const duration = getDuration(baseDuration)
+    const startTime = performance.now()
+
+    const animate = (now: number) => {
+      const elapsed = now - startTime
+      const progress = Math.min(elapsed / duration, 1)
+      // easeOut cubic
+      const eased = 1 - Math.pow(1 - progress, 3)
+      const current = startValue + (targetMultiplier - startValue) * eased
+      setDisplayValue(current)
+
+      if (progress < 1) {
+        rafRef.current = requestAnimationFrame(animate)
+      }
+    }
+
+    rafRef.current = requestAnimationFrame(animate)
+
+    // 사운드: 카운트업 중 틱 (5회 분산)
+    const steps = 5
+    for (let i = 0; i < steps; i++) {
+      setTimeout(() => {
+        audioManager.scoreCountTick(i, steps)
+      }, (duration / steps) * i)
+    }
+
+    return () => cancelAnimationFrame(rafRef.current)
+  }, [targetMultiplier, totalDamage, getDuration])
+
+  return displayValue.toFixed(1)
 }
 
 export default function ResultScreen({
@@ -17,8 +79,23 @@ export default function ResultScreen({
   floorsCleared,
   onRetry,
   onHome,
+  lastTotalDamage = 0,
+  lastMultiplier = 1.0,
 }: ResultScreenProps) {
   const clearRate = Math.round((floorsCleared / 4) * 100)
+  const { getDuration } = useGameContext()
+
+  // 배율 카운트업 (Section 5, line 89)
+  const multiplierDisplay = useMultiplierCountUp(lastMultiplier, lastTotalDamage, getDuration)
+
+  // 결과 화면 진입 사운드
+  useEffect(() => {
+    if (isVictory) {
+      audioManager.floorClearAscending()
+    } else {
+      audioManager.defeatDeepTone()
+    }
+  }, [isVictory])
 
   return (
     <div
@@ -75,6 +152,26 @@ export default function ResultScreen({
             {floorsCleared} / 4
           </div>
         </div>
+
+        {/* 배율 카운트업 (Section 5, line 89) */}
+        {lastMultiplier > 1.0 && (
+          <div className="text-center">
+            <div style={{ color: '#6A6560', fontSize: '12px', letterSpacing: '0.2em' }}>최고 배율</div>
+            <div
+              style={{
+                color: '#FFD98A',
+                fontSize: '36px',
+                fontWeight: 'bold',
+                fontVariantNumeric: 'tabular-nums',  // Section 5 필수 — 자리 흔들림 방지
+                lineHeight: 1,
+                marginTop: '4px',
+                letterSpacing: '0.02em',
+              }}
+            >
+              {multiplierDisplay}x
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 버튼 */}

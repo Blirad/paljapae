@@ -7,6 +7,7 @@
 import { useState, useCallback } from 'react'
 import './index.css'
 
+import { GameContextProvider } from './context/GameContext'
 import TitleScreen from './components/TitleScreen'
 import SajuInputScreen from './components/SajuInputScreen'
 import HomeScreen from './components/HomeScreen'
@@ -99,6 +100,7 @@ export default function App() {
   }, [])
 
   return (
+    <GameContextProvider>
     <div style={{ backgroundColor: '#16130F', minHeight: '100vh' }}>
       {screen === 'title' && (
         <TitleScreen onStart={handleTitleStart} />
@@ -130,5 +132,6 @@ export default function App() {
         />
       )}
     </div>
+    </GameContextProvider>
   )
 }

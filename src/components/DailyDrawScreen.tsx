@@ -7,6 +7,7 @@
 import { useState } from 'react'
 import type { Card } from '../types/game'
 import { createFixedDeck, shuffleDeck } from '../engine/paljajeonEngine'
+import { audioManager } from '../services/audioManager'
 
 interface DailyDrawScreenProps {
   onProceed: (cards: Card[]) => void
@@ -71,6 +72,8 @@ export default function DailyDrawScreen({ onProceed }: DailyDrawScreenProps) {
   const handleShake = () => {
     if (shaking) return
     setShaking(true)
+    // 산가지통 흔들기 사운드 (Sound #12 — 최우선 품질)
+    audioManager.diviningRodShake()
     setTimeout(() => {
       const deck = shuffleDeck(createFixedDeck(), Date.now())
       setDrawn(deck.slice(0, 8))
