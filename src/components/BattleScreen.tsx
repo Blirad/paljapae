@@ -27,6 +27,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useGameStore } from '../stores/gameStore'
 import { FLOOR_CONFIGS, GEUK_BONUS_MULTIPLIER } from '../engine/balance'
+import { FLOOR_ENEMY_ELEMENTS as ENGINE_FLOOR_ENEMY_ELEMENTS } from '../engine/paljajeonEngine'
 import { useGameContext } from '../context/GameContext'
 import { audioManager } from '../services/audioManager'
 import { judgeHand } from '../engine/pokerHandJudge'
@@ -188,88 +189,153 @@ function CycleChartOverlay({
   )
 }
 
-// A5: 첫 판 가이드 (localStorage 플래그, 3스텝)
+// A5: 첫 판 가이드 (localStorage 플래그, 3스텝 모달 오버레이)
 const TUTORIAL_KEY = 'paljajeon_tutorial_done_v1'
 
 function FirstGameGuide({
   step,
   onNext,
+  onPrev,
   onSkip,
 }: {
   step: 0 | 1 | 2
   onNext: () => void
+  onPrev: () => void
   onSkip: () => void
 }) {
+  // 지시서 A5: 3스텝 튜토리얼, modal overlay rgba(22,19,15,0.75), 16px 텍스트
   const STEPS = [
-    '나무(木)와 불(火) 카드를 골라보십시오. 이어지는 기운은 서로를 강하게 합니다.',
-    '쇠(金) 적에게 불(火) 카드를 쓰면 "불이 쇠를 이긴다" 효과가 발동합니다.',
-    '이제 그대의 팔자대로. 마음껏 조합하라.',
+    {
+      title: '1단계 — 기운 잇기',
+      text: '같은 줄 기운을 이으면 더 세진다: 나무(木)→불(火)',
+      sub: '이어지는 기운 두 장을 고르면 "기운 잇기 2" 조합이 만들어진다.',
+    },
+    {
+      title: '2단계 — 상극',
+      text: '당신의 불이 적의 쇠를 이긴다: 불이 쇠를 극한다',
+      sub: '카드와 적 속성의 상극 관계 — 한 칸 건너뛴 기운이 상대를 이긴다.',
+    },
+    {
+      title: '3단계 — 자유 조합',
+      text: '이제 자유롭게 조합을 만들어보자',
+      sub: '카드 1~5장을 골라 공격 버튼을 누르면 조합이 발동된다.',
+    },
   ]
+  const current = STEPS[step]
+
   return (
+    // 배경 오버레이 (클릭해도 닫히지 않음 — 스킵 버튼으로만)
     <div
       style={{
         position: 'fixed',
-        bottom: '140px',
-        left: '50%',
-        transform: 'translateX(-50%)',
+        inset: 0,
+        backgroundColor: 'rgba(22,19,15,0.75)',
         zIndex: 150,
-        backgroundColor: 'rgba(28,23,16,0.97)',
-        border: '1px solid #B33A2B',
-        padding: '16px 20px',
-        minWidth: '260px',
-        maxWidth: '340px',
-        textAlign: 'center',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px',
       }}
     >
-      <div style={{ color: '#D9A441', fontSize: '11px', letterSpacing: '0.15em', marginBottom: '8px' }}>
-        {step + 1} / 3 안내
-      </div>
-      <div style={{ color: '#E8DCC4', fontSize: '14px', lineHeight: '1.7', marginBottom: '14px' }}>
-        {STEPS[step]}
-      </div>
-      <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-        {step < 2 ? (
-          <button
-            onClick={onNext}
-            style={{
-              backgroundColor: '#B33A2B',
-              border: 'none',
-              color: '#E8DCC4',
-              padding: '8px 20px',
-              fontSize: '13px',
-              cursor: 'pointer',
-            }}
-          >
-            다음
-          </button>
-        ) : (
-          <button
-            onClick={onSkip}
-            style={{
-              backgroundColor: '#B33A2B',
-              border: 'none',
-              color: '#E8DCC4',
-              padding: '8px 20px',
-              fontSize: '13px',
-              cursor: 'pointer',
-            }}
-          >
-            시작
-          </button>
-        )}
+      {/* 모달 박스 */}
+      <div
+        style={{
+          backgroundColor: 'rgba(28,23,16,0.98)',
+          border: '1px solid #B33A2B',
+          padding: '28px 24px',
+          minWidth: '280px',
+          maxWidth: '360px',
+          width: '100%',
+          textAlign: 'center',
+          position: 'relative',
+        }}
+      >
+        {/* 우상단 스킵 버튼 */}
         <button
           onClick={onSkip}
           style={{
+            position: 'absolute',
+            top: '10px',
+            right: '12px',
             backgroundColor: 'transparent',
-            border: '1px solid #4A4540',
-            color: '#6A6560',
-            padding: '8px 20px',
-            fontSize: '13px',
+            border: 'none',
+            color: '#4A4540',
+            fontSize: '12px',
             cursor: 'pointer',
+            letterSpacing: '0.1em',
           }}
         >
           스킵
         </button>
+
+        {/* 스텝 표시 */}
+        <div style={{ color: '#B33A2B', fontSize: '11px', letterSpacing: '0.2em', marginBottom: '12px' }}>
+          {step + 1} / 3
+        </div>
+
+        {/* 제목 */}
+        <div style={{ color: '#D9A441', fontSize: '15px', fontWeight: 'bold', letterSpacing: '0.12em', marginBottom: '12px' }}>
+          {current.title}
+        </div>
+
+        {/* 본문 (지시서: 16px, #D8CCB4) */}
+        <div style={{ color: '#D8CCB4', fontSize: '16px', lineHeight: '1.7', marginBottom: '8px', letterSpacing: '0.05em' }}>
+          {current.text}
+        </div>
+        <div style={{ color: '#6A6560', fontSize: '12px', lineHeight: '1.6', marginBottom: '20px', letterSpacing: '0.04em' }}>
+          {current.sub}
+        </div>
+
+        {/* 버튼 행 */}
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+          {/* 이전 버튼 (스텝 1에서 비활성) */}
+          <button
+            onClick={onPrev}
+            disabled={step === 0}
+            style={{
+              backgroundColor: 'transparent',
+              border: '1px solid #4A4540',
+              color: step === 0 ? '#2A2620' : '#D8CCB4',
+              padding: '10px 20px',
+              fontSize: '13px',
+              cursor: step === 0 ? 'not-allowed' : 'pointer',
+              letterSpacing: '0.1em',
+            }}
+          >
+            이전
+          </button>
+          {step < 2 ? (
+            <button
+              onClick={onNext}
+              style={{
+                backgroundColor: '#B33A2B',
+                border: 'none',
+                color: '#E8DCC4',
+                padding: '10px 24px',
+                fontSize: '13px',
+                cursor: 'pointer',
+                letterSpacing: '0.1em',
+              }}
+            >
+              다음
+            </button>
+          ) : (
+            <button
+              onClick={onSkip}
+              style={{
+                backgroundColor: '#B33A2B',
+                border: 'none',
+                color: '#E8DCC4',
+                padding: '10px 24px',
+                fontSize: '13px',
+                cursor: 'pointer',
+                letterSpacing: '0.1em',
+              }}
+            >
+              시작
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -322,6 +388,9 @@ interface ChainGlowProps {
 function ChainGlow({ cards, getCssDuration }: ChainGlowProps) {
   if (cards.length < 2) return null
 
+  // A3: 상생 잇기 연결선 — 초록 고정 #7BD4A3, 3px (지시서 A3 규정)
+  const chainLineColor = '#7BD4A3'
+
   return (
     <svg
       style={{
@@ -336,7 +405,6 @@ function ChainGlow({ cards, getCssDuration }: ChainGlowProps) {
     >
       {cards.slice(0, -1).map((card, idx) => {
         const next = cards[idx + 1]
-        const glowColor = ELEMENT_GLOW_COLORS[card.element] ?? '#D8CCB4'
         const animDelay = `${(idx * 180) / 1000}s`
         return (
           <line
@@ -345,16 +413,49 @@ function ChainGlow({ cards, getCssDuration }: ChainGlowProps) {
             y1={card.y}
             x2={next.x}
             y2={next.y}
-            stroke={glowColor}
-            strokeWidth="2.5"
+            stroke={chainLineColor}
+            strokeWidth="3"
             strokeLinecap="round"
             style={{
-              filter: `drop-shadow(0 0 5px ${glowColor})`,
+              filter: `drop-shadow(0 0 5px ${chainLineColor})`,
               animation: `chainGlow ${getCssDuration(180)} ease-in-out ${animDelay} both`,
             }}
           />
         )
       })}
+    </svg>
+  )
+}
+
+// ---------- A3: 붉은 화살표 (상극 기운 포함 시 적 방향) ----------
+interface GeukArrowProps {
+  visible: boolean
+  getCssDuration: (ms: number) => string
+}
+
+function GeukArrow({ visible, getCssDuration }: GeukArrowProps) {
+  if (!visible) return null
+  return (
+    <svg
+      style={{
+        position: 'absolute',
+        top: '-40px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: '28px',
+        height: '40px',
+        pointerEvents: 'none',
+        zIndex: 45,
+        overflow: 'visible',
+        animation: `geukArrowPulse ${getCssDuration(900)} ease-in-out infinite`,
+      }}
+    >
+      {/* 화살표 몸통 */}
+      <line x1="14" y1="36" x2="14" y2="10" stroke="#C63D2F" strokeWidth="3" strokeLinecap="round"
+        style={{ filter: 'drop-shadow(0 0 4px #C63D2F)' }} />
+      {/* 화살표 머리 */}
+      <polygon points="14,2 7,14 21,14" fill="#C63D2F"
+        style={{ filter: 'drop-shadow(0 0 6px #C63D2F)' }} />
     </svg>
   )
 }
@@ -668,13 +769,8 @@ function getCardPositions(hand: Array<{ id: string; element: string }>, selected
   }))
 }
 
-// ---------- 적 속성 결정 (층별 고정) ----------
-const FLOOR_ENEMY_ELEMENTS: Record<number, Element> = {
-  1: 'mok',
-  2: 'hwa',
-  3: 'to',
-  4: 'geum',
-}
+// ---------- 적 속성 결정 (층별 고정 — 엔진에서 import) ----------
+const FLOOR_ENEMY_ELEMENTS: Record<number, Element> = ENGINE_FLOOR_ENEMY_ELEMENTS as Record<number, Element>
 
 // C10: 층별 적 정보 (이름, 속성, 기믹 예고, 대사)
 const FLOOR_ENEMY_INFO: Record<number, {
@@ -791,8 +887,9 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
   // B7: 예측 표시 상태
   const [predictionText, setPredictionText] = useState<string | null>(null)
 
-  // B8: 피격 플래시
+  // B8: 피격 플래시 + 체력바 흔들림
   const [hitFlash, setHitFlash] = useState(false)
+  const [hpBarShake, setHpBarShake] = useState(false)
 
   // B9: 결과 근거 수집
   const totalPlaysUsedRef = useRef(0)
@@ -809,6 +906,9 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
   // C10: 기믹 선언 배너 상태
   const [gimmickBanner, setGimmickBanner] = useState<string | null>(null)
 
+  // C10(b): 기믹 선언 배너 0.5초 입력 잠금
+  const [isInputLocked, setIsInputLocked] = useState(false)
+
   // D11: 영웅 전방 모션 상태
   const [heroCharge, setHeroCharge] = useState(false)
   const [spiritOrbs, setSpiritOrbs] = useState<string[]>([]) // 정령 구체 속성 목록
@@ -823,6 +923,9 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
   })
   const handleTutorialNext = useCallback(() => {
     setTutorialStep(prev => (prev !== null && prev < 2 ? (prev + 1) as 0 | 1 | 2 : null))
+  }, [])
+  const handleTutorialPrev = useCallback(() => {
+    setTutorialStep(prev => (prev !== null && prev > 0 ? (prev - 1) as 0 | 1 | 2 : prev))
   }, [])
   const handleTutorialSkip = useCallback(() => {
     setTutorialStep(null)
@@ -1073,9 +1176,11 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
   useEffect(() => {
     if (playerHp < prevPlayerHp.current) {
       audioManager.playerHit()
-      // B8: 붉은 플래시
+      // B8: 붉은 플래시 + 체력바 흔들림
       setHitFlash(true)
+      setHpBarShake(true)
       setTimeout(() => setHitFlash(false), getDuration(300))
+      setTimeout(() => setHpBarShake(false), getDuration(200))
       console.log('[SFX] 플레이어 피격음', { damage: prevPlayerHp.current - playerHp, timestamp: Date.now() })
     } else if (playerHp > prevPlayerHp.current) {
       audioManager.playHealSFX()
@@ -1104,11 +1209,14 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
         setEnemyEntranceText(null)
       }, getDuration(1000))
 
-      // C10(b): 정예/보스 기믹 선언 배너 (0.5초 정지 효과)
+      // C10(b): 정예/보스 기믹 선언 배너 + 0.5초 입력 잠금
       if (enemyInfo.eliteBanner) {
         const bannerText = enemyInfo.eliteBanner
         setTimeout(() => {
           setGimmickBanner(bannerText)
+          // 배너 시작 시 500ms 입력 잠금
+          setIsInputLocked(true)
+          setTimeout(() => setIsInputLocked(false), getDuration(500))
           setTimeout(() => setGimmickBanner(null), getDuration(2500))
         }, getDuration(500))
       }
@@ -1406,6 +1514,24 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
           70%  { opacity: 1; transform: scale(1); }
           100% { opacity: 0; }
         }
+        @keyframes geukArrowPulse {
+          0%   { opacity: 0.7; transform: translateX(-50%) translateY(0); }
+          50%  { opacity: 1; transform: translateX(-50%) translateY(-5px); }
+          100% { opacity: 0.7; transform: translateX(-50%) translateY(0); }
+        }
+        @keyframes dangerBorderPulse {
+          0%   { box-shadow: inset 0 0 0 2px rgba(198,61,47,0.6); }
+          50%  { box-shadow: inset 0 0 0 2px rgba(198,61,47,1); }
+          100% { box-shadow: inset 0 0 0 2px rgba(198,61,47,0.6); }
+        }
+        @keyframes hpBarShake {
+          0%   { transform: translateX(0); }
+          20%  { transform: translateX(-4px); }
+          40%  { transform: translateX(4px); }
+          60%  { transform: translateX(-3px); }
+          80%  { transform: translateX(2px); }
+          100% { transform: translateX(0); }
+        }
       `}</style>
 
       {/* 오행연환 오버레이 */}
@@ -1452,11 +1578,23 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
         }} />
       )}
 
+      {/* B6: 마지막 기회 — 화면 전체 테두리 붉은 경고 pulse */}
+      {playsLeft === 1 && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          pointerEvents: 'none',
+          zIndex: 155,
+          animation: 'dangerBorderPulse 800ms ease-in-out infinite',
+        }} />
+      )}
+
       {/* A5: 첫 판 가이드 */}
       {tutorialStep !== null && (
         <FirstGameGuide
           step={tutorialStep}
           onNext={handleTutorialNext}
+          onPrev={handleTutorialPrev}
           onSkip={handleTutorialSkip}
         />
       )}
@@ -1541,10 +1679,12 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
             >
               {playbackSpeed}x
             </button>
+            {/* B8: 체력바 — 피격 시 hpBarShake 흔들림 */}
             <div
               style={{
                 width: '80px', height: '6px',
                 backgroundColor: '#2A2620', borderRadius: '3px', overflow: 'hidden',
+                animation: hpBarShake ? `hpBarShake ${getCssDuration(150)} ease-out` : undefined,
               }}
             >
               <div
@@ -1868,15 +2008,17 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
               position: 'relative',
               animation: heroCharge ? `heroChargeAnim ${getCssDuration(400)} ease-out` : undefined,
             }}>
-              {/* 실루엣 몸통 */}
+              {/* D11: 영웅 실루엣 — 플레이어 기운 금색(#FFD98A) 글로우 */}
               <svg width="36" height="50" viewBox="0 0 36 50" style={{ position: 'absolute', inset: 0 }}>
-                <ellipse cx="18" cy="10" rx="7" ry="8" fill={ELEMENT_GLOW_COLORS[enemyElement] ?? '#D9A441'} opacity="0.25" />
-                <rect x="10" y="18" width="16" height="22" rx="3" fill={ELEMENT_GLOW_COLORS[enemyElement] ?? '#D9A441'} opacity="0.2" />
-                <rect x="10" y="40" width="6" height="10" rx="2" fill={ELEMENT_GLOW_COLORS[enemyElement] ?? '#D9A441'} opacity="0.2" />
-                <rect x="20" y="40" width="6" height="10" rx="2" fill={ELEMENT_GLOW_COLORS[enemyElement] ?? '#D9A441'} opacity="0.2" />
+                <ellipse cx="18" cy="10" rx="7" ry="8" fill="#FFD98A" opacity="0.3" />
+                <rect x="10" y="18" width="16" height="22" rx="3" fill="#FFD98A" opacity="0.2" />
+                <rect x="10" y="40" width="6" height="10" rx="2" fill="#FFD98A" opacity="0.2" />
+                <rect x="20" y="40" width="6" height="10" rx="2" fill="#FFD98A" opacity="0.2" />
                 {/* 글로우 외곽선 */}
-                <ellipse cx="18" cy="10" rx="7" ry="8" fill="none" stroke={ELEMENT_GLOW_COLORS[enemyElement] ?? '#D9A441'} strokeWidth="1.5" opacity="0.6" />
-                <rect x="10" y="18" width="16" height="22" rx="3" fill="none" stroke={ELEMENT_GLOW_COLORS[enemyElement] ?? '#D9A441'} strokeWidth="1.5" opacity="0.5" />
+                <ellipse cx="18" cy="10" rx="7" ry="8" fill="none" stroke="#D9A441" strokeWidth="1.5" opacity="0.7" />
+                <rect x="10" y="18" width="16" height="22" rx="3" fill="none" stroke="#D9A441" strokeWidth="1.5" opacity="0.6" />
+                {/* 팔자 — 소형 텍스트 */}
+                <text x="18" y="34" textAnchor="middle" fontSize="6" fill="#D9A441" opacity="0.6" fontWeight="bold">팔자</text>
               </svg>
               {/* 정령 구체 D11: 조합에 포함된 오행 차례 소환 */}
               {spiritOrbs.map((el, orbIdx) => (
@@ -1909,6 +2051,14 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
           {selectedCards.length >= 2 && (
             <ChainGlow
               cards={chainCardPositions}
+              getCssDuration={getCssDuration}
+            />
+          )}
+
+          {/* A3: 붉은 화살표 — 상극 기운 포함 시 적 방향 */}
+          {selectedCards.length >= 2 && (
+            <GeukArrow
+              visible={hasGeukOnEnemy}
               getCssDuration={getCssDuration}
             />
           )}
@@ -2041,7 +2191,7 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
         >
           <button
             onClick={handleDiscardCards}
-            disabled={selectedCards.length === 0 || discardsLeft <= 0}
+            disabled={selectedCards.length === 0 || discardsLeft <= 0 || isInputLocked}
             style={{
               flex: 1,
               height: '48px',
@@ -2049,27 +2199,29 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
               border: '1px solid #4A4540',
               color: discardsLeft <= 0 ? '#4A4540' : '#D8CCB4',
               fontSize: '14px',
-              cursor: selectedCards.length === 0 || discardsLeft <= 0 ? 'not-allowed' : 'pointer',
-              opacity: discardsLeft <= 0 ? 0.4 : 1,
+              cursor: selectedCards.length === 0 || discardsLeft <= 0 || isInputLocked ? 'not-allowed' : 'pointer',
+              opacity: discardsLeft <= 0 || isInputLocked ? 0.4 : 1,
               letterSpacing: '0.1em',
+              pointerEvents: isInputLocked ? 'none' : undefined,
             }}
           >
             버리기 {discardsLeft}회 남음
           </button>
           <button
             onClick={handlePlayCards}
-            disabled={selectedCards.length === 0 || playsLeft <= 0}
+            disabled={selectedCards.length === 0 || playsLeft <= 0 || isInputLocked}
             style={{
               flex: 1,
               height: '48px',
-              backgroundColor: selectedCards.length > 0 && playsLeft > 0 ? '#B33A2B' : '#2A2620',
+              backgroundColor: selectedCards.length > 0 && playsLeft > 0 && !isInputLocked ? '#B33A2B' : '#2A2620',
               border: 'none',
               color: '#E8DCC4',
               fontSize: '14px',
-              cursor: selectedCards.length === 0 || playsLeft <= 0 ? 'not-allowed' : 'pointer',
-              opacity: playsLeft <= 0 ? 0.4 : 1,
+              cursor: selectedCards.length === 0 || playsLeft <= 0 || isInputLocked ? 'not-allowed' : 'pointer',
+              opacity: playsLeft <= 0 || isInputLocked ? 0.4 : 1,
               letterSpacing: '0.1em',
               transition: `background-color ${getCssDuration(150)}`,
+              pointerEvents: isInputLocked ? 'none' : undefined,
             }}
           >
             공격 {playsLeft}/{floorConfig.maxPlays}
