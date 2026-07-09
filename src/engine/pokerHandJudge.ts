@@ -24,19 +24,19 @@ const GEUK_MAP: Record<Element, Element> = {
   su: 'hwa',
 }
 
-// 족보 기본점수 및 배율
+// 족보 기본점수 및 배율 (A1: 용어 한글화 — 사주 모르는 사람 기준)
 const RANK_CONFIG: Record<HandRank, { baseScore: number; multiplier: number; description: string }> = {
-  'ohang-yeonhwan':  { baseScore: 200, multiplier: 10, description: '오행연환 — 천지를 뒤흔들다' },
-  'saengchae-chain': { baseScore: 120, multiplier: 7,  description: '상생 4체인 — 오행이 흐르다' },
-  'geukchae-chain':  { baseScore: 100, multiplier: 6,  description: '극 체인 3단 — 힘이 꺾이다' },
-  'eumyang-pair-3':  { baseScore: 80,  multiplier: 5,  description: '음양쌍 × 3 — 셋이 짝지다' },
-  'jipgyeol-5':      { baseScore: 60,  multiplier: 4,  description: '결집 5 — 뭉쳐 하나가 되다' },
-  'saengchae-3':     { baseScore: 50,  multiplier: 3,  description: '상생 3체인 — 기운이 전하다' },
-  'eumyang-pair-2':  { baseScore: 40,  multiplier: 2.5,description: '음양쌍 × 2 — 둘이 짝지다' },
-  'jipgyeol-4':      { baseScore: 30,  multiplier: 2,  description: '결집 4 — 모이다' },
-  'geuk-bonas':      { baseScore: 20,  multiplier: 1.5,description: '극 보너스 — 힘이 누른다' },
-  'eumyang-pair-1':  { baseScore: 15,  multiplier: 1.3,description: '음양쌍 — 짝이 맞다' },
-  'jipgyeol-3':      { baseScore: 10,  multiplier: 1.2,description: '결집 3 — 셋이 모이다' },
+  'ohang-yeonhwan':  { baseScore: 200, multiplier: 10, description: '오행연환(五行連環) — 천지를 뒤흔들다' },
+  'saengchae-chain': { baseScore: 120, multiplier: 7,  description: '기운 잇기 4 — 오행이 흐르다' },
+  'geukchae-chain':  { baseScore: 100, multiplier: 6,  description: '이기는 기운 3단 — 힘이 꺾이다' },
+  'eumyang-pair-3':  { baseScore: 80,  multiplier: 5,  description: '음양 짝 × 3 — 셋이 짝지다' },
+  'jipgyeol-5':      { baseScore: 60,  multiplier: 4,  description: '같은 기운 모으기 5 — 뭉쳐 하나가 되다' },
+  'saengchae-3':     { baseScore: 50,  multiplier: 3,  description: '기운 잇기 3 — 기운이 전하다' },
+  'eumyang-pair-2':  { baseScore: 40,  multiplier: 2.5,description: '음양 짝 × 2 — 둘이 짝지다' },
+  'jipgyeol-4':      { baseScore: 30,  multiplier: 2,  description: '같은 기운 모으기 4 — 모이다' },
+  'geuk-bonas':      { baseScore: 20,  multiplier: 1.5,description: '이기는 기운 — 힘이 누른다' },
+  'eumyang-pair-1':  { baseScore: 15,  multiplier: 1.3,description: '음양 짝 — 짝이 맞다' },
+  'jipgyeol-3':      { baseScore: 10,  multiplier: 1.2,description: '같은 기운 모으기 3 — 셋이 모이다' },
   'none':            { baseScore: 5,   multiplier: 1,  description: '기세 없음' },
 }
 

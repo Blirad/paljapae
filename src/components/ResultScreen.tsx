@@ -10,6 +10,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useGameContext } from '../context/GameContext'
 import { audioManager } from '../services/audioManager'
+import { useGameStore } from '../stores/gameStore'
 
 interface ResultScreenProps {
   isVictory: boolean
@@ -84,6 +85,7 @@ export default function ResultScreen({
 }: ResultScreenProps) {
   const clearRate = Math.round((floorsCleared / 4) * 100)
   const { getDuration } = useGameContext()
+  const { battleStats } = useGameStore()
 
   // 배율 카운트업 (Section 5, line 89)
   const multiplierDisplay = useMultiplierCountUp(lastMultiplier, lastTotalDamage, getDuration)
@@ -127,6 +129,21 @@ export default function ResultScreen({
 
       {/* 구분선 */}
       <div style={{ width: '120px', height: '1px', backgroundColor: '#B33A2B', margin: '32px 0' }} />
+
+      {/* B9: 결과 근거 한 줄 */}
+      <div style={{
+        color: isVictory ? '#4A9B6E' : '#C63D2F',
+        fontSize: '14px',
+        letterSpacing: '0.05em',
+        textAlign: 'center',
+        marginBottom: '8px',
+        lineHeight: '1.6',
+      }}>
+        {isVictory
+          ? `공격 ${battleStats.totalPlaysUsed}회 만에 격파 · 최대 한 방 ${battleStats.maxSingleDamage}`
+          : `적 체력 ${battleStats.remainingEnemyHpAtEnd} 남음 — 아깝다!`
+        }
+      </div>
 
       {/* 통계 */}
       <div className="flex flex-col items-center gap-4">

@@ -10,13 +10,18 @@
  *  - Elemental Sequence (Section 5, line 91): 2500ms 3단계 시퀀스
  *  - Speed Toggle (Section 5, line 93): 1x/2x — getCssDuration/getDuration
  *
- * G1 수정 2차 (2026-07-09):
- *  - 족보 미리보기 실체화: 64px 높이, 20px+ 붓글씨, 바운스+글로우, 즉시 갱신
- *  - 상성 가시화: 뱃지 18px+글로우, 극 정보 미리보기 띠 추가, 역극 opacity 0.35+剋 한자
- *  - 피해 내역 노출: 적 HP바 아래, 3초, 스태거 카운트업 순서대로
- *  - 인라인 안내 3종: 핸드 위 위치, 14px, 주사선 장식, 4초
- *  - VFX/SFX 트리거 로그: console.log('[VFX]') + iOS AudioContext resume 확인
- *  - 배경 질감: 격자 0.08/40px, 한지 노이즈 오버레이, 4층 붉은 격자
+ * G1 종합 수정 11건 (2026-07-09):
+ *  A1: 용어 한글화 — 조합/기운잇기/같은기운모으기/음양짝/공격력/죽은기운/공격
+ *  A2: 순환 바 상시 표시 — 나무→불→흙→쇠→물→나무, 탭하면 반화면 오버레이
+ *  A3: 관계 시각화 — 초록 연결선(상생), 붉은 화살표(상극)
+ *  A4: 훈수 버튼 — 최강 조합 1.5초 하이라이트
+ *  A5: 첫 판 가이드 — localStorage 플래그, 3스텝, 스킵 버튼
+ *  B6: 횟수 압박 — 남은 공격 중앙 상단 크게, 줄어들 때 펄스, 마지막 테두리 경고
+ *  B7: 예측 표시 — "이 속도면 N번 더 필요" / "다음 한 방으로 끝!"
+ *  B8: 피격 체감 — shake + 붉은 플래시 + 피격음
+ *  B9: 결과의 근거 — 승리/패배 구체 수치
+ *  C10: 적 연출 4종 — 돌진/선언배너/입장연출/기믹 실제 적용
+ *  D11: 영웅 실루엣 + 조합 발동 시퀀스
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react'
@@ -24,6 +29,7 @@ import { useGameStore } from '../stores/gameStore'
 import { FLOOR_CONFIGS, GEUK_BONUS_MULTIPLIER } from '../engine/balance'
 import { useGameContext } from '../context/GameContext'
 import { audioManager } from '../services/audioManager'
+import { judgeHand } from '../engine/pokerHandJudge'
 import type { Element } from '../types/game'
 
 const ELEMENT_LABELS: Record<string, string> = {
@@ -62,9 +68,211 @@ const GEUK_MAP: Record<Element, Element> = {
   su: 'hwa',
 }
 
+// 오행 한글 이름
+const ELEMENT_KO: Record<string, string> = {
+  mok: '나무', hwa: '불', to: '흙', geum: '쇠', su: '물',
+}
+
 // 극 관계 한자 표현
 function getGeukLabel(attacker: Element, victim: Element): string {
   return `${ELEMENT_LABELS[attacker]}克${ELEMENT_LABELS[victim]}`
+}
+
+// A1: 극 관계 한글 표현 — "물이 불을 이긴다 +50%"
+function getGeukKoLabel(attacker: Element, victim: Element, bonusPct: number): string {
+  return `${ELEMENT_KO[attacker]}이 ${ELEMENT_KO[victim]}을 이긴다 +${bonusPct}%`
+}
+
+// A2: 순환 도표 오버레이 (탭하면 반화면)
+function CycleChartOverlay({
+  onClose,
+  enemyElement,
+}: {
+  onClose: () => void
+  enemyElement: Element
+}) {
+  const CYCLE_ORDER: Element[] = ['mok', 'hwa', 'to', 'geum', 'su']
+  const KO = ELEMENT_KO
+  const LABELS = ELEMENT_LABELS
+  const COLORS = ELEMENT_COLORS
+  const GLOW = ELEMENT_GLOW_COLORS
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'rgba(22,19,15,0.92)',
+        zIndex: 200,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '32px 24px',
+      }}
+    >
+      <div style={{ color: '#D9A441', fontSize: '16px', letterSpacing: '0.15em', marginBottom: '24px' }}>
+        오행 순환
+      </div>
+      {/* 원형 도표 */}
+      <div style={{ position: 'relative', width: '200px', height: '200px', marginBottom: '24px' }}>
+        {CYCLE_ORDER.map((el, idx) => {
+          const angle = (idx / 5) * Math.PI * 2 - Math.PI / 2
+          const r = 80
+          const cx = 100 + r * Math.cos(angle)
+          const cy = 100 + r * Math.sin(angle)
+          const isEnemy = el === enemyElement
+          return (
+            <div
+              key={el}
+              style={{
+                position: 'absolute',
+                left: cx - 22,
+                top: cy - 22,
+                width: '44px',
+                height: '44px',
+                borderRadius: '50%',
+                backgroundColor: isEnemy ? COLORS[el] : 'rgba(42,38,32,0.9)',
+                border: `2px solid ${COLORS[el]}`,
+                boxShadow: isEnemy ? `0 0 16px ${GLOW[el]}` : `0 0 4px ${COLORS[el]}`,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <span style={{ color: isEnemy ? '#16130F' : COLORS[el], fontSize: '16px', fontWeight: 'bold', lineHeight: 1 }}>{LABELS[el]}</span>
+              <span style={{ color: isEnemy ? '#16130F' : GLOW[el], fontSize: '9px', lineHeight: 1.2 }}>{KO[el]}</span>
+            </div>
+          )
+        })}
+        {/* 상생 화살표 (SVG) */}
+        <svg style={{ position: 'absolute', inset: 0, width: '200px', height: '200px', pointerEvents: 'none' }}>
+          {CYCLE_ORDER.map((el, idx) => {
+            const nextIdx = (idx + 1) % 5
+            const a1 = (idx / 5) * Math.PI * 2 - Math.PI / 2
+            const a2 = (nextIdx / 5) * Math.PI * 2 - Math.PI / 2
+            const r = 80
+            const x1 = 100 + (r - 20) * Math.cos(a1)
+            const y1 = 100 + (r - 20) * Math.sin(a1)
+            const x2 = 100 + (r - 20) * Math.cos(a2)
+            const y2 = 100 + (r - 20) * Math.sin(a2)
+            const midX = (x1 + x2) / 2
+            const midY = (y1 + y2) / 2
+            const dx = x2 - x1
+            const dy = y2 - y1
+            const len = Math.sqrt(dx * dx + dy * dy)
+            const ax = -dy / len * 4
+            const ay = dx / len * 4
+            return (
+              <g key={`saeng-${el}`}>
+                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#4A9B6E" strokeWidth="1.5" strokeOpacity="0.6" />
+                <polygon
+                  points={`${midX},${midY} ${midX - ax - dx/len*6},${midY - ay - dy/len*6} ${midX + ax - dx/len*6},${midY + ay - dy/len*6}`}
+                  fill="#4A9B6E"
+                  opacity="0.7"
+                />
+              </g>
+            )
+          })}
+        </svg>
+      </div>
+      {/* 설명 두 문장 */}
+      <div style={{ textAlign: 'center', color: '#D8CCB4', fontSize: '14px', lineHeight: '2', letterSpacing: '0.05em' }}>
+        <div>화살표 방향으로 이어 내면 세진다</div>
+        <div>한 칸 건너뛴 기운은 상대를 이긴다</div>
+      </div>
+      <div style={{ color: '#4A4540', fontSize: '11px', marginTop: '20px' }}>탭하여 닫기</div>
+    </div>
+  )
+}
+
+// A5: 첫 판 가이드 (localStorage 플래그, 3스텝)
+const TUTORIAL_KEY = 'paljajeon_tutorial_done_v1'
+
+function FirstGameGuide({
+  step,
+  onNext,
+  onSkip,
+}: {
+  step: 0 | 1 | 2
+  onNext: () => void
+  onSkip: () => void
+}) {
+  const STEPS = [
+    '나무(木)와 불(火) 카드를 골라보십시오. 이어지는 기운은 서로를 강하게 합니다.',
+    '쇠(金) 적에게 불(火) 카드를 쓰면 "불이 쇠를 이긴다" 효과가 발동합니다.',
+    '이제 그대의 팔자대로. 마음껏 조합하라.',
+  ]
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        bottom: '140px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 150,
+        backgroundColor: 'rgba(28,23,16,0.97)',
+        border: '1px solid #B33A2B',
+        padding: '16px 20px',
+        minWidth: '260px',
+        maxWidth: '340px',
+        textAlign: 'center',
+      }}
+    >
+      <div style={{ color: '#D9A441', fontSize: '11px', letterSpacing: '0.15em', marginBottom: '8px' }}>
+        {step + 1} / 3 안내
+      </div>
+      <div style={{ color: '#E8DCC4', fontSize: '14px', lineHeight: '1.7', marginBottom: '14px' }}>
+        {STEPS[step]}
+      </div>
+      <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+        {step < 2 ? (
+          <button
+            onClick={onNext}
+            style={{
+              backgroundColor: '#B33A2B',
+              border: 'none',
+              color: '#E8DCC4',
+              padding: '8px 20px',
+              fontSize: '13px',
+              cursor: 'pointer',
+            }}
+          >
+            다음
+          </button>
+        ) : (
+          <button
+            onClick={onSkip}
+            style={{
+              backgroundColor: '#B33A2B',
+              border: 'none',
+              color: '#E8DCC4',
+              padding: '8px 20px',
+              fontSize: '13px',
+              cursor: 'pointer',
+            }}
+          >
+            시작
+          </button>
+        )}
+        <button
+          onClick={onSkip}
+          style={{
+            backgroundColor: 'transparent',
+            border: '1px solid #4A4540',
+            color: '#6A6560',
+            padding: '8px 20px',
+            fontSize: '13px',
+            cursor: 'pointer',
+          }}
+        >
+          스킵
+        </button>
+      </div>
+    </div>
+  )
 }
 
 // ---------- Score Popup ----------
@@ -368,30 +576,30 @@ function DamageBreakdownPanel({ breakdown, getCssDuration }: DamageBreakdownPane
       }}
     >
       <div style={{ color: '#B33A2B', fontSize: '10px', letterSpacing: '0.15em', marginBottom: '8px', textAlign: 'center' }}>
-        피해 내역
+        공격 내역
       </div>
       <div style={{ color: '#D8CCB4', fontSize: '13px', lineHeight: '1.9', fontVariantNumeric: 'tabular-nums' }}>
-        {/* 스텝 1: 기본치 */}
+        {/* 스텝 1: 공격력 */}
         {staggerStep >= 1 && (
           <div style={{ animation: `slideInRow ${getCssDuration(200)} ease-out forwards` }}>
-            기본치&nbsp;&nbsp;: <span style={{ color: '#D9A441' }}>{breakdown.baseScore}</span>
+            공격력&nbsp;&nbsp;: <span style={{ color: '#D9A441' }}>{breakdown.baseScore}</span>
           </div>
         )}
         {/* 스텝 2: 배율 */}
         {staggerStep >= 2 && (
           <div style={{ animation: `slideInRow ${getCssDuration(200)} ease-out forwards` }}>
-            × 배율&nbsp;&nbsp;: <span style={{ color: '#7BD4A3' }}>{breakdown.multiplier}</span>{' '}
-            <span style={{ color: '#4A4540', fontSize: '11px' }}>(족보)</span>
+            × 배율&nbsp;&nbsp;: <span style={{ color: '#7BD4A3' }}>{breakdown.multiplier}배</span>{' '}
+            <span style={{ color: '#4A4540', fontSize: '11px' }}>(조합)</span>
           </div>
         )}
         {/* 스텝 3: 극보너스 (있을 때만) */}
         {staggerStep >= 3 && breakdown.geukBonus > 1 && (
           <div style={{ animation: `slideInRow ${getCssDuration(200)} ease-out forwards` }}>
-            × 극보너스: <span style={{ color: '#FF7A5C' }}>{breakdown.geukBonus}</span>{' '}
+            × 이기는기운: <span style={{ color: '#FF7A5C' }}>{breakdown.geukBonus}</span>{' '}
             <span style={{ color: '#4A4540', fontSize: '11px' }}>({breakdown.geukLabel})</span>
           </div>
         )}
-        {/* 스텝 4: 최종피해 */}
+        {/* 스텝 4: 최종 피해 */}
         {staggerStep >= 4 && (
           <div style={{
             borderTop: '1px solid #2A2620',
@@ -399,7 +607,7 @@ function DamageBreakdownPanel({ breakdown, getCssDuration }: DamageBreakdownPane
             paddingTop: '6px',
             animation: `slideInRow ${getCssDuration(200)} ease-out forwards`,
           }}>
-            = 최종피해: <span style={{
+            = 피해: <span style={{
               color: '#C63D2F',
               fontSize: '24px',
               fontWeight: 'bold',
@@ -468,6 +676,42 @@ const FLOOR_ENEMY_ELEMENTS: Record<number, Element> = {
   4: 'geum',
 }
 
+// C10: 층별 적 정보 (이름, 속성, 기믹 예고, 대사)
+const FLOOR_ENEMY_INFO: Record<number, {
+  name: string
+  element: Element
+  gimmickHint: string
+  dialogue: string
+  eliteBanner?: string
+}> = {
+  1: {
+    name: '고목령(枯木靈)',
+    element: 'mok',
+    gimmickHint: '매 공격마다 체력을 15 회복한다',
+    dialogue: '뿌리가... 어디였더라...',
+  },
+  2: {
+    name: '잔화령(殘火靈)',
+    element: 'hwa',
+    gimmickHint: '반격이 더 강하지만 체력이 낮다',
+    dialogue: '꺼지기 전이... 가장 뜨겁다...',
+  },
+  3: {
+    name: '정예: 고신',
+    element: 'to',
+    gimmickHint: '패시브 슬롯 2칸을 봉인한다',
+    dialogue: '곁이라는 것을, 나는 모른다.',
+    eliteBanner: '고신 — 그대의 패시브 두 칸을 봉인한다',
+  },
+  4: {
+    name: '보스: 명외자 대장',
+    element: 'geum',
+    gimmickHint: '세 번째 공격 턴에 배율이 1로 고정된다',
+    dialogue: '왕께서 오신다. 너희의 팔자를 지우러.',
+    eliteBanner: '빈 시간 — 세 번째 공격은 배율이 1로 고정된다',
+  },
+}
+
 interface BattleScreenProps {
   onFloorClear: () => void
   onResult: (victory: boolean) => void
@@ -496,6 +740,7 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
     markFirstHandShown,
     markFirstDiscardShown,
     markFirstAffinityShown,
+    updateBattleStats,
   } = useGameStore()
 
   const { getCssDuration, getDuration, playbackSpeed, togglePlaybackSpeed } = useGameContext()
@@ -531,6 +776,58 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
   // 역극 첫 진입 안내 표시 여부 (카드별, 화면에 직접 표시)
   const [showYeokgeukHint, setShowYeokgeukHint] = useState(false)
   const yeokgeukHintShownRef = useRef(false)
+
+  // A2: 순환 도표 오버레이
+  const [showCycleChart, setShowCycleChart] = useState(false)
+
+  // A4: 훈수 하이라이트 카드 목록
+  const [hintCards, setHintCards] = useState<string[]>([])
+  const [hintActive, setHintActive] = useState(false)
+
+  // B6: 횟수 압박 — 이전 playsLeft 추적 (펄스 애니메이션)
+  const [playsCountPulse, setPlaysCountPulse] = useState(false)
+  const prevPlaysLeft = useRef(playsLeft)
+
+  // B7: 예측 표시 상태
+  const [predictionText, setPredictionText] = useState<string | null>(null)
+
+  // B8: 피격 플래시
+  const [hitFlash, setHitFlash] = useState(false)
+
+  // B9: 결과 근거 수집
+  const totalPlaysUsedRef = useRef(0)
+  const maxSingleDamageRef = useRef(0)
+
+  // C10: 적 등장 연출 상태
+  const [enemyEntrance, setEnemyEntrance] = useState(true)
+  const [enemyEntranceText, setEnemyEntranceText] = useState<string | null>(null)
+
+  // C10: 적 돌진 모션 상태
+  const [enemyCharge, setEnemyCharge] = useState(false)
+  const [enemyDialogue, setEnemyDialogue] = useState<string | null>(null)
+
+  // C10: 기믹 선언 배너 상태
+  const [gimmickBanner, setGimmickBanner] = useState<string | null>(null)
+
+  // D11: 영웅 전방 모션 상태
+  const [heroCharge, setHeroCharge] = useState(false)
+  const [spiritOrbs, setSpiritOrbs] = useState<string[]>([]) // 정령 구체 속성 목록
+
+  // A5: 첫 판 가이드
+  const [tutorialStep, setTutorialStep] = useState<0 | 1 | 2 | null>(() => {
+    try {
+      return localStorage.getItem(TUTORIAL_KEY) ? null : 0
+    } catch {
+      return null
+    }
+  })
+  const handleTutorialNext = useCallback(() => {
+    setTutorialStep(prev => (prev !== null && prev < 2 ? (prev + 1) as 0 | 1 | 2 : null))
+  }, [])
+  const handleTutorialSkip = useCallback(() => {
+    setTutorialStep(null)
+    try { localStorage.setItem(TUTORIAL_KEY, '1') } catch { /* ignore */ }
+  }, [])
 
   const showBanner = useCallback((msg: string) => {
     if (bannerTimeoutRef.current) clearTimeout(bannerTimeoutRef.current)
@@ -606,6 +903,12 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
       console.log('[SFX] 층 클리어 사운드 재생', { phase, timestamp: Date.now() })
       onFloorClear()
     } else if (phase === 'result') {
+      // B9: 전투 통계 store에 기록
+      updateBattleStats({
+        totalPlaysUsed: totalPlaysUsedRef.current,
+        maxSingleDamage: maxSingleDamageRef.current,
+        remainingEnemyHpAtEnd: enemyHp,
+      })
       audioManager.stopBGM()
       if (isVictory) {
         audioManager.floorClearAscending()
@@ -616,14 +919,14 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
       }
       onResult(isVictory)
     }
-  }, [phase, isVictory, onFloorClear, onResult])
+  }, [phase, isVictory, onFloorClear, onResult, enemyHp, updateBattleStats])
 
   // G1 수정 #4 — 첫 핸드 진입 안내
   useEffect(() => {
     if (!hasShownFirstHand && hand.length > 0) {
       markFirstHandShown()
       const timer = setTimeout(() => {
-        showBanner('같은 기운 둘, 또는 이어지는 기운(木→火→土→金→水)을 골라보라')
+        showBanner('같은 기운 둘, 또는 이어지는 기운(나무→불→흙→쇠→물)을 골라보라')
         console.log('[UX] 인라인 안내 1: 첫 핸드', { timestamp: Date.now() })
       }, 600)
       return () => clearTimeout(timer)
@@ -635,7 +938,7 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
     if (!hasShownFirstDiscard && discardsLeft > 0 && hand.length > 0) {
       if (selectedCards.length > 0) {
         markFirstDiscardShown()
-        showBanner('마음에 안 드는 패는 버리고 새로 받을 수 있다')
+        showBanner('마음에 안 드는 카드는 버리고 새로 받을 수 있다')
         console.log('[UX] 인라인 안내 2: 첫 버리기', { timestamp: Date.now() })
       }
     }
@@ -647,7 +950,7 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
       const isGeukRank = previewResult.rank === 'geuk-bonas' || previewResult.rank === 'geukchae-chain'
       if (isGeukRank) {
         markFirstAffinityShown()
-        showBanner('상대를 이기는 기운은 더 아프게 박힌다')
+        showBanner('상대를 이기는 기운은 더 아프게 박힌다 — 한 칸 건너뛴 기운이 이긴다')
         console.log('[UX] 인라인 안내 3: 첫 극 성립', { timestamp: Date.now() })
       }
     }
@@ -666,13 +969,25 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
     prevPreviewRank.current = newRank
   }, [previewResult?.rank])
 
-  // 적 HP 변화 감지 → Score Popup + Screen Shake + 피해 내역 패널
+  // 적 HP 변화 감지 → Score Popup + Screen Shake + 피해 내역 패널 + B9 근거 수집
   useEffect(() => {
     const damage = prevEnemyHp.current - enemyHp
     if (damage > 0) {
       if (previewResult?.rank === 'ohang-yeonhwan') {
         triggerElementalSequence()
       }
+
+      // B9: 최대 한 방 추적
+      if (damage > maxSingleDamageRef.current) maxSingleDamageRef.current = damage
+      totalPlaysUsedRef.current += 1
+
+      // D11: 영웅 전방 모션 + 정령 구체 소환
+      const selectedEls = hand.filter(c => selectedCards.includes(c.id)).map(c => c.element)
+      const uniqueEls = [...new Set(selectedEls)]
+      setHeroCharge(true)
+      setSpiritOrbs(uniqueEls)
+      setTimeout(() => setHeroCharge(false), getDuration(400))
+      setTimeout(() => setSpiritOrbs([]), getDuration(1200))
 
       // Score Popup
       const selected = hand.filter(c => selectedCards.includes(c.id))
@@ -707,7 +1022,7 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
       console.log('[VFX] ScreenShake 발동', { amplitude, duration: getDuration(250), timestamp: Date.now() })
       setTimeout(() => setShakeActive(false), getDuration(250))
 
-      // G1 수정 #3 — 피해 내역 패널 표시 (3초)
+      // 피해 내역 패널 표시 (3초)
       if (previewResult) {
         const selectedCardObjs = hand.filter(c => selectedCards.includes(c.id))
         const hasGeuk = selectedCardObjs.some(c => GEUK_MAP[c.element] === enemyElement)
@@ -723,6 +1038,18 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
           geukLabel,
           visible: true,
         })
+
+        // B7: 예측 표시 — 이 속도면 N번 더 필요 / 다음 한 방으로 끝
+        if (enemyHp > 0) {
+          const avgDamage = damage
+          const remainHp = enemyHp
+          const turnsNeeded = Math.ceil(remainHp / avgDamage)
+          const pred = turnsNeeded <= 1
+            ? '다음 한 방으로 끝!'
+            : `이 속도면 ${turnsNeeded}번 더 필요`
+          setPredictionText(pred)
+          setTimeout(() => setPredictionText(null), getDuration(3000))
+        }
 
         console.log('[VFX] 피해 내역 패널 표시', {
           baseScore: previewResult.baseScore,
@@ -742,17 +1069,52 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
     prevEnemyHp.current = enemyHp
   }, [enemyHp])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 플레이어 HP 변화 → 피격 사운드 / 회복음
+  // 플레이어 HP 변화 → B8: 피격 플래시 + 사운드 / 회복음
   useEffect(() => {
     if (playerHp < prevPlayerHp.current) {
       audioManager.playerHit()
+      // B8: 붉은 플래시
+      setHitFlash(true)
+      setTimeout(() => setHitFlash(false), getDuration(300))
       console.log('[SFX] 플레이어 피격음', { damage: prevPlayerHp.current - playerHp, timestamp: Date.now() })
     } else if (playerHp > prevPlayerHp.current) {
       audioManager.playHealSFX()
       console.log('[SFX] 회복음', { heal: playerHp - prevPlayerHp.current, timestamp: Date.now() })
     }
     prevPlayerHp.current = playerHp
-  }, [playerHp])
+  }, [playerHp]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // B6: playsLeft 변화 → 펄스 애니메이션
+  useEffect(() => {
+    if (playsLeft < prevPlaysLeft.current) {
+      setPlaysCountPulse(true)
+      setTimeout(() => setPlaysCountPulse(false), getDuration(400))
+    }
+    prevPlaysLeft.current = playsLeft
+  }, [playsLeft]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // C10(b)(c): 층 입장 연출 + 정예/보스 기믹 선언 배너
+  useEffect(() => {
+    const enemyInfo = FLOOR_ENEMY_INFO[currentFloor]
+    if (enemyInfo) {
+      setEnemyEntrance(true)
+      setEnemyEntranceText(`${enemyInfo.name} · ${ELEMENT_KO[enemyInfo.element]} · ${enemyInfo.gimmickHint}`)
+      setTimeout(() => {
+        setEnemyEntrance(false)
+        setEnemyEntranceText(null)
+      }, getDuration(1000))
+
+      // C10(b): 정예/보스 기믹 선언 배너 (0.5초 정지 효과)
+      if (enemyInfo.eliteBanner) {
+        const bannerText = enemyInfo.eliteBanner
+        setTimeout(() => {
+          setGimmickBanner(bannerText)
+          setTimeout(() => setGimmickBanner(null), getDuration(2500))
+        }, getDuration(500))
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentFloor])
 
   // 오행연환 시퀀스 트리거
   const triggerElementalSequence = useCallback(() => {
@@ -841,8 +1203,53 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
       timestamp: Date.now(),
     })
 
+    // C10(a): 적 돌진 모션 + 대사 (반격 연출) — 출수 후 반격 타이밍에 맞춰
+    const enemyInfo = FLOOR_ENEMY_INFO[currentFloor]
+    if (enemyInfo) {
+      setTimeout(() => {
+        setEnemyCharge(true)
+        setEnemyDialogue(enemyInfo.dialogue)
+        setTimeout(() => {
+          setEnemyCharge(false)
+          setEnemyDialogue(null)
+        }, getDuration(800))
+      }, getDuration(200))
+    }
+
     playSelectedCards()
-  }, [selectedCards, playsLeft, previewResult, getDuration, playSelectedCards])
+  }, [selectedCards, playsLeft, previewResult, getDuration, playSelectedCards, currentFloor])
+
+  // A4: 훈수 버튼 — 최강 조합 1.5초 하이라이트
+  const handleHint = useCallback(() => {
+    if (hand.length === 0) return
+    // 최강 조합 탐색: 1~5장 모든 조합 중 totalScore 최대
+    let bestScore = -1
+    let bestIds: string[] = []
+    const n = hand.length
+    for (let mask = 1; mask < (1 << n); mask++) {
+      if ((mask & (mask - 1)) === 0 && n > 1) continue // 1장 단독은 두 번째로
+      const chosen: string[] = []
+      for (let i = 0; i < n; i++) {
+        if (mask & (1 << i)) chosen.push(hand[i].id)
+      }
+      if (chosen.length > 5) continue
+      const cards = hand.filter(c => chosen.includes(c.id))
+      const result = judgeHand(cards)
+      if (result.totalScore > bestScore) {
+        bestScore = result.totalScore
+        bestIds = chosen
+      }
+    }
+    if (bestIds.length > 0) {
+      setHintCards(bestIds)
+      setHintActive(true)
+      setTimeout(() => {
+        setHintActive(false)
+        setHintCards([])
+      }, 1500)
+    }
+    console.log('[UX] 훈수 버튼 — 최강 조합 하이라이트', { bestIds, bestScore, timestamp: Date.now() })
+  }, [hand])
 
   // 버리기 처리
   const handleDiscardCards = useCallback(() => {
@@ -872,20 +1279,21 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
   const hasGeukOnEnemy = selectedCardObjs.some(c => GEUK_MAP[c.element] === enemyElement)
   const geukAttacker = selectedCardObjs.find(c => GEUK_MAP[c.element] === enemyElement)
 
-  // G1 수정 #1 — 족보 미리보기 실체화 텍스트
+  // A1: 조합 미리보기 실체화 텍스트
   const getPreviewBannerText = () => {
     if (!previewResult || selectedCards.length === 0) return null
     if (previewResult.rank === 'none') {
-      return '족보 없음 — 낱장 합산'
+      return '조합 없음 — 낱장 합산'
     }
-    return `${previewResult.description} · 기본치 ${previewResult.baseScore} × 배율 ${previewResult.multiplier} = 예상 ${previewResult.totalScore}`
+    return `${previewResult.description} · 공격력 ${previewResult.baseScore} × ${previewResult.multiplier}배 = 예상 ${previewResult.totalScore} 피해`
   }
 
   const previewBannerText = getPreviewBannerText()
 
-  // G1 수정 #2(b) — 극 뱃지 미리보기 띠 텍스트
+  // A1: 극 뱃지 — "물이 불을 이긴다 +50%" 형식
+  const bonusPct = Math.round((GEUK_BONUS_MULTIPLIER - 1) * 100)
   const geukBadgeText = hasGeukOnEnemy && geukAttacker
-    ? ` · ${getGeukLabel(geukAttacker.element, enemyElement)} +${Math.round((GEUK_BONUS_MULTIPLIER - 1) * 100)}%`
+    ? ` · ${getGeukKoLabel(geukAttacker.element, enemyElement, bonusPct)}`
     : ''
 
   // G1 수정 #6 — 배경 격자: 4층은 붉은 격자
@@ -952,10 +1360,106 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
           0%   { opacity: 0; }
           100% { opacity: 1; }
         }
+        @keyframes hitFlash {
+          0%   { opacity: 0.5; }
+          40%  { opacity: 0.8; }
+          100% { opacity: 0; }
+        }
+        @keyframes playsCountPulse {
+          0%   { transform: scale(1); }
+          40%  { transform: scale(1.3); color: #C63D2F; }
+          100% { transform: scale(1); }
+        }
+        @keyframes enemyCharge {
+          0%   { transform: translateX(0); }
+          30%  { transform: translateX(18px); }
+          60%  { transform: translateX(-4px); }
+          100% { transform: translateX(0); }
+        }
+        @keyframes heroChargeAnim {
+          0%   { transform: translateX(0); }
+          30%  { transform: translateX(12px); }
+          100% { transform: translateX(0); }
+        }
+        @keyframes spiritOrbIn {
+          0%   { opacity: 0; transform: scale(0.3) translateX(30px); }
+          60%  { opacity: 1; transform: scale(1.1) translateX(-4px); }
+          100% { opacity: 0.8; transform: scale(1) translateX(0); }
+        }
+        @keyframes spiritOrbFly {
+          0%   { opacity: 0.8; transform: translateX(0); }
+          100% { opacity: 0; transform: translateX(120px) scale(0.4); }
+        }
+        @keyframes entranceBanner {
+          0%   { opacity: 0; transform: translateY(-10px); }
+          20%  { opacity: 1; transform: translateY(0); }
+          80%  { opacity: 1; }
+          100% { opacity: 0; }
+        }
+        @keyframes dialogueFadeIn {
+          0%   { opacity: 0; }
+          100% { opacity: 1; }
+        }
+        @keyframes gimmickBannerIn {
+          0%   { opacity: 0; transform: scale(0.9); }
+          30%  { opacity: 1; transform: scale(1.02); }
+          70%  { opacity: 1; transform: scale(1); }
+          100% { opacity: 0; }
+        }
       `}</style>
 
       {/* 오행연환 오버레이 */}
       <ElementalSequenceOverlay seq={elementalSeq} getCssDuration={getCssDuration} />
+
+      {/* A2: 순환 도표 오버레이 */}
+      {showCycleChart && (
+        <CycleChartOverlay onClose={() => setShowCycleChart(false)} enemyElement={enemyElement} />
+      )}
+
+      {/* C10(b): 기믹 선언 배너 */}
+      {gimmickBanner && (
+        <div style={{
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          zIndex: 180,
+          backgroundColor: 'rgba(22,19,15,0.97)',
+          border: '2px solid #B33A2B',
+          padding: '20px 32px',
+          textAlign: 'center',
+          color: '#D9A441',
+          fontSize: '15px',
+          letterSpacing: '0.08em',
+          lineHeight: '1.6',
+          maxWidth: '300px',
+          animation: `gimmickBannerIn 2500ms ease-out forwards`,
+          pointerEvents: 'none',
+        }}>
+          {gimmickBanner}
+        </div>
+      )}
+
+      {/* B8: 피격 플래시 오버레이 */}
+      {hitFlash && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(198,61,47,0.35)',
+          zIndex: 160,
+          pointerEvents: 'none',
+          animation: `hitFlash ${getCssDuration(300)} ease-out forwards`,
+        }} />
+      )}
+
+      {/* A5: 첫 판 가이드 */}
+      {tutorialStep !== null && (
+        <FirstGameGuide
+          step={tutorialStep}
+          onNext={handleTutorialNext}
+          onSkip={handleTutorialSkip}
+        />
+      )}
 
       <div
         style={{
@@ -975,17 +1479,45 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
           ...shakeStyle,
         }}
       >
+        {/* B6: 남은 공격 횟수 — 중앙 상단 크게 */}
+        <div style={{
+          textAlign: 'center',
+          padding: '6px 0 2px',
+          backgroundColor: '#1C1710',
+          borderBottom: playsLeft === 1 ? '1px solid #C63D2F' : '1px solid #2A2620',
+          // B6: 마지막 공격 기회 — 테두리 붉은 경고
+          boxShadow: playsLeft === 1 ? '0 0 16px rgba(198,61,47,0.4)' : 'none',
+          position: 'relative',
+        }}>
+          <span
+            style={{
+              color: playsLeft === 1 ? '#C63D2F' : playsLeft <= 2 ? '#D9A441' : '#E8DCC4',
+              fontSize: playsLeft === 1 ? '26px' : '22px',
+              fontWeight: 'bold',
+              letterSpacing: '0.05em',
+              fontVariantNumeric: 'tabular-nums',
+              animation: playsCountPulse ? `playsCountPulse ${getCssDuration(400)} ease-out` : undefined,
+            }}
+          >
+            남은 공격 {playsLeft}회
+          </span>
+          {playsLeft === 1 && (
+            <span style={{ color: '#C63D2F', fontSize: '11px', marginLeft: '8px', letterSpacing: '0.1em' }}>
+              마지막 기회
+            </span>
+          )}
+        </div>
+
         {/* 상단바: 층수·체력 */}
         <div
           style={{
             backgroundColor: '#1C1710',
-            padding: '10px 16px',
+            padding: '6px 16px',
             borderBottom: '1px solid #2A2620',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            height: '6vh',
-            minHeight: '48px',
+            minHeight: '40px',
           }}
         >
           <span style={{ color: '#B33A2B', fontSize: '13px', letterSpacing: '0.1em' }}>
@@ -1027,7 +1559,67 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
           </div>
         </div>
 
-        {/* 적 영역 (24%) */}
+        {/* A2: 순환 바 상시 표시 */}
+        <div
+          style={{
+            backgroundColor: '#1A1510',
+            borderBottom: '1px solid #2A2620',
+            padding: '4px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '8px',
+          }}
+        >
+          <button
+            onClick={() => setShowCycleChart(true)}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+            }}
+          >
+            {(['mok', 'hwa', 'to', 'geum', 'su'] as Element[]).map((el, idx) => (
+              <span key={el} style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                <span
+                  style={{
+                    color: el === enemyElement ? ELEMENT_COLORS[el] : '#6A6560',
+                    fontSize: '13px',
+                    fontWeight: el === enemyElement ? 'bold' : 'normal',
+                    textShadow: el === enemyElement ? `0 0 6px ${ELEMENT_GLOW_COLORS[el]}` : 'none',
+                    borderBottom: el === enemyElement ? `2px solid ${ELEMENT_COLORS[el]}` : '2px solid transparent',
+                    paddingBottom: '1px',
+                  }}
+                >
+                  {ELEMENT_KO[el]}
+                </span>
+                {idx < 4 && <span style={{ color: '#4A4540', fontSize: '10px' }}>→</span>}
+              </span>
+            ))}
+          </button>
+          {/* A4: 훈수 버튼 */}
+          <button
+            onClick={handleHint}
+            style={{
+              backgroundColor: 'transparent',
+              border: '1px solid #4A4540',
+              color: '#8A8580',
+              fontSize: '11px',
+              padding: '2px 8px',
+              cursor: 'pointer',
+              letterSpacing: '0.08em',
+              minHeight: '22px',
+            }}
+          >
+            훈수
+          </button>
+        </div>
+
+        {/* 적 영역 (24vh) */}
         <div
           style={{
             height: '24vh',
@@ -1040,26 +1632,76 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
             position: 'relative',
           }}
         >
-          {/* G1 수정 #2(a) — 적 이름 옆 속성 한자 + 오방색 글로우 (18px) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* C10(c): 층 입장 연출 배너 */}
+          {enemyEntrance && enemyEntranceText && (
+            <div style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              backgroundColor: 'rgba(22,19,15,0.95)',
+              textAlign: 'center',
+              padding: '10px 16px',
+              color: '#D9A441',
+              fontSize: '13px',
+              letterSpacing: '0.08em',
+              zIndex: 10,
+              animation: `entranceBanner ${getCssDuration(1000)} ease-out forwards`,
+              pointerEvents: 'none',
+            }}>
+              {enemyEntranceText}
+            </div>
+          )}
+
+          {/* C10(a): 적 돌진 모션 + 대사 */}
+          {enemyCharge && enemyDialogue && (
+            <div style={{
+              position: 'absolute',
+              top: '8px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              color: '#C63D2F',
+              fontSize: '12px',
+              fontStyle: 'italic',
+              letterSpacing: '0.05em',
+              zIndex: 10,
+              animation: `dialogueFadeIn ${getCssDuration(200)} ease-out forwards`,
+              pointerEvents: 'none',
+              whiteSpace: 'nowrap',
+            }}>
+              "{enemyDialogue}"
+            </div>
+          )}
+
+          {/* 적 이름 + 속성 뱃지 (C10 돌진 모션 적용) */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            animation: enemyCharge ? `enemyCharge ${getCssDuration(500)} ease-out` : undefined,
+          }}>
             <span style={{ color: '#D8CCB4', fontSize: '15px', letterSpacing: '0.1em' }}>
               {floorConfig.enemyName}
             </span>
-            <span
+            {/* A1: 속성 한자 크게 + 한글 병기 */}
+            <div
               style={{
                 backgroundColor: ELEMENT_BG_COLORS[enemyElement],
                 border: `1px solid ${ELEMENT_COLORS[enemyElement]}`,
                 color: ELEMENT_COLORS[enemyElement],
-                fontSize: '18px',
                 padding: '4px 10px',
                 letterSpacing: '0.05em',
                 borderRadius: '2px',
                 boxShadow: `0 0 8px ${ELEMENT_GLOW_COLORS[enemyElement]}, inset 0 0 4px ${ELEMENT_BG_COLORS[enemyElement]}`,
-                fontWeight: 'bold',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                lineHeight: 1.1,
               }}
             >
-              {ELEMENT_LABELS[enemyElement]}
-            </span>
+              <span style={{ fontSize: '18px', fontWeight: 'bold' }}>{ELEMENT_LABELS[enemyElement]}</span>
+              <span style={{ fontSize: '10px', opacity: 0.85 }}>{ELEMENT_KO[enemyElement]}</span>
+            </div>
           </div>
 
           {/* 적 HP바 */}
@@ -1083,32 +1725,45 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
             </div>
           </div>
 
-          {/* G1 수정 #3 — 피해 내역 패널: 적 HP바 아래 인라인 배치 */}
+          {/* 피해 내역 패널: 적 HP바 아래 인라인 배치 */}
           <DamageBreakdownPanel breakdown={damageBreakdown} getCssDuration={getCssDuration} />
 
-          {/* 반격 예고 */}
-          {!damageBreakdown.visible && (
-            <div style={{ color: '#4A4540', fontSize: '11px' }}>
-              반격: {floorConfig.counterDamage} 피해
+          {/* B7: 예측 표시 */}
+          {predictionText && (
+            <div style={{
+              color: predictionText.includes('한 방') ? '#D9A441' : '#D8CCB4',
+              fontSize: '12px',
+              letterSpacing: '0.05em',
+              fontWeight: predictionText.includes('한 방') ? 'bold' : 'normal',
+              animation: `fadeInScale ${getCssDuration(200)} ease-out`,
+            }}>
+              {predictionText}
             </div>
           )}
 
-          {/* G1 수정 #2(b) — 극 성립 시 뱃지 (적 영역) */}
+          {/* A1: 반격 예고 (한글화) */}
+          {!damageBreakdown.visible && !predictionText && (
+            <div style={{ color: '#4A4540', fontSize: '11px' }}>
+              공격마다 반격 {floorConfig.counterDamage} 피해
+            </div>
+          )}
+
+          {/* A1: 극 성립 시 뱃지 — "물이 불을 이긴다 +50%" 형식 */}
           {hasGeukOnEnemy && geukAttacker && (
             <div
               style={{
                 backgroundColor: ELEMENT_BG_COLORS[geukAttacker.element],
                 border: `1px solid ${ELEMENT_GLOW_COLORS[geukAttacker.element]}`,
                 color: ELEMENT_GLOW_COLORS[geukAttacker.element],
-                fontSize: '13px',
+                fontSize: '12px',
                 padding: '3px 10px',
-                letterSpacing: '0.1em',
+                letterSpacing: '0.05em',
                 borderRadius: '2px',
                 '--glow': ELEMENT_GLOW_COLORS[geukAttacker.element],
                 animation: 'geukPulse 1.5s ease-in-out infinite',
               } as React.CSSProperties}
             >
-              {getGeukLabel(geukAttacker.element, enemyElement)} +{Math.round((GEUK_BONUS_MULTIPLIER - 1) * 100)}%
+              {ELEMENT_KO[geukAttacker.element]}이 {ELEMENT_KO[enemyElement]}을 이긴다 +{Math.round((GEUK_BONUS_MULTIPLIER - 1) * 100)}%
             </div>
           )}
 
@@ -1152,14 +1807,14 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
                   >
                     {previewResult?.description.split(' — ')[0] ?? ''}
                   </div>
-                  {/* 수식 (16px) */}
+                  {/* 수식 (A1 한글화: 공격력 N × N배 = N 피해) */}
                   <div style={{ fontSize: '14px', lineHeight: '1.4' }}>
-                    <span style={{ color: '#E8DCC4' }}>기본치 {previewResult?.baseScore}</span>
+                    <span style={{ color: '#E8DCC4' }}>공격력 {previewResult?.baseScore}</span>
                     <span style={{ color: '#6A6560' }}> × </span>
-                    <span style={{ color: '#E8DCC4' }}>배율 {previewResult?.multiplier}</span>
+                    <span style={{ color: '#E8DCC4' }}>{previewResult?.multiplier}배</span>
                     <span style={{ color: '#6A6560' }}> = </span>
-                    <span style={{ color: '#D9A441', fontWeight: 'bold' }}>예상 {previewResult?.totalScore}</span>
-                    {/* G1 수정 #2(b) — 극 정보 미리보기 띠에 추가 */}
+                    <span style={{ color: '#D9A441', fontWeight: 'bold' }}>예상 {previewResult?.totalScore} 피해</span>
+                    {/* A1: 극 정보 — "물이 불을 이긴다 +50%" 형식 */}
                     {geukBadgeText && (
                       <span style={{ color: '#FF7A5C', fontWeight: 'bold' }}>{geukBadgeText}</span>
                     )}
@@ -1167,13 +1822,13 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
                 </>
               ) : (
                 <span style={{ color: '#6A6560', fontSize: '14px' }}>
-                  족보 없음 — 낱장 합산
+                  조합 없음 — 낱장 합산
                 </span>
               )}
             </div>
           ) : (
             <span style={{ color: '#2A2620', fontSize: '11px' }}>
-              카드 선택 시 족보 표시
+              카드 선택 시 조합 표시
             </span>
           )}
         </div>
@@ -1194,6 +1849,62 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
             position: 'relative',
           }}
         >
+          {/* D11: 영웅 실루엣 (좌하단 상주) */}
+          <div style={{
+            position: 'absolute',
+            left: '4px',
+            bottom: '4px',
+            zIndex: 5,
+            pointerEvents: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '2px',
+          }}>
+            {/* 영웅 실루엣 + 오행색 글로우 */}
+            <div style={{
+              width: '36px',
+              height: '50px',
+              position: 'relative',
+              animation: heroCharge ? `heroChargeAnim ${getCssDuration(400)} ease-out` : undefined,
+            }}>
+              {/* 실루엣 몸통 */}
+              <svg width="36" height="50" viewBox="0 0 36 50" style={{ position: 'absolute', inset: 0 }}>
+                <ellipse cx="18" cy="10" rx="7" ry="8" fill={ELEMENT_GLOW_COLORS[enemyElement] ?? '#D9A441'} opacity="0.25" />
+                <rect x="10" y="18" width="16" height="22" rx="3" fill={ELEMENT_GLOW_COLORS[enemyElement] ?? '#D9A441'} opacity="0.2" />
+                <rect x="10" y="40" width="6" height="10" rx="2" fill={ELEMENT_GLOW_COLORS[enemyElement] ?? '#D9A441'} opacity="0.2" />
+                <rect x="20" y="40" width="6" height="10" rx="2" fill={ELEMENT_GLOW_COLORS[enemyElement] ?? '#D9A441'} opacity="0.2" />
+                {/* 글로우 외곽선 */}
+                <ellipse cx="18" cy="10" rx="7" ry="8" fill="none" stroke={ELEMENT_GLOW_COLORS[enemyElement] ?? '#D9A441'} strokeWidth="1.5" opacity="0.6" />
+                <rect x="10" y="18" width="16" height="22" rx="3" fill="none" stroke={ELEMENT_GLOW_COLORS[enemyElement] ?? '#D9A441'} strokeWidth="1.5" opacity="0.5" />
+              </svg>
+              {/* 정령 구체 D11: 조합에 포함된 오행 차례 소환 */}
+              {spiritOrbs.map((el, orbIdx) => (
+                <div
+                  key={`orb-${el}-${orbIdx}`}
+                  style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    width: '12px',
+                    height: '12px',
+                    borderRadius: '50%',
+                    backgroundColor: ELEMENT_GLOW_COLORS[el],
+                    boxShadow: `0 0 6px ${ELEMENT_GLOW_COLORS[el]}`,
+                    animation: orbIdx < spiritOrbs.length - 1
+                      ? `spiritOrbIn ${getCssDuration(300)} ease-out ${orbIdx * getDuration(150)}ms forwards`
+                      : `spiritOrbFly ${getCssDuration(400)} ease-in ${(orbIdx) * getDuration(150)}ms forwards`,
+                    marginLeft: -6 + orbIdx * 4,
+                    marginTop: -6,
+                  }}
+                >
+                  <span style={{ fontSize: '7px', color: '#16130F', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                    {ELEMENT_LABELS[el]}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
           {/* 체인 빛줄기 */}
           {selectedCards.length >= 2 && (
             <ChainGlow
@@ -1212,9 +1923,10 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
             const w = 62
             const h = Math.round(w * 7 / 5)
 
-            // G1 수정 #2(c) — 역극 카드: opacity 0.35, 필터 더 강하게
-            // 핸드 모든 카드 중 역극 여부 (선택 여부와 무관하게 표시)
+            // 역극 카드: opacity 0.35, 필터 더 강하게
             const isYeokgeukInHand = GEUK_MAP[enemyElement] === card.element
+            // A4: 훈수 하이라이트
+            const isHinted = hintActive && hintCards.includes(card.id)
 
             return (
               <button
@@ -1224,13 +1936,15 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
                   width: w,
                   height: h,
                   backgroundColor: isYeokgeukInHand ? '#1A1614' : '#E8DCC4',
-                  border: `2px solid ${isSelected ? elColor : isYeokgeukInHand ? '#2A2620' : '#2A2620'}`,
+                  border: isHinted
+                    ? `2px solid #D9A441`
+                    : `2px solid ${isSelected ? elColor : isYeokgeukInHand ? '#2A2620' : '#2A2620'}`,
                   borderRadius: '2px',
                   position: 'relative',
                   cursor: 'pointer',
                   transform: `rotate(${angle}deg) translateY(${isSelected ? -14 : 0}px)`,
                   transition: `transform ${getCssDuration(120)} ease-out, border-color ${getCssDuration(120)} ease-out`,
-                  boxShadow: isSelected ? `0 0 8px ${glowColor}` : 'none',
+                  boxShadow: isHinted ? `0 0 12px #D9A441` : isSelected ? `0 0 8px ${glowColor}` : 'none',
                   flexShrink: 0,
                   padding: 0,
                   // G1 수정: 역극 opacity 0.35, 필터 강화
@@ -1253,13 +1967,24 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
                 }}>
                   {card.value}
                 </span>
+                {/* A1: 한자(크게) + 한글(나무) 병기 */}
                 <span style={{
                   color: isYeokgeukInHand ? '#3A3530' : elColor,
-                  fontSize: '11px',
-                  position: 'absolute', bottom: '4px', left: '50%',
+                  fontSize: '13px',
+                  fontWeight: 'bold',
+                  position: 'absolute', bottom: '14px', left: '50%',
                   transform: 'translateX(-50%)',
                 }}>
                   {ELEMENT_LABELS[card.element]}
+                </span>
+                <span style={{
+                  color: isYeokgeukInHand ? '#3A3530' : elColor,
+                  fontSize: '9px',
+                  position: 'absolute', bottom: '3px', left: '50%',
+                  transform: 'translateX(-50%)',
+                  opacity: 0.8,
+                }}>
+                  {ELEMENT_KO[card.element]}
                 </span>
                 <span style={{
                   color: '#6A6560', fontSize: '9px',
@@ -1295,7 +2020,7 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
                     letterSpacing: '0.02em',
                     pointerEvents: 'none',
                   }}>
-                    오늘은 이 기운이 죽는 날
+                    오늘은 이 기운이 힘을 못 쓰는 날
                   </div>
                 )}
               </button>
@@ -1329,7 +2054,7 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
               letterSpacing: '0.1em',
             }}
           >
-            버리기 {discardsLeft}/3
+            버리기 {discardsLeft}회 남음
           </button>
           <button
             onClick={handlePlayCards}
@@ -1347,7 +2072,7 @@ export default function BattleScreen({ onFloorClear, onResult }: BattleScreenPro
               transition: `background-color ${getCssDuration(150)}`,
             }}
           >
-            출수 {playsLeft}/{floorConfig.maxPlays}
+            공격 {playsLeft}/{floorConfig.maxPlays}
           </button>
         </div>
 

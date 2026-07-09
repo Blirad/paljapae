@@ -14,6 +14,13 @@ import {
 import { judgeHand } from '../engine/pokerHandJudge'
 import type { HandJudgeResult } from '../types/game'
 
+// B9: 전투 통계 (결과 근거)
+interface BattleStats {
+  totalPlaysUsed: number
+  maxSingleDamage: number
+  remainingEnemyHpAtEnd: number
+}
+
 interface GameStore extends GameState {
   // 실시간 족보 미리보기
   previewResult: HandJudgeResult | null
@@ -22,6 +29,9 @@ interface GameStore extends GameState {
   hasShownFirstHand: boolean
   hasShownFirstDiscard: boolean
   hasShownFirstAffinity: boolean
+
+  // B9: 전투 통계
+  battleStats: BattleStats
 
   // 액션
   startGame: () => void
@@ -33,6 +43,13 @@ interface GameStore extends GameState {
   markFirstHandShown: () => void
   markFirstDiscardShown: () => void
   markFirstAffinityShown: () => void
+  updateBattleStats: (stats: Partial<BattleStats>) => void
+}
+
+const INITIAL_BATTLE_STATS: BattleStats = {
+  totalPlaysUsed: 0,
+  maxSingleDamage: 0,
+  remainingEnemyHpAtEnd: 0,
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -44,8 +61,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   hasShownFirstDiscard: false,
   hasShownFirstAffinity: false,
 
+  // B9: 전투 통계 초기값
+  battleStats: { ...INITIAL_BATTLE_STATS },
+
   startGame: () => {
-    set({ ...createInitialGameState(), previewResult: null, hasShownFirstHand: false, hasShownFirstDiscard: false, hasShownFirstAffinity: false })
+    set({ ...createInitialGameState(), previewResult: null, hasShownFirstHand: false, hasShownFirstDiscard: false, hasShownFirstAffinity: false, battleStats: { ...INITIAL_BATTLE_STATS } })
   },
 
   toggleCardSelect: (cardId: string) => {
@@ -88,10 +108,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   resetGame: () => {
-    set({ ...createInitialGameState(), previewResult: null, hasShownFirstHand: false, hasShownFirstDiscard: false, hasShownFirstAffinity: false })
+    set({ ...createInitialGameState(), previewResult: null, hasShownFirstHand: false, hasShownFirstDiscard: false, hasShownFirstAffinity: false, battleStats: { ...INITIAL_BATTLE_STATS } })
   },
 
   markFirstHandShown: () => set({ hasShownFirstHand: true }),
   markFirstDiscardShown: () => set({ hasShownFirstDiscard: true }),
   markFirstAffinityShown: () => set({ hasShownFirstAffinity: true }),
+
+  updateBattleStats: (stats: Partial<BattleStats>) => {
+    const current = get().battleStats
+    set({ battleStats: { ...current, ...stats } })
+  },
 }))

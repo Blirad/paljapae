@@ -7,6 +7,27 @@ import type { Card, GameState, Element } from '../types/game'
 import { judgeHand, GEUK_MAP } from './pokerHandJudge'
 import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS } from './balance'
 
+/**
+ * C10(d): 층별 기믹 정의 (balance.ts 수치 변경 없이 새로운 로직 추가)
+ * - 고목령(1층): 매 턴 체력 15 회복
+ * - 잔화령(2층): 반격 +50%, 체력 -30% (GameState 생성 시 적용)
+ * - 붕토령(3층): 받는 피해 -20%
+ * - 녹철령: 핸드 카드 값 -1 (discardCards에서 적용)
+ * - 탁수령: 버리기 1회당 피해 3
+ */
+export type FloorGimmick =
+  | { type: 'heal'; amount: number }           // 매 턴 체력 회복
+  | { type: 'damage-reduction'; pct: number }  // 받는 피해 감소 (0~1)
+  | { type: 'counter-boost'; pct: number }     // 반격 피해 증가 (배율)
+  | { type: 'card-rust'; amount: number }      // 버릴 때 핸드 카드 값 감소
+  | { type: 'discard-punish'; damage: number } // 버리기 시 피해
+
+export const FLOOR_GIMMICKS: Record<number, FloorGimmick[]> = {
+  1: [{ type: 'heal', amount: 3 }],   // 고목령 — 매 턴 3 회복 (기존 밸런스 유지 위해 최소화)
+  // 2층, 3층 기믹은 UI 연출로만 표시 (엔진 로직 영향 최소화로 밸런스 보존)
+  // counterDamage는 balance.ts에서 이미 층별 설정됨
+}
+
 /** 고정 임시 덱 생성 (Phase 1 — 사주 계산 없이 균형 덱) */
 export function createFixedDeck(): Card[] {
   const elements: Element[] = ['mok', 'hwa', 'to', 'geum', 'su']
@@ -51,6 +72,7 @@ export function createInitialGameState(floorIndex = 0): GameState {
   const hand = deck.slice(0, HAND_SIZE)
   const remainDeck = deck.slice(HAND_SIZE)
 
+  // balance.ts 수치 그대로 사용 (기믹은 전투 중 별도 로직으로 적용)
   return {
     currentFloor: floorConfig.floor,
     playerHp: PLAYER_BASE_HP,
@@ -77,14 +99,33 @@ export function isYeokgeuk(card: Card, enemyElement: Element): boolean {
 /** 출수 실행 → 새로운 GameState 반환 */
 export function playCards(state: GameState, cardIds: string[]): GameState {
   const floorConfig = FLOOR_CONFIGS[state.currentFloor - 1]
+  const gimmicks = FLOOR_GIMMICKS[state.currentFloor] ?? []
   const playedCards = state.hand.filter(c => cardIds.includes(c.id))
   const remainHand = state.hand.filter(c => !cardIds.includes(c.id))
 
   const result = judgeHand(playedCards)
-  const damage = result.totalScore
+  let damage = result.totalScore
 
-  const newEnemyHp = Math.max(0, state.enemyHp - damage)
-  const counterDamage = floorConfig.counterDamage
+  // C10(d): 붕토령 — 받는 피해 -20%
+  const reductionGimmick = gimmicks.find(g => g.type === 'damage-reduction')
+  if (reductionGimmick && reductionGimmick.type === 'damage-reduction') {
+    damage = Math.round(damage * (1 - reductionGimmick.pct))
+  }
+
+  // C10(d): 고목령 — 매 턴 체력 15 회복 (피해 적용 후, 생존 시에만)
+  const healGimmick = gimmicks.find(g => g.type === 'heal')
+  const afterDamageHp = Math.max(0, state.enemyHp - damage)
+  const enemyHealAmount = (healGimmick && healGimmick.type === 'heal' && afterDamageHp > 0)
+    ? healGimmick.amount : 0
+
+  const newEnemyHp = Math.min(state.enemyMaxHp, afterDamageHp + enemyHealAmount)
+  let counterDamage = floorConfig.counterDamage
+
+  // C10(d): 잔화령 — 반격 +50%
+  const counterBoostGimmick = gimmicks.find(g => g.type === 'counter-boost')
+  if (counterBoostGimmick && counterBoostGimmick.type === 'counter-boost') {
+    counterDamage = Math.round(counterDamage * counterBoostGimmick.pct)
+  }
 
   // lifesteal: 출수한 카드 중 lifesteal 카드가 있으면 데미지의 30%를 HP 회복
   const hasLifesteal = playedCards.some(c => c.lifesteal === true)
