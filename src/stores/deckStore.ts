@@ -1,16 +1,19 @@
 /**
- * 팔자전 — 덱 관리 Store
+ * 팔자전 — 덱 관리 Store (Phase 2)
+ * - 사주 프로필 있을 시 사주 기반 덱 생성
+ * - 없을 시 고정 덱 (Phase 1 호환)
  */
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { DeckCard } from '../types/deck'
 import { createFixedDeck } from '../engine/paljajeonEngine'
-import type { Card } from '../types/game'
+import { generateSajuDeck } from '../engine/deckGenerator'
+import type { Card, SavedHeroProfile } from '../types/game'
 
 interface DeckStore {
   deck: DeckCard[]
-  initDeck: () => void
+  initDeck: (heroProfile?: SavedHeroProfile | null) => void
   addCard: (card: Card) => void
 }
 
@@ -27,9 +30,14 @@ export const useDeckStore = create<DeckStore>()(
     (set) => ({
       deck: [],
 
-      initDeck: () => {
-        const fixedDeck = createFixedDeck().map(toDeckCard)
-        set({ deck: fixedDeck })
+      initDeck: (heroProfile?: SavedHeroProfile | null) => {
+        let cards: Card[]
+        if (heroProfile?.elementDist && heroProfile?.deckSeed) {
+          cards = generateSajuDeck(heroProfile.elementDist, heroProfile.deckSeed)
+        } else {
+          cards = createFixedDeck()
+        }
+        set({ deck: cards.map(toDeckCard) })
       },
 
       addCard: (card: Card) => {

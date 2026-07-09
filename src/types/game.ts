@@ -84,4 +84,20 @@ export interface SajuInfo {
   birthDay: number
   birthHour?: number
   isLunar: boolean
+  gender?: 'male' | 'female'
+}
+
+/** localStorage 저장 영웅 프로필 키 */
+export const HERO_PROFILE_STORAGE_KEY = 'paljajeon_hero_profile'
+
+/** localStorage 영구 저장 데이터 구조 */
+export interface SavedHeroProfile {
+  sajuInfo: SajuInfo
+  dayPillarChar: string     // 예: 壬寅
+  ilganChar: string         // 일간 한자 (甲~癸)
+  ilganElement: Element     // 일간 오행
+  iljiChar: string          // 일지 한자 (子~亥)
+  elementDist: Record<Element, number>
+  deckSeed: number
+  savedAt: string           // ISO timestamp
 }

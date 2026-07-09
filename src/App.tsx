@@ -1,10 +1,11 @@
 /**
- * 팔자전 八字戰 — App 진입점
- * 8개 화면만. 라우팅 clean.
- * 영웅 선택 화면 없음. 에너지 없음.
+ * 팔자전 八字戰 — App 진입점 (Phase 2)
+ * - localStorage 영구 저장 (paljajeon_hero_profile)
+ * - 재방문 시 사주 재입력 없이 홈으로 바로 진행
+ * - 8개 화면만. 라우팅 clean.
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import './index.css'
 
 import { GameContextProvider } from './context/GameContext'
@@ -12,31 +13,86 @@ import TitleScreen from './components/TitleScreen'
 import SajuInputScreen from './components/SajuInputScreen'
 import HomeScreen from './components/HomeScreen'
 import DailyDrawScreen from './components/DailyDrawScreen'
-import DeckPrepScreen from './components/DeckPrepScreen'
 import BattleScreen from './components/BattleScreen'
 import FloorRewardScreen from './components/FloorRewardScreen'
 import ResultScreen from './components/ResultScreen'
 import PreBattleScreen from './components/PreBattleScreen'
-// PassiveDraftScreen은 PreBattleScreen으로 대체됨 (Phase 1.6 C)
+import DeckPrepScreen from './components/DeckPrepScreen'
 
-import type { SajuInfo, Card } from './types/game'
+import type { SajuInfo, SavedHeroProfile, Card } from './types/game'
+import { HERO_PROFILE_STORAGE_KEY } from './types/game'
 import type { Passive } from './types/passive'
 import { useGameStore } from './stores/gameStore'
+import { getSajuFromSolar, getSajuFromLunar, getSajuElementDistribution } from './engine/manseryeok'
+import { calcDeckSeed } from './engine/heroes'
 
 type Screen =
   | 'title'
   | 'sajuInput'
   | 'home'
-  | 'dailyDraw'      // 오늘의 패
-  | 'preBattle'      // 출전준비 (Phase 1.6 C — 패시브 드래프트 통합)
+  | 'dailyDraw'
+  | 'preBattle'
   | 'deckPrep'
   | 'battle'
   | 'floorReward'
   | 'result'
 
+/** localStorage → SavedHeroProfile 로드 */
+function loadHeroProfile(): SavedHeroProfile | null {
+  try {
+    const raw = localStorage.getItem(HERO_PROFILE_STORAGE_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as SavedHeroProfile
+  } catch {
+    return null
+  }
+}
+
+/** SavedHeroProfile → localStorage 저장 */
+function saveHeroProfile(profile: SavedHeroProfile): void {
+  try {
+    localStorage.setItem(HERO_PROFILE_STORAGE_KEY, JSON.stringify(profile))
+  } catch {
+    // 저장 실패는 조용히 무시 (safari private 모드 등)
+  }
+}
+
+/** 삭제 */
+function clearHeroProfile(): void {
+  try {
+    localStorage.removeItem(HERO_PROFILE_STORAGE_KEY)
+  } catch {
+    // noop
+  }
+}
+
+/** SajuInfo → SavedHeroProfile 생성 */
+function buildHeroProfile(saju: SajuInfo): SavedHeroProfile {
+  const { birthYear: y, birthMonth: m, birthDay: d, birthHour: h, isLunar } = saju
+
+  const sajuResult = isLunar
+    ? getSajuFromLunar(y, m, d, false, h)
+    : getSajuFromSolar(y, m, d, h)
+
+  const elementDist = getSajuElementDistribution(y, m, d, h, isLunar)
+  const deckSeed = calcDeckSeed(y, m, d)
+
+  return {
+    sajuInfo: saju,
+    dayPillarChar: sajuResult.day.char,
+    ilganChar: sajuResult.day.cheonganChar,
+    ilganElement: sajuResult.day.cheonganElement,
+    iljiChar: sajuResult.day.jijiChar,
+    elementDist,
+    deckSeed,
+    savedAt: new Date().toISOString(),
+  }
+}
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>('title')
   const [sajuInfo, setSajuInfo] = useState<SajuInfo | null>(null)
+  const [heroProfile, setHeroProfile] = useState<SavedHeroProfile | null>(null)
   const [drawnCards, setDrawnCards] = useState<Card[]>([])
   const [selectedPassives, setSelectedPassives] = useState<Passive[]>([])
   const [wins, setWins] = useState(0)
@@ -50,8 +106,16 @@ export default function App() {
     proceedToNextFloor,
   } = useGameStore()
 
+  // 마운트 시 localStorage 체크
+  useEffect(() => {
+    const saved = loadHeroProfile()
+    if (saved) {
+      setHeroProfile(saved)
+      setSajuInfo(saved.sajuInfo)
+    }
+  }, [])
+
   const handleTitleStart = useCallback(() => {
-    // 기존 사주 있으면 홈으로, 없으면 사주입력으로
     if (sajuInfo) {
       setScreen('home')
     } else {
@@ -61,6 +125,9 @@ export default function App() {
 
   const handleSajuComplete = useCallback((saju: SajuInfo) => {
     setSajuInfo(saju)
+    const profile = buildHeroProfile(saju)
+    setHeroProfile(profile)
+    saveHeroProfile(profile)
     setScreen('home')
   }, [])
 
@@ -70,7 +137,7 @@ export default function App() {
 
   const handleDailyDrawProceed = useCallback((cards: Card[]) => {
     setDrawnCards(cards)
-    setScreen('preBattle')  // Phase 1.6 C: passiveDraft → preBattle
+    setScreen('preBattle')
   }, [])
 
   const handlePreBattleComplete = useCallback((passives: Passive[]) => {
@@ -109,6 +176,14 @@ export default function App() {
     setScreen('home')
   }, [])
 
+  /** 사주 재입력 — localStorage 삭제 후 사주 입력 화면으로 */
+  const handleResetSaju = useCallback(() => {
+    clearHeroProfile()
+    setSajuInfo(null)
+    setHeroProfile(null)
+    setScreen('sajuInput')
+  }, [])
+
   return (
     <GameContextProvider>
     <div style={{ backgroundColor: '#16130F', minHeight: '100vh' }}>
@@ -119,13 +194,23 @@ export default function App() {
         <SajuInputScreen onComplete={handleSajuComplete} />
       )}
       {screen === 'home' && (
-        <HomeScreen onNewRun={handleNewRun} wins={wins} losses={losses} />
+        <HomeScreen
+          onNewRun={handleNewRun}
+          wins={wins}
+          losses={losses}
+          heroProfile={heroProfile}
+          onResetSaju={handleResetSaju}
+        />
       )}
       {screen === 'dailyDraw' && (
         <DailyDrawScreen onProceed={handleDailyDrawProceed} />
       )}
       {screen === 'preBattle' && (
-        <PreBattleScreen hand={drawnCards} onComplete={handlePreBattleComplete} />
+        <PreBattleScreen
+          hand={drawnCards}
+          onComplete={handlePreBattleComplete}
+          heroProfile={heroProfile}
+        />
       )}
       {screen === 'deckPrep' && (
         <DeckPrepScreen hand={drawnCards} onStartBattle={handleDeckPrepStart} />

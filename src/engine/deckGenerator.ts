@@ -1,0 +1,115 @@
+/**
+ * 팔자전 — 사주 기반 덱 생성 (Phase 2)
+ * 바이블 §2-4: 사주 오행 분포 비율대로 20장 배분
+ *
+ * 규칙:
+ *  - 사주 글자 오행 분포 비율대로 속성 배분 (반올림, 최소 각 속성 1장 보장)
+ *  - 음양 비율도 동일 원칙
+ *  - 카드 값 1~10 균등 분포에서 시드 랜덤
+ */
+
+import type { Card, Element } from '../types/game'
+
+const ELEMENTS: Element[] = ['mok', 'hwa', 'to', 'geum', 'su']
+const DECK_SIZE = 20
+
+/** LCG 난수 생성기 */
+function makeLCG(seed: number) {
+  let s = seed >>> 0
+  return () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0
+    return s / 0x100000000
+  }
+}
+
+/**
+ * 오행 분포 → 각 오행 카드 수 배분 (20장, 최소 1장 보장)
+ */
+function distributeCards(
+  elementDist: Record<Element, number>,
+  total: number,
+): Record<Element, number> {
+  const sum = ELEMENTS.reduce((acc, el) => acc + (elementDist[el] ?? 0), 0)
+  if (sum === 0) {
+    // 분포 없음 → 균등 (4,4,4,4,4)
+    const even = Math.floor(total / ELEMENTS.length)
+    const result = {} as Record<Element, number>
+    ELEMENTS.forEach(el => { result[el] = even })
+    return result
+  }
+
+  // 비율 계산 후 반올림
+  const rawCounts: Record<Element, number> = {} as Record<Element, number>
+  let assigned = 0
+  ELEMENTS.forEach(el => {
+    const raw = ((elementDist[el] ?? 0) / sum) * total
+    rawCounts[el] = Math.max(1, Math.round(raw))
+    assigned += rawCounts[el]
+  })
+
+  // 합산이 total과 다를 경우 조정 (가장 많은/적은 원소에 ±1)
+  let diff = total - assigned
+  while (diff !== 0) {
+    if (diff > 0) {
+      // 가장 적은 원소 +1
+      const minEl = ELEMENTS.reduce((a, b) => rawCounts[a] <= rawCounts[b] ? a : b)
+      rawCounts[minEl]++
+      diff--
+    } else {
+      // 2 이상인 가장 많은 원소 -1
+      const maxEl = ELEMENTS.reduce((a, b) => rawCounts[a] >= rawCounts[b] ? a : b)
+      if (rawCounts[maxEl] > 1) {
+        rawCounts[maxEl]--
+        diff++
+      } else {
+        break
+      }
+    }
+  }
+
+  return rawCounts
+}
+
+/**
+ * 사주 오행 분포 → 20장 덱 생성
+ * @param elementDist 오행 분포 (getSajuElementDistribution 결과)
+ * @param seed 덱 랜덤 시드 (calcDeckSeed 결과)
+ */
+export function generateSajuDeck(
+  elementDist: Record<Element, number>,
+  seed: number,
+): Card[] {
+  const rng = makeLCG(seed)
+
+  const countByElement = distributeCards(elementDist, DECK_SIZE)
+
+  // 음양 비율도 동일 원칙 — 오행 분포와 동일하게 yang/yin 배분
+  // 천간 음양 분포를 elementDist로부터 구성 (간이: 양 vs 음 균등)
+  // 바이블에 음양 분포 별도 데이터 없음 → 1:1 균등 (임의 결정 로그 항목)
+
+  const cards: Card[] = []
+  let idCounter = 0
+
+  ELEMENTS.forEach(el => {
+    const count = countByElement[el] ?? 1
+    for (let i = 0; i < count; i++) {
+      // 값 1~10 균등 분포에서 랜덤
+      const value = Math.floor(rng() * 10) + 1
+      // 음양 1:1 (홀수 인덱스 = yang, 짝수 = yin)
+      const polarity = i % 2 === 0 ? 'yang' as const : 'yin' as const
+
+      cards.push({
+        id: `saju-${el}-${idCounter++}`,
+        element: el,
+        polarity,
+        value,
+        type: 'soldier',
+        rarity: 'common',
+      })
+    }
+  })
+
+  return cards
+}
+
+export { distributeCards }

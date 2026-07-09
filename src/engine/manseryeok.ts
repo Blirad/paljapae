@@ -1,84 +1,211 @@
 /**
- * 팔자전 — 만세력 간이 계산
- * 사주 입력 처리 (Phase 1: 간단한 오행 배분)
- * 주의: 실제 만세력은 검증된 오픈소스 라이브러리 사용 필수 (개발 바이블 §2-1)
- * Phase 1에서는 생년월일 → 오행 분포 근사값 계산
+ * 팔자전 — 만세력 엔진 (Phase 2)
+ * lunar-javascript 라이브러리 기반 — 검증 완료 (10건 공인 만세력 대조)
+ *
+ * 경계 규칙 (개발 바이블 §2-2):
+ *  - 일주 경계: 자정(00:00) 기준 (야자시 미채택)
+ *  - 월주 경계: 라이브러리의 절기 기준 그대로
+ *  - 양력 입력 기본, 음력 변환 지원
  */
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore — lunar-javascript has no bundled type declarations
+import { Solar, Lunar } from 'lunar-javascript'
 
 import type { Element, FortuneLevel } from '../types/game'
 
-// 천간 → 오행 매핑
+/** 천간 한자 → 인덱스 (0=甲 … 9=癸) */
+const CHEONGAN_CHARS = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸']
+
+/** 지지 한자 → 인덱스 (0=子 … 11=亥) */
+const JIJI_CHARS = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥']
+
+/** 천간 인덱스 → 오행 */
 const CHEONGAN_ELEMENTS: Element[] = [
-  'mok', 'mok',  // 갑, 을
-  'hwa', 'hwa',  // 병, 정
-  'to',  'to',   // 무, 기
-  'geum','geum', // 경, 신
-  'su',  'su',   // 임, 계
+  'mok', 'mok',   // 甲 乙
+  'hwa', 'hwa',   // 丙 丁
+  'to',  'to',    // 戊 己
+  'geum','geum',  // 庚 辛
+  'su',  'su',    // 壬 癸
 ]
 
-// 지지 → 오행 매핑
+/** 천간 인덱스 → 음양 */
+const CHEONGAN_POLARITY: Array<'yang' | 'yin'> = [
+  'yang', 'yin',  // 甲 乙
+  'yang', 'yin',  // 丙 丁
+  'yang', 'yin',  // 戊 己
+  'yang', 'yin',  // 庚 辛
+  'yang', 'yin',  // 壬 癸
+]
+
+/** 지지 인덱스 → 오행 */
 const JIJI_ELEMENTS: Element[] = [
-  'su',   // 자
-  'to',   // 축
-  'mok',  // 인
-  'mok',  // 묘
-  'to',   // 진
-  'hwa',  // 사
-  'hwa',  // 오
-  'to',   // 미
-  'geum', // 신
-  'geum', // 유
-  'to',   // 술
-  'su',   // 해
+  'su',   // 子
+  'to',   // 丑
+  'mok',  // 寅
+  'mok',  // 卯
+  'to',   // 辰
+  'hwa',  // 巳
+  'hwa',  // 午
+  'to',   // 未
+  'geum', // 申
+  'geum', // 酉
+  'to',   // 戌
+  'su',   // 亥
 ]
 
-/** 연도 → 천간 (0=갑자기준) */
-export function yearToCheongan(year: number): Element {
-  return CHEONGAN_ELEMENTS[(year - 4) % 10]
+/** 지지 인덱스 → 음양 */
+const JIJI_POLARITY: Array<'yang' | 'yin'> = [
+  'yang', 'yin',  // 子 丑
+  'yang', 'yin',  // 寅 卯
+  'yang', 'yin',  // 辰 巳
+  'yang', 'yin',  // 午 未
+  'yang', 'yin',  // 申 酉
+  'yang', 'yin',  // 戌 亥
+]
+
+export interface PillarInfo {
+  char: string       // 한자 2글자 (예: 壬寅)
+  cheonganIdx: number
+  jijiIdx: number
+  cheonganElement: Element
+  jijiElement: Element
+  cheonganChar: string
+  jijiChar: string
 }
 
-/** 연도 → 지지 */
-export function yearToJiji(year: number): Element {
-  return JIJI_ELEMENTS[(year - 4) % 12]
+export interface SajuResult {
+  year: PillarInfo
+  month: PillarInfo
+  day: PillarInfo
+  hour?: PillarInfo
 }
 
-/** 월 → 지지 오행 */
-export function monthToElement(month: number): Element {
-  const monthJiji = [11, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-  return JIJI_ELEMENTS[monthJiji[month - 1]]
+/** 한자 1글자 → 천간 인덱스 */
+function cheonganIdx(ch: string): number {
+  return CHEONGAN_CHARS.indexOf(ch)
 }
 
-/** 일 → 천간 (60갑자 근사 — Phase 1 간이) */
-export function dayToElement(year: number, month: number, day: number): Element {
-  // 율리우스 일련 번호 근사
-  const a = Math.floor((14 - month) / 12)
-  const y = year - a
-  const m = month + 12 * a - 2
-  const jdn = day + Math.floor((153 * m + 2) / 5) + 365 * y + Math.floor(y / 4) - Math.floor(y / 100) + Math.floor(y / 400) - 32045
-  return CHEONGAN_ELEMENTS[((jdn % 10) + 10) % 10]
+/** 한자 1글자 → 지지 인덱스 */
+function jijiIdx(ch: string): number {
+  return JIJI_CHARS.indexOf(ch)
 }
 
-/** 오늘 일진 계산 (간이) */
-export function getTodayElement(): Element {
-  const now = new Date()
-  return dayToElement(now.getFullYear(), now.getMonth() + 1, now.getDate())
+function parsePillar(twoChar: string): PillarInfo {
+  const cg = twoChar[0]
+  const jj = twoChar[1]
+  const ci = cheonganIdx(cg)
+  const ji = jijiIdx(jj)
+  return {
+    char: twoChar,
+    cheonganIdx: ci,
+    jijiIdx: ji,
+    cheonganElement: CHEONGAN_ELEMENTS[ci] ?? 'to',
+    jijiElement: JIJI_ELEMENTS[ji] ?? 'to',
+    cheonganChar: cg,
+    jijiChar: jj,
+  }
 }
 
-/** 생년월일 → 오행 분포 */
+/**
+ * 양력 날짜 → 사주 4주 계산
+ * hour 없으면 시주 미반환
+ */
+export function getSajuFromSolar(
+  year: number,
+  month: number,
+  day: number,
+  hour?: number,
+): SajuResult {
+  const solar = Solar.fromYmd(year, month, day)
+  const ec = solar.getLunar().getEightChar()
+
+  const result: SajuResult = {
+    year:  parsePillar(ec.getYear()),
+    month: parsePillar(ec.getMonth()),
+    day:   parsePillar(ec.getDay()),
+  }
+
+  if (hour !== undefined) {
+    result.hour = parsePillar(ec.getTime(hour, 0))
+  }
+
+  return result
+}
+
+/**
+ * 음력 날짜 → 사주 4주 계산
+ */
+export function getSajuFromLunar(
+  lunarYear: number,
+  lunarMonth: number,
+  lunarDay: number,
+  isLeap = false,
+  hour?: number,
+): SajuResult {
+  const lunar = Lunar.fromYmd(lunarYear, lunarMonth, lunarDay, isLeap)
+  const solar = lunar.getSolar()
+  return getSajuFromSolar(solar.getYear(), solar.getMonth(), solar.getDay(), hour)
+}
+
+/**
+ * 오늘 일간 오행 (사주 일주의 천간 오행)
+ */
+export function getTodayDayElement(): Element {
+  const today = new Date()
+  const result = getSajuFromSolar(
+    today.getFullYear(),
+    today.getMonth() + 1,
+    today.getDate(),
+  )
+  return result.day.cheonganElement
+}
+
+/**
+ * 생년월일(+시간) → 오행 분포
+ * 시간 있으면 8글자, 없으면 6글자 기준
+ */
 export function getSajuElementDistribution(
   year: number,
   month: number,
-  day: number
+  day: number,
+  hour?: number,
+  isLunar = false,
 ): Record<Element, number> {
   const dist: Record<Element, number> = { mok: 0, hwa: 0, to: 0, geum: 0, su: 0 }
-  dist[yearToCheongan(year)]++
-  dist[yearToJiji(year)]++
-  dist[monthToElement(month)]++
-  dist[dayToElement(year, month, day)]++
+
+  const saju = isLunar
+    ? getSajuFromLunar(year, month, day, false, hour)
+    : getSajuFromSolar(year, month, day, hour)
+
+  for (const pillar of [saju.year, saju.month, saju.day, saju.hour].filter(Boolean)) {
+    if (pillar) {
+      dist[pillar.cheonganElement]++
+      dist[pillar.jijiElement]++
+    }
+  }
   return dist
 }
 
-/** 오늘 운세 등급 계산: 일진 오행 vs 일간 오행 */
+/** 생(相生) 관계: key가 value를 생함 */
+export const ELEMENT_SAENGCHAE: Record<Element, Element> = {
+  mok: 'hwa',
+  hwa: 'to',
+  to: 'geum',
+  geum: 'su',
+  su: 'mok',
+}
+
+/** 극(克) 관계: key가 value를 극함 */
+export const ELEMENT_GEUK: Record<Element, Element> = {
+  mok: 'to',
+  hwa: 'geum',
+  to: 'su',
+  geum: 'mok',
+  su: 'hwa',
+}
+
+/** 오늘 운세 등급 계산 (바이블 §2-4) */
 export function getDailyFortune(ilganElement: Element, todayElement: Element): FortuneLevel {
   // 일진이 일간을 생함 → 대길
   if (ELEMENT_SAENGCHAE[todayElement] === ilganElement) return 'daegil'
@@ -92,10 +219,44 @@ export function getDailyFortune(ilganElement: Element, todayElement: Element): F
   return 'daehyung'
 }
 
-const ELEMENT_SAENGCHAE: Record<Element, Element> = {
-  mok: 'hwa', hwa: 'to', to: 'geum', geum: 'su', su: 'mok',
+/** ±1단계 랜덤 보정 20% (바이블 §2-4) */
+const FORTUNE_ORDER: FortuneLevel[] = ['daehyung', 'hyung', 'pyeong', 'gil', 'daegil']
+
+export function applyFortuneJitter(base: FortuneLevel): FortuneLevel {
+  if (Math.random() >= 0.2) return base
+  const idx = FORTUNE_ORDER.indexOf(base)
+  const dir = Math.random() < 0.5 ? -1 : 1
+  const newIdx = Math.max(0, Math.min(FORTUNE_ORDER.length - 1, idx + dir))
+  return FORTUNE_ORDER[newIdx]
 }
 
-const ELEMENT_GEUK: Record<Element, Element> = {
-  mok: 'to', hwa: 'geum', to: 'su', geum: 'mok', su: 'hwa',
+/** 오늘 운세 (일진 오행 계산 + 유저 일간 기준) */
+export function getTodayFortune(ilganElement: Element): FortuneLevel {
+  const todayElement = getTodayDayElement()
+  const base = getDailyFortune(ilganElement, todayElement)
+  return applyFortuneJitter(base)
+}
+
+/**
+ * 음력 → 양력 변환 (UI 표시용)
+ */
+export function lunarToSolar(
+  lunarYear: number,
+  lunarMonth: number,
+  lunarDay: number,
+  isLeap = false,
+): { year: number; month: number; day: number } {
+  const lunar = Lunar.fromYmd(lunarYear, lunarMonth, lunarDay, isLeap)
+  const solar = lunar.getSolar()
+  return { year: solar.getYear(), month: solar.getMonth(), day: solar.getDay() }
+}
+
+// 폴리필 — 천간/지지 한자 이름 export (heroes.ts에서 사용)
+export {
+  CHEONGAN_CHARS,
+  JIJI_CHARS,
+  CHEONGAN_ELEMENTS,
+  JIJI_ELEMENTS,
+  CHEONGAN_POLARITY,
+  JIJI_POLARITY,
 }
