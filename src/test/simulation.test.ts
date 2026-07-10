@@ -91,6 +91,7 @@ function createDeterministicState(floorIndex: number, rng: () => number): GameSt
     amplifyActive: false,
     attackCount: 0,
     enemyPhaseSwitch: false,
+    condenseActive: false,
   }
 }
 

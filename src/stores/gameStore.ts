@@ -4,7 +4,8 @@
  */
 
 import { create } from 'zustand'
-import type { GameState } from '../types/game'
+import type { GameState, SavedHeroProfile } from '../types/game'
+import { HERO_PROFILE_STORAGE_KEY } from '../types/game'
 import {
   createInitialGameState,
   playCards,
@@ -17,6 +18,16 @@ import {
 } from '../engine/paljajeonEngine'
 import { judgeHand } from '../engine/pokerHandJudge'
 import type { HandJudgeResult } from '../types/game'
+
+function loadHeroProfileForStore(): SavedHeroProfile | null {
+  try {
+    const raw = localStorage.getItem(HERO_PROFILE_STORAGE_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as SavedHeroProfile
+  } catch {
+    return null
+  }
+}
 
 // B9: 전투 통계 (결과 근거)
 interface BattleStats {
@@ -62,7 +73,7 @@ const INITIAL_BATTLE_STATS: BattleStats = {
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
-  ...createInitialGameState(),
+  ...createInitialGameState(0, loadHeroProfileForStore()),
   previewResult: null,
 
   // 인라인 안내 플래그 초기값
@@ -74,7 +85,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   battleStats: { ...INITIAL_BATTLE_STATS },
 
   startGame: () => {
-    set({ ...createInitialGameState(), previewResult: null, hasShownFirstHand: false, hasShownFirstDiscard: false, hasShownFirstAffinity: false, battleStats: { ...INITIAL_BATTLE_STATS } })
+    const hp = loadHeroProfileForStore()
+    set({ ...createInitialGameState(0, hp), previewResult: null, hasShownFirstHand: false, hasShownFirstDiscard: false, hasShownFirstAffinity: false, battleStats: { ...INITIAL_BATTLE_STATS } })
   },
 
   toggleCardSelect: (cardId: string) => {
@@ -117,7 +129,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   resetGame: () => {
-    set({ ...createInitialGameState(), previewResult: null, hasShownFirstHand: false, hasShownFirstDiscard: false, hasShownFirstAffinity: false, battleStats: { ...INITIAL_BATTLE_STATS } })
+    const hp = loadHeroProfileForStore()
+    set({ ...createInitialGameState(0, hp), previewResult: null, hasShownFirstHand: false, hasShownFirstDiscard: false, hasShownFirstAffinity: false, battleStats: { ...INITIAL_BATTLE_STATS } })
   },
 
   markFirstHandShown: () => set({ hasShownFirstHand: true }),

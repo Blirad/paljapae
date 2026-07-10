@@ -15,8 +15,6 @@
 import {
   judgeHand,
   detectElementClash,
-  calcGeukBonusMultiplier,
-  detectYeokgeukPenalty,
   GEUK_MAP,
 } from './pokerHandJudge'
 import type { Card, Element, GameState } from '../types/game'
@@ -40,16 +38,19 @@ function combinations<T>(arr: T[], k: number): T[][] {
 }
 
 /**
- * Phase 1.7 — 새 규칙 반영 예상 데미지 계산
- * (주 기운 극 +50%/+10%, 부 기운 극 +25%, 충돌 -30%, 반극 -30%)
+ * Phase 1.8 — 마무리 기운 기반 예상 데미지 계산
+ * (마무리 기운 극 +70%/+10%, 부 기운 극 +25%, 충돌 -30%, 반극 -40%)
+ * 토 응축: 마무리 기운이 to이면 즉시 ×0.6 + 다음 턴 ×1.6
  */
 export function calcExpectedDamage(
   combo: Card[],
   enemyPrimaryElement: Element,
   enemySubElement?: Element,
+  condenseActive?: boolean,
 ): number {
   const result = judgeHand(combo)
   let damage = result.totalScore
+  const finishEl = result.finishingElement
 
   // A-1: 기운 충돌 -30%
   const clashes = detectElementClash(combo)
@@ -57,11 +58,15 @@ export function calcExpectedDamage(
     damage = Math.round(damage * 0.7)
   }
 
-  // A-2: 주 기운 원칙 극 보너스 (+50% or +10%)
-  const geukCalc = calcGeukBonusMultiplier(combo, enemyPrimaryElement)
+  // Phase 1.8: 마무리 기운 기준 극 보너스
+  const finishGeuksEnemy = GEUK_MAP[finishEl] === enemyPrimaryElement
+  const anyGeuksEnemy = combo.some(c => GEUK_MAP[c.element] === enemyPrimaryElement)
   let mainGeukApplied = false
-  if (geukCalc.multiplier !== 1.0) {
-    damage = Math.round(damage * geukCalc.multiplier)
+  if (finishGeuksEnemy) {
+    damage = Math.round(damage * 1.7)
+    mainGeukApplied = true
+  } else if (anyGeuksEnemy) {
+    damage = Math.round(damage * 1.1)
     mainGeukApplied = true
   }
 
@@ -73,20 +78,39 @@ export function calcExpectedDamage(
     }
   }
 
-  // A-3: 적의 반극 -30%
-  const yeokgeuk = detectYeokgeukPenalty(combo, [enemyPrimaryElement])
-  if (yeokgeuk.hasPenalty) {
-    damage = Math.round(damage * 0.7)
+  // Phase 1.8: 마무리 기운이 적에 의해 극 당하면 -40%
+  const enemyGeuksFinish = GEUK_MAP[enemyPrimaryElement] === finishEl
+  if (enemyGeuksFinish) {
+    damage = Math.round(damage * 0.6)
+  }
+
+  // Phase 1.8: 토 응축 — 다음 턴 ×1.6 보상 고려
+  // condenseActive=true: 이번 턴에 응축 소모 → ×1.6
+  if (condenseActive) {
+    damage = Math.round(damage * 1.6)
+  }
+
+  // 토 마무리: 즉시 ×0.6 (응축 적립 → 다음 턴 보상)
+  // 봇은 토 조합의 즉시 피해가 낮아도 다음 턴 보상(1.6)을 기대치에 반영
+  if (finishEl === 'to' && !condenseActive) {
+    // 즉시 피해 ×0.6이지만 다음 턴 기대 보상 factor 추가 (0.6 * 1.6 = 0.96 ≈ 손해 없음으로 간주)
+    damage = Math.round(damage * 0.6)
+    // 봇은 다음 턴 응축 보상을 기대값 +60% 보정으로 반영
+    damage = Math.round(damage * 1.4)  // 0.6 * 1.4 ≈ 0.84 (보수적 추정)
   }
 
   return damage
 }
 
 /**
- * 탐욕 봇 핸드 선택 (Phase 1.7 — 주/부 기운 반영)
- * enemyElement 없으면 기존 judgeHand totalScore만 사용 (하위호환)
+ * 탐욕 봇 핸드 선택 (Phase 1.8 — 마무리 기운 + 토 응축 반영)
  */
-export function greedySelectCards(hand: Card[], enemyPrimaryElement?: Element, enemySubElement?: Element): string[] {
+export function greedySelectCards(
+  hand: Card[],
+  enemyPrimaryElement?: Element,
+  enemySubElement?: Element,
+  condenseActive?: boolean,
+): string[] {
   if (hand.length === 0) return []
 
   let bestIds: string[] = []
@@ -97,7 +121,7 @@ export function greedySelectCards(hand: Card[], enemyPrimaryElement?: Element, e
     const combos = combinations(hand, k)
     for (const combo of combos) {
       const score = enemyPrimaryElement
-        ? calcExpectedDamage(combo, enemyPrimaryElement, enemySubElement)
+        ? calcExpectedDamage(combo, enemyPrimaryElement, enemySubElement, condenseActive)
         : judgeHand(combo).totalScore
       if (
         score > bestScore ||
@@ -162,6 +186,7 @@ function createDeterministicState(floorIndex: number, rng: () => number): GameSt
     amplifyActive: false,
     attackCount: 0,
     enemyPhaseSwitch: false,
+    condenseActive: false,
   }
 }
 
@@ -199,6 +224,7 @@ export function simulateGreedyRun(seed: number): RunResult {
         amplifyActive: false,
         attackCount: 0,
         enemyPhaseSwitch: false,
+        condenseActive: false,
       }
     } else {
       state = { ...state, playerHp }
@@ -248,7 +274,8 @@ export function simulateGreedyRun(seed: number): RunResult {
       const currentSubEl = state.enemyPhaseSwitch
         ? floorConf.enemyPrimaryElement
         : floorConf.enemySubElement
-      const selectedIds = greedySelectCards(state.hand, currentPrimaryEl, currentSubEl)
+      // Phase 1.8: 토 응축 상태 봇에 전달
+      const selectedIds = greedySelectCards(state.hand, currentPrimaryEl, currentSubEl, state.condenseActive)
       if (selectedIds.length === 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })

@@ -1,6 +1,6 @@
 /**
  * 팔자전 — (6) 전투 화면
- * 4층 던전, 1층 turn-based
+ * 4층 출정, 1층 turn-based
  * 핸드 8장 중 1~5장 출수
  *
  * VFX 구현:
@@ -853,6 +853,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     amplifyActive,
     attackCount,
     enemyPhaseSwitch,
+    condenseActive,
     toggleCardSelect,
     playSelectedCards,
     discardSelectedCards,
@@ -909,6 +910,13 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
   const [showYeokgeukHint, setShowYeokgeukHint] = useState(false)
   const yeokgeukHintShownRef = useRef(false)
 
+  // Phase 1.8: 역극 카드 탭 시 툴팁
+  const [yeokgeukTooltip, setYeokgeukTooltip] = useState<{ cardId: string; text: string } | null>(null)
+  const yeokgeukTooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Phase 1.8: 전투 진입 시 역극 배너 (1회)
+  const [hasShownYeokgeukBanner, setHasShownYeokgeukBanner] = useState(false)
+
   // A2: 순환 도표 오버레이
   const [showCycleChart, setShowCycleChart] = useState(false)
 
@@ -952,6 +960,16 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
   // Phase 1.7: 조합 도감 오버레이
   const [showComboGuide, setShowComboGuide] = useState(false)
 
+  // Phase 1.8: 도감 버튼 맥동 (처음 3판)
+  const comboGuideButtonPulse = (() => {
+    try {
+      const played = parseInt(localStorage.getItem('paljajeon_games_played') ?? '0', 10)
+      return played < 3
+    } catch {
+      return true
+    }
+  })()
+
   // Phase 1.7: 기운 전환 배너 표시
   const [phaseSwitchBanner, setPhaseSwitchBanner] = useState(false)
   const prevEnemyPhaseSwitch = useRef(false)
@@ -960,10 +978,20 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
   const [heavyAttackBanner, setHeavyAttackBanner] = useState(false)
   const prevAttackCount = useRef(0)
 
+  // Phase 1.8: 토 응축 연출
+  const [condenseBanner, setCondenseBanner] = useState<'accumulate' | 'explode' | null>(null)
+  const prevCondenseActive = useRef(false)
+
   // Phase 1.7: 반격 피해 팝업 (독립 비트)
   const [counterPopup, setCounterPopup] = useState<{ value: number; id: number } | null>(null)
   // Phase 1.7: 적 대사 (기믹 발동 시)
   const [gimmickDialogue, setGimmickDialogue] = useState<string | null>(null)
+
+  // Phase 1.8: 적 패 뒤집기 연출
+  const [enemyCardFlip, setEnemyCardFlip] = useState<{ label: string; damage: number; id: number } | null>(null)
+
+  // Phase 1.8: 기운 잇기 3 이상 팝업
+  const [chainPopup, setChainPopup] = useState<{ text: string; id: number } | null>(null)
 
   // 2번: 드래그 앤 드롭 훅 (합성 소환 인터랙션)
   const { dragState, handleDragStart, handleDragOver, handleDragEnd, handleDragCancel, rejectAnimCardId } = useDragAndDrop()
@@ -1002,6 +1030,22 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     // 4초 표시
     bannerTimeoutRef.current = setTimeout(() => setBannerVisible(false), 4000)
   }, [])
+
+  // Phase 1.8: 전투 진입 시 역극 배너 (1회)
+  useEffect(() => {
+    if (!hasShownYeokgeukBanner && hand.length > 0) {
+      const yeokgeukEl = GEUK_MAP[enemyElement]  // 적이 이기는 기운 = 역극 기운
+      const hasYeokgeuk = hand.some(c => c.element === yeokgeukEl)
+      if (hasYeokgeuk) {
+        setHasShownYeokgeukBanner(true)
+        const elKo = ELEMENT_KO[yeokgeukEl]
+        const enemyElKo = ELEMENT_KO[enemyElement]
+        setTimeout(() => {
+          showBanner(`주의: 패에 ${elKo} 카드가 있지만, 적의 ${enemyElKo} 앞에서 힘을 쓰지 못합니다.`)
+        }, 800)
+      }
+    }
+  }, [hand.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 이전 HP 추적
   const prevEnemyHp = useRef(enemyHp)
@@ -1049,6 +1093,14 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
       document.removeEventListener('touchstart', resumeAudio)
       document.removeEventListener('click', resumeAudio)
     }
+  }, [])
+
+  // Phase 1.8: 게임 플레이 카운터 증가
+  useEffect(() => {
+    try {
+      const current = parseInt(localStorage.getItem('paljajeon_games_played') ?? '0', 10)
+      localStorage.setItem('paljajeon_games_played', String(current + 1))
+    } catch { /* noop */ }
   }, [])
 
   // BGM: BattleScreen 진입 시 재생, 언마운트 시 정지
@@ -1122,7 +1174,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     }
   }, [previewResult?.rank]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 족보 미리보기 변경 시 바운스 애니메이션
+  // 족보 미리보기 변경 시 바운스 애니메이션 + 기운 잇기 3+ 팝업
   useEffect(() => {
     const newRank = previewResult?.rank ?? null
     if (newRank !== prevPreviewRank.current && newRank && newRank !== 'none') {
@@ -1130,10 +1182,18 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
       setPreviewBounce(true)
       const t = setTimeout(() => setPreviewBounce(false), 220)
       prevPreviewRank.current = newRank
+
+      // Phase 1.8: 기운 잇기 3 이상 팝업
+      if (newRank === 'saengchae-3' || newRank === 'saengchae-chain' || newRank === 'ohang-yeonhwan') {
+        const mult = newRank === 'saengchae-3' ? '×3' : newRank === 'saengchae-chain' ? '×7' : '×10'
+        setChainPopup({ text: `기운이 셋 이어져 ${mult}!`, id: Date.now() })
+        setTimeout(() => setChainPopup(null), getDuration(1500))
+      }
+
       return () => clearTimeout(t)
     }
     prevPreviewRank.current = newRank
-  }, [previewResult?.rank])
+  }, [previewResult?.rank]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 적 HP 변화 감지 → Score Popup + Screen Shake + 피해 내역 패널 + B9 근거 수집
   useEffect(() => {
@@ -1250,6 +1310,11 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
         setCounterPopup({ value: dmg, id: Date.now() })
         setTimeout(() => setCounterPopup(null), getDuration(1000))
       }, getDuration(200))
+      // Phase 1.8: 적 패 뒤집기 연출 (반격)
+      setTimeout(() => {
+        setEnemyCardFlip({ label: '反擊', damage: dmg, id: Date.now() })
+        setTimeout(() => setEnemyCardFlip(null), getDuration(1200))
+      }, getDuration(100))
       // 5-D: 반격 시 기믹 대사 (잔화령 등)
       const floorInfo = FLOOR_ENEMY_INFO[currentFloor]
       if (floorInfo?.gimmickDialogue && currentFloor <= 2) {
@@ -1288,6 +1353,20 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     prevEnemyPhaseSwitch.current = enemyPhaseSwitch
   }, [enemyPhaseSwitch]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Phase 1.8: 토 응축 감지 → 연출
+  useEffect(() => {
+    if (condenseActive && !prevCondenseActive.current) {
+      // 응축 적립
+      setCondenseBanner('accumulate')
+      setTimeout(() => setCondenseBanner(null), getDuration(2000))
+    } else if (!condenseActive && prevCondenseActive.current) {
+      // 응축 소모 (폭발)
+      setCondenseBanner('explode')
+      setTimeout(() => setCondenseBanner(null), getDuration(1500))
+    }
+    prevCondenseActive.current = condenseActive
+  }, [condenseActive]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Phase 1.7: 강공 감지 → 배너 표시
   useEffect(() => {
     const heavyConf = floorConfig.heavyAttack
@@ -1298,6 +1377,12 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
         setShakeActive(true)
         setTimeout(() => setShakeActive(false), getDuration(300))
         setTimeout(() => setHeavyAttackBanner(false), getDuration(2000))
+        // Phase 1.8: 강공 카드 플립
+        const dmg = heavyConf.damage
+        setTimeout(() => {
+          setEnemyCardFlip({ label: '強攻', damage: dmg, id: Date.now() })
+          setTimeout(() => setEnemyCardFlip(null), getDuration(1200))
+        }, getDuration(200))
       }
     }
     prevAttackCount.current = attackCount
@@ -1370,10 +1455,19 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
 
     // 역극 카드 선택 시 첫 진입 안내
     const card = hand.find(c => c.id === cardId)
-    if (card && GEUK_MAP[enemyElement] === card.element && !yeokgeukHintShownRef.current) {
-      yeokgeukHintShownRef.current = true
-      setShowYeokgeukHint(true)
-      setTimeout(() => setShowYeokgeukHint(false), 4000)
+    if (card && GEUK_MAP[enemyElement] === card.element) {
+      if (!yeokgeukHintShownRef.current) {
+        yeokgeukHintShownRef.current = true
+        setShowYeokgeukHint(true)
+        setTimeout(() => setShowYeokgeukHint(false), 4000)
+      }
+      // Phase 1.8: 역극 카드 툴팁 (2초)
+      const cardElKo = ELEMENT_KO[card.element]
+      const enemyElKo = ELEMENT_KO[enemyElement]
+      const tooltipText = `오늘 ${cardElKo}의 기운은 힘을 못 쓴다 — 적의 ${enemyElKo}이/가 누르기 때문.`
+      if (yeokgeukTooltipTimerRef.current) clearTimeout(yeokgeukTooltipTimerRef.current)
+      setYeokgeukTooltip({ cardId, text: tooltipText })
+      yeokgeukTooltipTimerRef.current = setTimeout(() => setYeokgeukTooltip(null), 2000)
     }
 
     toggleCardSelect(cardId)
@@ -1560,6 +1654,23 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
   void hasGeukOnEnemy
   void geukAttacker
 
+  // Phase 1.8: 마무리 기운 미리보기 텍스트
+  const getFinishingElementText = (): { text: string; color: string } | null => {
+    if (!previewResult || selectedCards.length === 0) return null
+    const fe = previewResult.finishingElement
+    const feLabel = ELEMENT_LABELS[fe]
+    const geuksEnemy = GEUK_MAP[fe] === enemyElement
+    const enemyGeuksFinish = GEUK_MAP[enemyElement] === fe
+    if (geuksEnemy) {
+      return { text: `${feLabel}으로 마무리 · ${feLabel}이/가 ${ELEMENT_LABELS[enemyElement]}을/를 이긴다 +70%`, color: '#FF7A5C' }
+    } else if (enemyGeuksFinish) {
+      return { text: `${feLabel}으로 마무리 · ${ELEMENT_LABELS[enemyElement]}에 눌린다 −40%`, color: '#C63D2F' }
+    } else {
+      return { text: `${feLabel}으로 마무리`, color: '#D9A441' }
+    }
+  }
+  const finishingText = getFinishingElementText()
+
   // 주 기운 표시 텍스트
   const primaryElText = primaryEl
     ? `주 기운: ${ELEMENT_KO[primaryEl.element]}(${primaryEl.count}장, 합 ${primaryEl.totalValue})`
@@ -1703,6 +1814,38 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           50%  { opacity: 1; }
           100% { opacity: 0.6; }
         }
+        @keyframes condenseBannerIn {
+          0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.85); }
+          30%  { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+          70%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+          100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+        }
+        @keyframes condenseExplode {
+          0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+          20%  { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
+          60%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+          100% { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+        }
+        @keyframes pulseBadge {
+          0%,100% { transform: scale(1); }
+          50% { transform: scale(1.12); }
+        }
+        @keyframes cardFlipIn {
+          0%   { transform: rotateY(0deg); }
+          50%  { transform: rotateY(90deg); }
+          100% { transform: rotateY(180deg); }
+        }
+        @keyframes cardFlipFadeOut {
+          0%   { opacity: 1; }
+          70%  { opacity: 1; }
+          100% { opacity: 0; }
+        }
+        @keyframes chainPopupIn {
+          0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+          25%  { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+          70%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+          100% { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+        }
       `}</style>
 
       {/* 오행연환 오버레이 */}
@@ -1822,6 +1965,21 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           {playsLeft === 1 && (
             <span style={{ color: '#C63D2F', fontSize: '11px', marginLeft: '8px', letterSpacing: '0.1em' }}>
               마지막 기회
+            </span>
+          )}
+          {condenseActive && (
+            <span style={{
+              color: '#D9A441',
+              fontSize: '11px',
+              marginLeft: '8px',
+              letterSpacing: '0.06em',
+              backgroundColor: 'rgba(140,90,30,0.4)',
+              border: '1px solid #D9A441',
+              padding: '1px 6px',
+              borderRadius: '2px',
+              animation: 'pulseBadge 1.5s ease-in-out infinite',
+            }}>
+              응축 중
             </span>
           )}
         </div>
@@ -1957,6 +2115,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
+                animation: comboGuideButtonPulse ? 'pulseBadge 1.5s ease-in-out infinite' : undefined,
               }}
               title="조합 도감"
             >
@@ -2016,6 +2175,48 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
               whiteSpace: 'nowrap',
             }}>
               "{enemyDialogue}"
+            </div>
+          )}
+
+          {/* Phase 1.8: 토 응축 배너 */}
+          {condenseBanner === 'accumulate' && (
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              zIndex: 25,
+              backgroundColor: 'rgba(140,90,30,0.95)',
+              color: '#FFD98A',
+              fontSize: '14px',
+              fontWeight: 'bold',
+              letterSpacing: '0.1em',
+              padding: '8px 20px',
+              borderRadius: '2px',
+              whiteSpace: 'nowrap',
+              pointerEvents: 'none',
+              animation: `condenseBannerIn ${getCssDuration(2000)} ease-out forwards`,
+            }}>
+              힘을 응축했다
+            </div>
+          )}
+          {condenseBanner === 'explode' && (
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              zIndex: 25,
+              backgroundColor: 'rgba(200,150,0,0.97)',
+              color: '#16130F',
+              fontSize: '18px',
+              fontWeight: 'bold',
+              letterSpacing: '0.12em',
+              padding: '10px 24px',
+              borderRadius: '2px',
+              whiteSpace: 'nowrap',
+              pointerEvents: 'none',
+              animation: `condenseExplode ${getCssDuration(1500)} ease-out forwards`,
+            }}>
+              응축 폭발!
             </div>
           )}
 
@@ -2083,6 +2284,62 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
               "{gimmickDialogue}"
             </div>
           )}
+
+          {/* Phase 1.8: 적 패 카드 슬롯 */}
+          <div style={{ position: 'absolute', right: '8px', top: '8px', display: 'flex', gap: '4px' }}>
+            {/* 강공 카운트다운 카드 (뒷면) */}
+            {floorConfig.heavyAttack && (
+              <div style={{
+                width: '32px',
+                height: '45px',
+                backgroundColor: '#3A1A14',
+                border: '1px solid #5A2A20',
+                borderRadius: '2px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '9px',
+                color: '#D9A441',
+                letterSpacing: '0.02em',
+                position: 'relative',
+              }}>
+                <span style={{ fontSize: '8px', color: '#C63D2F' }}>
+                  {floorConfig.heavyAttack.everyN - (attackCount % floorConfig.heavyAttack.everyN)}
+                </span>
+              </div>
+            )}
+            {/* 반격 카드 (뒷면 상시, 플립 발동 시 앞면) */}
+            <div
+              key={enemyCardFlip?.id}
+              style={{
+                width: '32px',
+                height: '45px',
+                backgroundColor: enemyCardFlip ? '#C63D2F' : '#3A1A14',
+                border: `1px solid ${enemyCardFlip ? '#FF7A5C' : '#5A2A20'}`,
+                borderRadius: '2px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '11px',
+                fontWeight: 'bold',
+                color: enemyCardFlip ? '#E8DCC4' : '#5A2A20',
+                perspective: '200px',
+                animation: enemyCardFlip
+                  ? `cardFlipFadeOut ${getCssDuration(1200)} ease-out forwards`
+                  : undefined,
+              }}
+            >
+              {enemyCardFlip ? (
+                <div style={{ textAlign: 'center', lineHeight: 1.2, animation: `cardFlipIn ${getCssDuration(400)} ease-out` }}>
+                  <div style={{ fontSize: '12px' }}>{enemyCardFlip.label}</div>
+                  <div style={{ fontSize: '9px', color: '#FFD98A' }}>{enemyCardFlip.damage}</div>
+                </div>
+              ) : (
+                <span style={{ fontSize: '14px', opacity: 0.4 }}>≡</span>
+              )}
+            </div>
+          </div>
 
           {/* 적 이름 + 주/부 기운 뱃지 (C10 돌진 모션 적용) */}
           <div style={{
@@ -2228,6 +2485,25 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           ))}
         </div>
 
+        {/* Phase 1.8: 기운 잇기 팝업 */}
+        {chainPopup && (
+          <div style={{
+            position: 'fixed',
+            top: '40%',
+            left: '50%',
+            zIndex: 190,
+            color: '#D9A441',
+            fontSize: '22px',
+            fontWeight: 'bold',
+            letterSpacing: '0.08em',
+            pointerEvents: 'none',
+            textShadow: '0 0 20px rgba(217,164,65,0.8)',
+            animation: `chainPopupIn ${getCssDuration(1500)} ease-out forwards`,
+          }}>
+            {chainPopup.text}
+          </div>
+        )}
+
         {/* G1 수정 #1 — 족보 미리보기 실체화 (최소 64px 높이, 붓글씨 20px+) */}
         <div
           style={{
@@ -2274,6 +2550,12 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                       <span key={i} style={{ color: '#FF7A5C', fontWeight: 'bold' }}> · {t}</span>
                     ))}
                   </div>
+                  {/* Phase 1.8: 마무리 기운 */}
+                  {finishingText && (
+                    <div style={{ fontSize: '11px', color: finishingText.color, marginTop: '2px', fontWeight: 'bold' }}>
+                      {finishingText.text}
+                    </div>
+                  )}
                   {/* Phase 1.6 A: 주 기운 표시 */}
                   {primaryElText && selectedCards.length > 0 && (
                     <div style={{ fontSize: '11px', color: '#6A6560', marginTop: '2px' }}>
@@ -2324,9 +2606,9 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: '8px 8px 0 8px',
-            overflowX: 'auto',
-            gap: '4px',
+            padding: '8px 4px 0 4px',
+            overflowX: 'hidden',
+            gap: '2px',
             position: 'relative',
           }}
         >
@@ -2432,8 +2714,11 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
             const glowColor = ELEMENT_GLOW_COLORS[card.element]
             const totalCards = hand.length
             const midpoint = (totalCards - 1) / 2
-            const angle = (idx - midpoint) * 5
-            const w = 62
+            const angle = (idx - midpoint) * 4
+            // 8장이 화면에 들어오도록 동적 너비 계산 (최대 62px, 최소 38px)
+            const maxW = 62
+            const minW = 38
+            const w = Math.max(minW, Math.min(maxW, Math.floor((window.innerWidth - 48) / Math.max(totalCards, 1)) - 4))
             const h = Math.round(w * 7 / 5)
 
             // 역극 카드: opacity 0.35, 필터 더 강하게
@@ -2573,6 +2858,30 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                     pointerEvents: 'none',
                   }}>
                     오늘은 이 기운이 힘을 못 쓰는 날
+                  </div>
+                )}
+                {/* Phase 1.8: 역극 툴팁 팝업 */}
+                {isYeokgeukInHand && yeokgeukTooltip?.cardId === card.id && (
+                  <div style={{
+                    position: 'absolute',
+                    bottom: '100%',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    backgroundColor: 'rgba(22,19,15,0.97)',
+                    border: '1px solid #B33A2B',
+                    color: '#D8CCB4',
+                    fontSize: '10px',
+                    padding: '6px 8px',
+                    borderRadius: '2px',
+                    whiteSpace: 'nowrap',
+                    letterSpacing: '0.02em',
+                    zIndex: 80,
+                    pointerEvents: 'none',
+                    lineHeight: '1.5',
+                    maxWidth: '180px',
+                    textAlign: 'center',
+                  }}>
+                    {yeokgeukTooltip.text}
                   </div>
                 )}
               </button>

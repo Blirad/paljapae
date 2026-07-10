@@ -505,7 +505,7 @@ export default function PreBattleScreen({ hand, onComplete, seed, heroProfile }:
                 오늘의 패 확인
               </div>
               <div style={{ color: '#6A6560', fontSize: '12px', marginBottom: '20px', textAlign: 'center', letterSpacing: '0.06em' }}>
-                던전에 들기 전 손에 쥔 패를 확인하라
+                출정 전 손에 쥔 패를 확인하라
               </div>
 
               {/* 카드 표시 (버리기/공격 카운터 제거) */}
@@ -588,7 +588,7 @@ export default function PreBattleScreen({ hand, onComplete, seed, heroProfile }:
                 가호 선택
               </div>
               <div style={{ color: '#6A6560', fontSize: '12px', marginBottom: '12px', textAlign: 'center', letterSpacing: '0.06em', lineHeight: '1.7' }}>
-                던전에 들기 전, 그대를 지킬 두 가호를 고르십시오.<br/>
+                출정 전, 그대를 지킬 두 가호를 고르십시오.<br/>
                 <span style={{ color: '#4A4540' }}>{selectedPassives.length}/2 선택됨</span>
               </div>
 
@@ -709,7 +709,7 @@ export default function PreBattleScreen({ hand, onComplete, seed, heroProfile }:
                 출전 준비 완료
               </div>
               <div style={{ color: '#6A6560', fontSize: '12px', marginBottom: '24px', letterSpacing: '0.06em' }}>
-                선택한 가호를 품고 던전에 들어라
+                선택한 가호를 품고 출정하라
               </div>
 
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginBottom: '28px' }}>

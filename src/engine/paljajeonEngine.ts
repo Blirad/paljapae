@@ -3,15 +3,14 @@
  * 순수 함수 모듈 — UI 의존 없음
  */
 
-import type { Card, GameState, Element } from '../types/game'
+import type { Card, GameState, Element, SavedHeroProfile } from '../types/game'
 import {
   judgeHand,
   GEUK_MAP,
   detectElementClash,
-  calcGeukBonusMultiplier,
-  detectYeokgeukPenalty,
 } from './pokerHandJudge'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, SUB_GEUK_BONUS } from './balance'
+import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY } from './balance'
+import { generateSajuDeck } from './deckGenerator'
 
 /**
  * C10(d): 오행 속성별 기믹 정의 (balance.ts 수치 변경 없이 새로운 로직 추가)
@@ -94,9 +93,14 @@ export function shuffleDeck(deck: Card[], seed?: number): Card[] {
 }
 
 /** 초기 게임 상태 생성 */
-export function createInitialGameState(floorIndex = 0): GameState {
+export function createInitialGameState(floorIndex = 0, heroProfile?: SavedHeroProfile | null): GameState {
   const floorConfig = FLOOR_CONFIGS[floorIndex]
-  const deck = shuffleDeck(createFixedDeck())
+  let deck: Card[]
+  if (heroProfile?.elementDist && heroProfile?.deckSeed) {
+    deck = shuffleDeck(generateSajuDeck(heroProfile.elementDist, heroProfile.deckSeed))
+  } else {
+    deck = shuffleDeck(createFixedDeck())
+  }
   const hand = deck.slice(0, HAND_SIZE)
   const remainDeck = deck.slice(HAND_SIZE)
 
@@ -120,6 +124,7 @@ export function createInitialGameState(floorIndex = 0): GameState {
     amplifyActive: false,
     attackCount: 0,
     enemyPhaseSwitch: false,
+    condenseActive: false,
   }
 }
 
@@ -155,13 +160,19 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     damage = Math.round(damage * 0.7)
   }
 
-  // A-2: [주 기운 원칙] 내 카드가 적 주 기운을 극할 때:
-  //      주 기운이 극하면 +50%, 아닌 기운이 극하면 +10%
+  // Phase 1.8: 마무리 기운 기준 극/반극 판정
+  const finishEl = result.finishingElement
+
+  // A-2: [마무리 기운 원칙] 마무리 기운이 적 주 기운을 극하면 +70%, 아닌 기운이 극하면 +10%
   let mainGeukApplied = false
   if (floorEnemyEl) {
-    const geukCalc = calcGeukBonusMultiplier(playedCards, floorEnemyEl)
-    if (geukCalc.multiplier !== 1.0) {
-      damage = Math.round(damage * geukCalc.multiplier)
+    const finishGeuksEnemy = GEUK_MAP[finishEl] === floorEnemyEl
+    const anyGeuksEnemy = playedCards.some(c => GEUK_MAP[c.element] === floorEnemyEl)
+    if (finishGeuksEnemy) {
+      damage = Math.round(damage * 1.7)
+      mainGeukApplied = true
+    } else if (anyGeuksEnemy) {
+      damage = Math.round(damage * 1.1)
       mainGeukApplied = true
     }
   }
@@ -174,11 +185,11 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     }
   }
 
-  // A-3: [적의 반극] 적 주 기운이 내 주 기운을 이기면 최종 피해 -30%
+  // A-3: [적의 반극] 마무리 기운이 적 주 기운에 의해 극 당하면 -40% (Phase 1.8)
   if (floorEnemyEl) {
-    const yeokgeuk = detectYeokgeukPenalty(playedCards, [floorEnemyEl])
-    if (yeokgeuk.hasPenalty) {
-      damage = Math.round(damage * 0.7)
+    const enemyGeuksFinish = GEUK_MAP[floorEnemyEl] === finishEl
+    if (enemyGeuksFinish) {
+      damage = Math.round(damage * ANTI_GEUK_PENALTY)
     }
   }
 
@@ -190,6 +201,19 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
   // Phase 1.6 B — 증폭부: 다음 공격 ×2
   if (state.amplifyActive) {
     damage = damage * 2
+  }
+
+  // Phase 1.8 — 토 응축 소모: 이전 응축 상태이면 ×1.6
+  let newCondenseActive = state.condenseActive
+  if (state.condenseActive) {
+    damage = Math.round(damage * 1.6)
+    newCondenseActive = false
+  }
+
+  // Phase 1.8 — 토 응축 적립: 마무리 기운이 토이면 즉시 피해 ×0.6 + 응축 활성
+  if (finishEl === 'to' && !state.condenseActive) {
+    damage = Math.round(damage * 0.6)
+    newCondenseActive = true
   }
 
   // C10(d): 붕토령 — 받는 피해 -20%
@@ -297,6 +321,7 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     amplifyActive: false,  // 증폭부 1회 소모
     attackCount: newAttackCount,
     enemyPhaseSwitch: newEnemyPhaseSwitch,
+    condenseActive: newCondenseActive,
   }
 }
 
@@ -429,5 +454,6 @@ export function advanceToNextFloor(state: GameState): GameState {
     phase: 'select',
     attackCount: 0,
     enemyPhaseSwitch: false,
+    condenseActive: false,
   }
 }

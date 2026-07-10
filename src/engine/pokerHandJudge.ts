@@ -151,6 +151,33 @@ const RANK_CONFIG: Record<HandRank, { baseScore: number; multiplier: number; des
   'none':            { baseScore: 5,   multiplier: 1,  description: '기세 없음' },
 }
 
+/** 상생 체인의 마지막 원소 반환 (최장 체인의 끝 기운) */
+function getSaengchaeChainLastElement(cards: Card[]): Element | null {
+  if (cards.length < 2) return null
+  const elements = cards.map(c => c.element)
+
+  let maxChain = 0
+  let lastEl: Element | null = null
+  for (let start = 0; start < elements.length; start++) {
+    let chain = 1
+    let current = elements[start]
+    const used = new Set([start])
+    while (true) {
+      const next = SAENGCHAE_MAP[current]
+      const nextIdx = elements.findIndex((e, i) => e === next && !used.has(i))
+      if (nextIdx === -1) break
+      used.add(nextIdx)
+      current = next
+      chain++
+    }
+    if (chain > maxChain) {
+      maxChain = chain
+      lastEl = current
+    }
+  }
+  return lastEl
+}
+
 /** 상생 체인 길이 계산 */
 function getSaengchaeChainLength(cards: Card[]): number {
   if (cards.length < 2) return 0
@@ -239,7 +266,7 @@ function sumValues(cards: Card[]): number {
  */
 export function judgeHand(selectedCards: Card[]): HandJudgeResult {
   if (selectedCards.length === 0) {
-    return { rank: 'none', baseScore: 0, multiplier: 1, totalScore: 0, description: '카드 없음' }
+    return { rank: 'none', baseScore: 0, multiplier: 1, totalScore: 0, description: '카드 없음', finishingElement: 'mok' }
   }
 
   const cardSum = sumValues(selectedCards)
@@ -281,12 +308,27 @@ export function judgeHand(selectedCards: Card[]): HandJudgeResult {
   const baseScore = config.baseScore + cardSum
   const totalScore = Math.round(baseScore * config.multiplier)
 
+  // Phase 1.8 — 마무리 기운 결정
+  let finishingElement: Element
+  if (rank === 'saengchae-chain' || rank === 'saengchae-3') {
+    // 상생 체인: 체인의 마지막 원소
+    const last = getSaengchaeChainLastElement(selectedCards)
+    finishingElement = last ?? (determinePrimaryElement(selectedCards)?.element ?? selectedCards[0].element)
+  } else if (rank === 'jipgyeol-5' || rank === 'jipgyeol-4' || rank === 'jipgyeol-3') {
+    // 모으기: 해당 기운 그대로 (가장 많은 기운)
+    finishingElement = determinePrimaryElement(selectedCards)?.element ?? selectedCards[0].element
+  } else {
+    // 기타: 주 기운
+    finishingElement = determinePrimaryElement(selectedCards)?.element ?? selectedCards[0].element
+  }
+
   return {
     rank,
     baseScore,
     multiplier: config.multiplier,
     totalScore,
     description: config.description,
+    finishingElement,
   }
 }
 

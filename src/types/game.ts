@@ -41,6 +41,7 @@ export interface HandJudgeResult {
   multiplier: number
   totalScore: number
   description: string
+  finishingElement: Element  // 마무리 기운 (Phase 1.8)
 }
 
 export type EnemyGimmickEffect =
@@ -87,6 +88,8 @@ export interface GameState {
   // Phase 1.7 신규
   attackCount: number       // 내가 공격한 총 횟수 (강공 카운터)
   enemyPhaseSwitch: boolean // 기운 전환 발동 여부 (1회만)
+  // Phase 1.8 신규
+  condenseActive: boolean   // 토 응축 상태 (다음 공격 ×1.6)
 }
 
 export type FortuneLevel = 'daegil' | 'gil' | 'pyeong' | 'hyung' | 'daehyung'

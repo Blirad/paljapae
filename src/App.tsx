@@ -12,7 +12,6 @@ import { GameContextProvider } from './context/GameContext'
 import TitleScreen from './components/TitleScreen'
 import SajuInputScreen from './components/SajuInputScreen'
 import HomeScreen from './components/HomeScreen'
-import DailyDrawScreen from './components/DailyDrawScreen'
 import BattleScreen from './components/BattleScreen'
 import FloorRewardScreen from './components/FloorRewardScreen'
 import ResultScreen from './components/ResultScreen'
@@ -30,7 +29,6 @@ type Screen =
   | 'title'
   | 'sajuInput'
   | 'home'
-  | 'dailyDraw'
   | 'preBattle'
   | 'deckPrep'
   | 'battle'
@@ -93,7 +91,7 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>('title')
   const [sajuInfo, setSajuInfo] = useState<SajuInfo | null>(null)
   const [heroProfile, setHeroProfile] = useState<SavedHeroProfile | null>(null)
-  const [drawnCards, setDrawnCards] = useState<Card[]>([])
+  const [drawnCards] = useState<Card[]>([])
   const [selectedPassives, setSelectedPassives] = useState<Passive[]>([])
   const [wins, setWins] = useState(0)
   const [losses, setLosses] = useState(0)
@@ -132,18 +130,15 @@ export default function App() {
   }, [])
 
   const handleNewRun = useCallback(() => {
-    setScreen('dailyDraw')
-  }, [])
-
-  const handleDailyDrawProceed = useCallback((cards: Card[]) => {
-    setDrawnCards(cards)
     setScreen('preBattle')
   }, [])
 
   const handlePreBattleComplete = useCallback((passives: Passive[]) => {
     setSelectedPassives(passives)
-    setScreen('deckPrep')
-  }, [])
+    // Phase 1.8: "오늘의 패" 중간 화면 폐기 — PreBattle 완료 후 바로 전투 진입
+    startGame()
+    setScreen('battle')
+  }, [startGame])
 
   const handleDeckPrepStart = useCallback((_cards: Card[]) => {
     startGame()
@@ -169,7 +164,7 @@ export default function App() {
   }, [proceedToNextFloor])
 
   const handleRetry = useCallback(() => {
-    setScreen('dailyDraw')
+    setScreen('preBattle')
   }, [])
 
   const handleHome = useCallback(() => {
@@ -201,9 +196,6 @@ export default function App() {
           heroProfile={heroProfile}
           onResetSaju={handleResetSaju}
         />
-      )}
-      {screen === 'dailyDraw' && (
-        <DailyDrawScreen onProceed={handleDailyDrawProceed} />
       )}
       {screen === 'preBattle' && (
         <PreBattleScreen
