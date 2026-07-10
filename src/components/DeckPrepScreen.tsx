@@ -1,13 +1,11 @@
 /**
  * 팔자전 — (5) 출전준비 화면
- * 족보 미리보기 실시간 표시
- * "버리기 0/3, 출수 0/4" 표기 필수
+ * 카드 확인 + 전투 시작 버튼
  */
 
 import { useState } from 'react'
 import type { Card } from '../types/game'
 import { judgeHand } from '../engine/pokerHandJudge'
-import { BASE_DISCARDS } from '../engine/balance'
 
 interface DeckPrepScreenProps {
   hand: Card[]
@@ -24,11 +22,6 @@ const ELEMENT_COLORS: Record<string, string> = {
 
 export default function DeckPrepScreen({ hand, onStartBattle }: DeckPrepScreenProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
-  const [discardCount, setDiscardCount] = useState(0)
-  const [currentHand, setCurrentHand] = useState<Card[]>(hand)
-
-  const maxDiscards = BASE_DISCARDS
-  const maxPlays = 4
 
   const toggleCard = (cardId: string) => {
     setSelectedIds(prev => {
@@ -40,18 +33,11 @@ export default function DeckPrepScreen({ hand, onStartBattle }: DeckPrepScreenPr
     })
   }
 
-  const handleDiscard = () => {
-    if (selectedIds.length === 0 || discardCount >= maxDiscards) return
-    setCurrentHand(prev => prev.filter(c => !selectedIds.includes(c.id)))
-    setDiscardCount(prev => prev + 1)
-    setSelectedIds([])
-  }
-
-  const selectedCards = currentHand.filter(c => selectedIds.includes(c.id))
+  const selectedCards = hand.filter(c => selectedIds.includes(c.id))
   const preview = selectedCards.length > 0 ? judgeHand(selectedCards) : null
 
   const handleStartBattle = () => {
-    onStartBattle(currentHand)
+    onStartBattle(hand)
   }
 
   return (
@@ -70,16 +56,6 @@ export default function DeckPrepScreen({ hand, onStartBattle }: DeckPrepScreenPr
         <h2 style={{ color: '#E8DCC4', fontSize: '18px', letterSpacing: '0.15em', margin: 0 }}>
           출전 준비
         </h2>
-
-        {/* 버리기/출수 카운터 — 필수 표기 */}
-        <div className="flex gap-6 mt-2">
-          <span style={{ color: '#D8CCB4', fontSize: '14px' }}>
-            버리기 {discardCount}/{maxDiscards}
-          </span>
-          <span style={{ color: '#D8CCB4', fontSize: '14px' }}>
-            공격 0/{maxPlays}
-          </span>
-        </div>
       </div>
 
       {/* 족보 미리보기 — 실시간 */}
@@ -114,7 +90,7 @@ export default function DeckPrepScreen({ hand, onStartBattle }: DeckPrepScreenPr
         className="flex flex-wrap justify-center gap-3 px-4 py-6"
         style={{ flex: 1 }}
       >
-        {currentHand.map(card => {
+        {hand.map(card => {
           const isSelected = selectedIds.includes(card.id)
           const elColor = ELEMENT_COLORS[card.element]
           const w = 74
@@ -175,25 +151,6 @@ export default function DeckPrepScreen({ hand, onStartBattle }: DeckPrepScreenPr
 
       {/* 하단 버튼 */}
       <div className="flex flex-col gap-3 px-6">
-        <button
-          onClick={handleDiscard}
-          disabled={selectedIds.length === 0 || discardCount >= maxDiscards}
-          style={{
-            backgroundColor: 'transparent',
-            border: '1px solid #4A4540',
-            color: discardCount >= maxDiscards ? '#4A4540' : '#D8CCB4',
-            padding: '14px',
-            fontSize: '14px',
-            letterSpacing: '0.1em',
-            cursor: selectedIds.length === 0 || discardCount >= maxDiscards ? 'not-allowed' : 'pointer',
-            width: '100%',
-            minHeight: '48px',
-            opacity: discardCount >= maxDiscards ? 0.4 : 1,
-          }}
-        >
-          버리기 ({discardCount}/{maxDiscards})
-        </button>
-
         <button
           onClick={handleStartBattle}
           className="transition-all duration-150 active:scale-95"

@@ -13,8 +13,7 @@
  */
 
 import {
-  judgeHand,
-  detectElementClash,
+  judgeCombo,
   GEUK_MAP,
 } from './pokerHandJudge'
 import type { Card, Element, GameState } from '../types/game'
@@ -23,7 +22,7 @@ import {
   shuffleDeck,
   playCards,
 } from './paljajeonEngine'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, SUB_GEUK_BONUS } from './balance'
+import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, GEUK_BONUS_MULTIPLIER, ANTI_GEUK_PENALTY } from './balance'
 
 /**
  * 조합(combination) 유틸: n장 중 k장 뽑기
@@ -38,72 +37,60 @@ function combinations<T>(arr: T[], k: number): T[][] {
 }
 
 /**
- * Phase 1.8 — 마무리 기운 기반 예상 데미지 계산
- * (마무리 기운 극 +70%/+10%, 부 기운 극 +25%, 충돌 -30%, 반극 -40%)
- * 토 응축: 마무리 기운이 to이면 즉시 ×0.6 + 다음 턴 ×1.6
+ * Phase 1.9 — 예상 데미지 계산 (신체계: 기운 모으기 / 융합 / 오행연환)
+ *
+ * 로직:
+ *  1. judgeCombo()로 조합 판정 (type + finishingElement + multiplier)
+ *  2. 타격 속성(finishingElement) 기준으로 극/반극 판정
+ *  3. 극 보너스: +70% (GEUK_BONUS_MULTIPLIER = 1.7)
+ *  4. 반극 페널티: −40% (ANTI_GEUK_PENALTY = 0.6)
+ *  5. 토 응축: condenseActive 시 ×1.6
+ *
+ * 음양 조화 보너스는 이미 judgeCombo()에서 totalScore에 포함됨
  */
 export function calcExpectedDamage(
   combo: Card[],
   enemyPrimaryElement: Element,
-  enemySubElement?: Element,
+  _enemySubElement?: Element,
   condenseActive?: boolean,
 ): number {
-  const result = judgeHand(combo)
+  // Phase 1.9: judgeCombo() 사용 (새 체계)
+  const result = judgeCombo(combo)
   let damage = result.totalScore
   const finishEl = result.finishingElement
 
-  // A-1: 기운 충돌 -30%
-  const clashes = detectElementClash(combo)
-  if (clashes.length > 0) {
-    damage = Math.round(damage * 0.7)
+  // 극 판정: 타격 속성(finishingElement) 기준
+  const isGeuk = GEUK_MAP[finishEl] === enemyPrimaryElement
+  const isAntiGeuk = GEUK_MAP[enemyPrimaryElement] === finishEl
+
+  if (isGeuk) {
+    // 극: +70%
+    damage = Math.round(damage * GEUK_BONUS_MULTIPLIER)
+  } else if (isAntiGeuk) {
+    // 반극: −40%
+    damage = Math.round(damage * ANTI_GEUK_PENALTY)
   }
 
-  // Phase 1.8: 마무리 기운 기준 극 보너스
-  const finishGeuksEnemy = GEUK_MAP[finishEl] === enemyPrimaryElement
-  const anyGeuksEnemy = combo.some(c => GEUK_MAP[c.element] === enemyPrimaryElement)
-  let mainGeukApplied = false
-  if (finishGeuksEnemy) {
-    damage = Math.round(damage * 1.7)
-    mainGeukApplied = true
-  } else if (anyGeuksEnemy) {
-    damage = Math.round(damage * 1.1)
-    mainGeukApplied = true
-  }
-
-  // Phase 1.7: 부 기운 극 보너스 +25% (주 기운 극 미적용 시만)
-  if (!mainGeukApplied && enemySubElement) {
-    const hasSubGeuk = combo.some(c => GEUK_MAP[c.element] === enemySubElement)
-    if (hasSubGeuk) {
-      damage = Math.round(damage * SUB_GEUK_BONUS)
-    }
-  }
-
-  // Phase 1.8: 마무리 기운이 적에 의해 극 당하면 -40%
-  const enemyGeuksFinish = GEUK_MAP[enemyPrimaryElement] === finishEl
-  if (enemyGeuksFinish) {
-    damage = Math.round(damage * 0.6)
-  }
-
-  // Phase 1.8: 토 응축 — 다음 턴 ×1.6 보상 고려
-  // condenseActive=true: 이번 턴에 응축 소모 → ×1.6
+  // 토 응축: 다음 공격 ×1.6
   if (condenseActive) {
     damage = Math.round(damage * 1.6)
   }
 
-  // 토 마무리: 즉시 ×0.6 (응축 적립 → 다음 턴 보상)
-  // 봇은 토 조합의 즉시 피해가 낮아도 다음 턴 보상(1.6)을 기대치에 반영
+  // 토 조합의 즉시 피해 감소는 별도 로직 (상황별)
+  // 봇은 토 응축으로 얻는 보상을 기대값으로 반영
   if (finishEl === 'to' && !condenseActive) {
-    // 즉시 피해 ×0.6이지만 다음 턴 기대 보상 factor 추가 (0.6 * 1.6 = 0.96 ≈ 손해 없음으로 간주)
+    // 토 마무리: 즉시 ×0.6
     damage = Math.round(damage * 0.6)
-    // 봇은 다음 턴 응축 보상을 기대값 +60% 보정으로 반영
-    damage = Math.round(damage * 1.4)  // 0.6 * 1.4 ≈ 0.84 (보수적 추정)
+    // 봇은 다음 턴 응축 보상을 보수적으로 기대값 +40% 반영
+    damage = Math.round(damage * 1.4)  // 0.6 × 1.4 = 0.84
   }
 
   return damage
 }
 
 /**
- * 탐욕 봇 핸드 선택 (Phase 1.8 — 마무리 기운 + 토 응축 반영)
+ * 탐욕 봇 핸드 선택 (Phase 1.9 — 신조합 체계 반영)
+ * 유효한 조합만 선택하고, 그 중 최고 데미지/점수를 고르기
  */
 export function greedySelectCards(
   hand: Card[],
@@ -120,9 +107,15 @@ export function greedySelectCards(
   for (let k = 1; k <= maxCards; k++) {
     const combos = combinations(hand, k)
     for (const combo of combos) {
+      const result = judgeCombo(combo)
+
+      // Phase 1.9: 유효한 조합만 선택 (none 제외)
+      if (result.type === 'none') continue
+
       const score = enemyPrimaryElement
         ? calcExpectedDamage(combo, enemyPrimaryElement, enemySubElement, condenseActive)
-        : judgeHand(combo).totalScore
+        : result.totalScore
+
       if (
         score > bestScore ||
         (score === bestScore && combo.length < bestIds.length)
@@ -131,6 +124,11 @@ export function greedySelectCards(
         bestIds = combo.map(c => c.id)
       }
     }
+  }
+
+  // 유효한 조합을 찾지 못한 경우, 단일 카드 선택 (최후의 수단)
+  if (bestIds.length === 0 && hand.length > 0) {
+    bestIds = [hand[0].id]
   }
 
   return bestIds

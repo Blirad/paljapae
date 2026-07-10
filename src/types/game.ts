@@ -22,18 +22,23 @@ export interface Card {
 }
 
 export type HandRank =
-  | 'ohang-yeonhwan'  // 오행연환 — 오행 전부 + 극/상생 완전 순환
-  | 'saengchae-chain' // 상생 4체인
-  | 'geukchae-chain'  // 극 체인 3단
-  | 'eumyang-pair-3'  // 음양쌍 × 3
-  | 'jipgyeol-5'      // 결집 5동류
-  | 'saengchae-3'     // 상생 3체인
-  | 'eumyang-pair-2'  // 음양쌍 × 2
-  | 'jipgyeol-4'      // 결집 4동류
-  | 'geuk-bonas'      // 극 보너스 (단독 극)
-  | 'eumyang-pair-1'  // 음양쌍 × 1
-  | 'jipgyeol-3'      // 결집 3동류
-  | 'none'            // 해당 없음
+  // Phase 1.9 신규 조합 체계
+  | 'ohang-yeonhwan'   // 오행연환 — 5기운 모두
+  | 'gather'           // 기운 모으기 — 같은 기운 2~5장
+  | 'fusion-birth'     // 융합(낳는) — 서로 다른 기운 2장, 배율 ×2.5
+  | 'fusion-hone'      // 융합(벼리는) — 서로 다른 기운 2장, 배율 ×3.5
+  // Phase 1.8 호환성 (사용 불가, 변경 예정)
+  | 'saengchae-chain'  // [deprecated] 상생 4체인
+  | 'geukchae-chain'   // [deprecated] 극 체인 3단
+  | 'eumyang-pair-3'   // [deprecated] 음양쌍 × 3
+  | 'jipgyeol-5'       // [deprecated] 결집 5동류
+  | 'saengchae-3'      // [deprecated] 상생 3체인
+  | 'eumyang-pair-2'   // [deprecated] 음양쌍 × 2
+  | 'jipgyeol-4'       // [deprecated] 결집 4동류
+  | 'geuk-bonas'       // [deprecated] 극 보너스 (단독 극)
+  | 'eumyang-pair-1'   // [deprecated] 음양쌍 × 1
+  | 'jipgyeol-3'       // [deprecated] 결집 3동류
+  | 'none'             // 해당 없음
 
 export interface HandJudgeResult {
   rank: HandRank
