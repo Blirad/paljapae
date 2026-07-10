@@ -21,8 +21,10 @@ import {
   createFixedDeck,
   shuffleDeck,
   playCards,
+  applyCondense,
+  getCondenseAvailability,
 } from './paljajeonEngine'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, GEUK_BONUS_MULTIPLIER, ANTI_GEUK_PENALTY } from './balance'
+import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, GEUK_BONUS_MULTIPLIER, ANTI_GEUK_PENALTY, CONDENSE_V2_MULTIPLIER, GREAT_CONDENSE_MULTIPLIER } from './balance'
 
 /**
  * 조합(combination) 유틸: n장 중 k장 뽑기
@@ -37,14 +39,17 @@ function combinations<T>(arr: T[], k: number): T[][] {
 }
 
 /**
- * Phase 1.9 — 예상 데미지 계산 (신체계: 기운 모으기 / 융합 / 오행연환)
+ * Phase 1.9.2 — 예상 데미지 계산 (E-1~E-4 갱신)
  *
  * 로직:
  *  1. judgeCombo()로 조합 판정 (type + finishingElement + multiplier)
  *  2. 타격 속성(finishingElement) 기준으로 극/반극 판정
  *  3. 극 보너스: +70% (GEUK_BONUS_MULTIPLIER = 1.7)
  *  4. 반극 페널티: −40% (ANTI_GEUK_PENALTY = 0.6)
- *  5. 토 응축: condenseActive 시 ×1.6
+ *  5. E-1: 연환 yeonhwanUsed 체크 → 사용됐으면 0점
+ *  6. E-2: 응축 v2 2턴 시야: condenseType 있으면 소모, 없으면 기대값 계산
+ *  7. E-3: 화 연소 +30% (finishEl === 'hwa')
+ *  8. E-3: 금 관통 — 적 방어 있을 때 가중치 증가 (finishEl === 'geum')
  *
  * 음양 조화 보너스는 이미 judgeCombo()에서 totalScore에 포함됨
  */
@@ -52,60 +57,76 @@ export function calcExpectedDamage(
   combo: Card[],
   enemyPrimaryElement: Element,
   _enemySubElement?: Element,
-  condenseActive?: boolean,
+  condenseType?: 'basic' | 'great' | null,
+  yeonhwanUsed?: boolean,
+  isLastAttack?: boolean,
+  enemyHasDamageReduction?: boolean,
 ): number {
-  // Phase 1.9: judgeCombo() 사용 (새 체계)
   const result = judgeCombo(combo)
   let damage = result.totalScore
   const finishEl = result.finishingElement
+
+  // E-1: 연환 1회 제한 — 이미 사용했으면 0
+  if (result.type === 'ohang-yeonhwan' && yeonhwanUsed) {
+    return 0
+  }
 
   // 극 판정: 타격 속성(finishingElement) 기준
   const isGeuk = GEUK_MAP[finishEl] === enemyPrimaryElement
   const isAntiGeuk = GEUK_MAP[enemyPrimaryElement] === finishEl
 
   if (isGeuk) {
-    // 극: +70%
     damage = Math.round(damage * GEUK_BONUS_MULTIPLIER)
   } else if (isAntiGeuk) {
-    // 반극: −40%
     damage = Math.round(damage * ANTI_GEUK_PENALTY)
   }
 
-  // 토 응축: 다음 공격 ×1.6
-  if (condenseActive) {
-    damage = Math.round(damage * 1.6)
+  // E-2: 응축 v2 소모 — condenseType 있으면 배율 적용
+  if (condenseType) {
+    const mult = condenseType === 'basic' ? (1 + CONDENSE_V2_MULTIPLIER) : (1 + GREAT_CONDENSE_MULTIPLIER)
+    damage = Math.round(damage * mult)
+  } else {
+    // 2턴 시야: 응축 기대값 평가 (마지막 공격이 아닌 경우만)
+    const condenseKind = getCondenseAvailability(result.name, finishEl)
+    if (condenseKind && !isLastAttack) {
+      // 응축 선택 시: 이번 턴 피해 0 + 다음 턴 배율
+      // 기대값 = 0 + (nextDamage × mult) / 2 ≈ damage × mult / 2
+      const mult = condenseKind === 'basic'
+        ? (1 + CONDENSE_V2_MULTIPLIER)
+        : (1 + GREAT_CONDENSE_MULTIPLIER)
+      // 2턴 평균: (0 + damage × mult) / 2
+      const condenseExpected = Math.round(damage * mult / 2)
+      // 즉시 공격 vs 응축 기대값 비교: 높은 쪽 반영
+      damage = Math.max(damage, condenseExpected)
+    }
   }
 
-  // Phase 1.9 — 토 응축 적립: 봇이 응축을 기대값으로 평가
-  // 응축 발동 조건: 토 모으기, 일군 밭, 옹기가마 (3종)
-  const isToCondenseTrigger = finishEl === 'to' && (
-    (result.name?.includes('흙 모으기')) ||  // 토 모으기
-    result.name === '일군 밭' ||              // 일군 밭 (벼리는)
-    result.name === '옹기가마'                // 옹기가마 (낳는) — Phase 1.9 추가
-  )
+  // E-3: 화 연소 +30%
+  if (finishEl === 'hwa') {
+    damage = Math.round(damage * 1.3)
+  }
 
-  // 토 조합의 즉시 피해 감소는 별도 로직 (상황별)
-  // 봇은 토 응축으로 얻는 보상을 기대값으로 반영
-  if (isToCondenseTrigger && !condenseActive) {
-    // 토 마무리: 즉시 ×0.6
-    damage = Math.round(damage * 0.6)
-    // 2턴 시야 평가: 이번 턴 ×0.6 + 다음 턴 ×1.6 = 합산 2.2, 평균 1.1
-    // 보정 계수 = 1.1 / 0.6 ≈ 1.83 → 응축 가치 적정 반영
-    damage = Math.round(damage * 1.83)  // 0.6 × 1.83 ≈ 1.1
+  // E-3: 금 관통 — 적 방어가 있을 때 실제 가중치 상승
+  if (finishEl === 'geum' && enemyHasDamageReduction) {
+    // 관통 시 피해감소 무시 효과: 방어 30% 기준으로 가중치 반영
+    damage = Math.round(damage / 0.7)  // 방어 30% 무시 (1/0.7 ≈ 1.43)
   }
 
   return damage
 }
 
 /**
- * 탐욕 봇 핸드 선택 (Phase 1.9 — 신조합 체계 반영)
- * 유효한 조합만 선택하고, 그 중 최고 데미지/점수를 고르기
+ * 탐욕 봇 핸드 선택 (Phase 1.9.2 — E-1~E-4 갱신)
+ * 유효한 조합만 선택하고, 그 중 최고 예상 데미지를 고르기
  */
 export function greedySelectCards(
   hand: Card[],
   enemyPrimaryElement?: Element,
   enemySubElement?: Element,
-  condenseActive?: boolean,
+  condenseType?: 'basic' | 'great' | null,
+  yeonhwanUsed?: boolean,
+  isLastAttack?: boolean,
+  enemyHasDamageReduction?: boolean,
 ): string[] {
   if (hand.length === 0) return []
 
@@ -118,11 +139,22 @@ export function greedySelectCards(
     for (const combo of combos) {
       const result = judgeCombo(combo)
 
-      // Phase 1.9: 유효한 조합만 선택 (none 제외)
+      // 유효한 조합만 선택 (none 제외)
       if (result.type === 'none') continue
 
+      // E-1: 연환 1회 제한 — 이미 사용했으면 오행연환 제외
+      if (result.type === 'ohang-yeonhwan' && yeonhwanUsed) continue
+
       const score = enemyPrimaryElement
-        ? calcExpectedDamage(combo, enemyPrimaryElement, enemySubElement, condenseActive)
+        ? calcExpectedDamage(
+            combo,
+            enemyPrimaryElement,
+            enemySubElement,
+            condenseType,
+            yeonhwanUsed,
+            isLastAttack,
+            enemyHasDamageReduction,
+          )
         : result.totalScore
 
       if (
@@ -165,6 +197,10 @@ export interface RunResult {
   floorsCleared: number
   deathFloor: number | null
   floorStats: FloorStats[]
+  // Phase 1.9.2 지시 4(g)/5(a) 추가 통계
+  condenseCount: number       // 기본 응축 선택 횟수
+  greatCondenseCount: number  // 대응축 선택 횟수
+  combustionCount: number     // 화 연소 발동 횟수
 }
 
 function createDeterministicState(floorIndex: number, rng: () => number): GameState {
@@ -194,6 +230,14 @@ function createDeterministicState(floorIndex: number, rng: () => number): GameSt
     attackCount: 0,
     enemyPhaseSwitch: false,
     condenseActive: false,
+    // Phase 1.9.2 신규 필드
+    yeonhwanUsed: false,
+    condenseType: null,
+    condenseMultiplier: 0,
+    isLastAttack: floorConfig.maxPlays === 1,
+    sootCount: {},
+    combustionTriggered: false,
+    penetrationTriggered: false,
   }
 }
 
@@ -204,6 +248,10 @@ export function simulateGreedyRun(seed: number): RunResult {
   let deathFloor: number | null = null
   let floorsCleared = 0
   const floorStats: FloorStats[] = []
+  // Phase 1.9.2 통계 카운터
+  let condenseCount = 0
+  let greatCondenseCount = 0
+  let combustionCount = 0
 
   let state = createDeterministicState(0, rng)
   let playerHp = PLAYER_BASE_HP
@@ -232,6 +280,14 @@ export function simulateGreedyRun(seed: number): RunResult {
         attackCount: 0,
         enemyPhaseSwitch: false,
         condenseActive: false,
+        // Phase 1.9.2: 층 전환 시 연환 리셋
+        yeonhwanUsed: false,
+        condenseType: null,
+        condenseMultiplier: 0,
+        isLastAttack: floorConfig.maxPlays === 1,
+        sootCount: {},
+        combustionTriggered: false,
+        penetrationTriggered: false,
       }
     } else {
       state = { ...state, playerHp }
@@ -258,22 +314,22 @@ export function simulateGreedyRun(seed: number): RunResult {
           deathFloor = floor
           floorStats.push({ floor, attackCount, cleared: false })
         }
-        return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats }
+        return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats, condenseCount, greatCondenseCount, combustionCount }
       }
 
       if (state.playsLeft <= 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats }
+        return { victory: false, floorsCleared, deathFloor, floorStats, condenseCount, greatCondenseCount, combustionCount }
       }
 
       if (state.playerHp <= 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats }
+        return { victory: false, floorsCleared, deathFloor, floorStats, condenseCount, greatCondenseCount, combustionCount }
       }
 
-      // Phase 1.7: 층별 적 주/부 기운을 봇에 전달 (기운 전환 반영)
+      // 층별 적 주/부 기운을 봇에 전달 (기운 전환 반영)
       const floorConf = FLOOR_CONFIGS[state.currentFloor - 1]
       const currentPrimaryEl = state.enemyPhaseSwitch
         ? floorConf.enemySubElement
@@ -281,21 +337,70 @@ export function simulateGreedyRun(seed: number): RunResult {
       const currentSubEl = state.enemyPhaseSwitch
         ? floorConf.enemyPrimaryElement
         : floorConf.enemySubElement
-      // Phase 1.8: 토 응축 상태 봇에 전달
-      const selectedIds = greedySelectCards(state.hand, currentPrimaryEl, currentSubEl, state.condenseActive)
+      // 적 피해감소 여부 (금 관통 가중치용)
+      const hasDmgReduction = floorConf.eliteGimmickEffect?.type === 'damage-reduction'
+      // Phase 1.9.2: 연환 1회 제한 + 응축 v2 + 마지막 공격 기회 봇에 전달
+      const selectedIds = greedySelectCards(
+        state.hand,
+        currentPrimaryEl,
+        currentSubEl,
+        state.condenseType,
+        state.yeonhwanUsed,
+        state.isLastAttack,
+        hasDmgReduction,
+      )
       if (selectedIds.length === 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats }
+        return { victory: false, floorsCleared, deathFloor, floorStats, condenseCount, greatCondenseCount, combustionCount }
+      }
+
+      // Phase 1.9.2 지시 4(g): 봇 응축 학습 — 토 타격 조합 선택 시 응축 기회 평가
+      // 조건: 응축 미활성 AND 마지막 공격 기회 아님 AND 공격 횟수 2회 이상 남음
+      if (
+        state.condenseType === null &&
+        !state.isLastAttack &&
+        state.playsLeft >= 2
+      ) {
+        const selectedCards = state.hand.filter(c => selectedIds.includes(c.id))
+        const comboResult = judgeCombo(selectedCards)
+        const condenseKind = getCondenseAvailability(comboResult.name, comboResult.finishingElement)
+        if (condenseKind !== null) {
+          // 응축 효과 기대값 비교: 즉시 공격 vs 응축 후 다음 공격
+          const currentDamage = calcExpectedDamage(
+            selectedCards,
+            currentPrimaryEl,
+            currentSubEl,
+            null,
+            state.yeonhwanUsed,
+            state.isLastAttack,
+            hasDmgReduction,
+          )
+          const condenseMult = condenseKind === 'basic'
+            ? (1 + CONDENSE_V2_MULTIPLIER)
+            : (1 + GREAT_CONDENSE_MULTIPLIER)
+          // 응축 후 다음 공격 기대값 = 현재 조합 × 응축배율 (같은 조합이 다시 나온다고 가정)
+          const condenseNextExpected = Math.round(currentDamage * condenseMult)
+          // 응축이 즉시 공격보다 유리하면 응축 선택
+          if (condenseNextExpected > currentDamage) {
+            if (condenseKind === 'basic') condenseCount++
+            else greatCondenseCount++
+            state = applyCondense(state, condenseKind)
+            // 응축 선택 후 다음 루프에서 실제 공격 수행 (이번 턴 건너뜀)
+            continue
+          }
+        }
       }
 
       state = playCards(state, selectedIds)
       attackCount++
       playerHp = state.playerHp
+      // 화 연소 발동 카운트
+      if (state.combustionTriggered) combustionCount++
     }
   }
 
-  return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats }
+  return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats, condenseCount, greatCondenseCount, combustionCount }
 }
 
 /**
@@ -329,6 +434,14 @@ export interface SimulationReport {
   floorAttacks: Record<number, DistStats>
   deathsByFloor: Record<number, number>
   csvLines: string[]
+  // Phase 1.9.2 추가 통계
+  totalAttacks: number          // 전체 공격 횟수 (선택률 분모)
+  condenseTotal: number         // 기본 응축 선택 총 횟수
+  greatCondenseTotal: number    // 대응축 선택 총 횟수
+  combustionTotal: number       // 화 연소 발동 총 횟수
+  condenseRate: number          // 기본 응축 선택률 (%)
+  greatCondenseRate: number     // 대응축 선택률 (%)
+  combustionRate: number        // 연소 발동률 (%)
 }
 
 export function runGreedySimulation(runs = 1000): SimulationReport {
@@ -336,17 +449,28 @@ export function runGreedySimulation(runs = 1000): SimulationReport {
   let oneShotClears = 0
   const floorAttackData: Record<number, number[]> = { 1: [], 2: [], 3: [], 4: [] }
   const deathsByFloor: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 }
+  // Phase 1.9.2 통계 집계
+  let totalAttacks = 0
+  let condenseTotal = 0
+  let greatCondenseTotal = 0
+  let combustionTotal = 0
 
   for (let i = 0; i < runs; i++) {
     const result = simulateGreedyRun(i * 12345 + 7777)
     if (result.victory) victories++
 
+    condenseTotal += result.condenseCount
+    greatCondenseTotal += result.greatCondenseCount
+    combustionTotal += result.combustionCount
+
     for (const fs of result.floorStats) {
       if (fs.cleared) {
         floorAttackData[fs.floor].push(fs.attackCount)
         if (fs.floor === 1 && fs.attackCount === 1) oneShotClears++
+        totalAttacks += fs.attackCount
       } else if (result.deathFloor === fs.floor) {
         deathsByFloor[fs.floor] = (deathsByFloor[fs.floor] || 0) + 1
+        totalAttacks += fs.attackCount
       }
     }
   }
@@ -357,6 +481,12 @@ export function runGreedySimulation(runs = 1000): SimulationReport {
   for (let f = 1; f <= 4; f++) {
     floorAttacks[f] = calcStats(floorAttackData[f])
   }
+
+  // 선택률: 응축/연소는 전체 공격 기회 대비 (응축 선택도 1회 기회 소모)
+  const totalOpportunities = totalAttacks + condenseTotal + greatCondenseTotal
+  const condenseRate = totalOpportunities > 0 ? (condenseTotal / totalOpportunities) * 100 : 0
+  const greatCondenseRate = totalOpportunities > 0 ? (greatCondenseTotal / totalOpportunities) * 100 : 0
+  const combustionRate = totalOpportunities > 0 ? (combustionTotal / totalOpportunities) * 100 : 0
 
   const csvLines = [
     'floor,mean_attacks,min_attacks,max_attacks,stddev_attacks,cleared_runs',
@@ -374,5 +504,12 @@ export function runGreedySimulation(runs = 1000): SimulationReport {
     floorAttacks,
     deathsByFloor,
     csvLines,
+    totalAttacks,
+    condenseTotal,
+    greatCondenseTotal,
+    combustionTotal,
+    condenseRate,
+    greatCondenseRate,
+    combustionRate,
   }
 }

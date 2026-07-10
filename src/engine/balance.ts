@@ -160,42 +160,56 @@ export function findFusionCombo(el1: Element, el2: Element): FusionCombo | null 
 // --- 음양 조화 보너스
 export const EUMYANG_HARMONY_BONUS = 0.2  // +20%
 
-// --- 응축 (토 응축) 배율
-// Phase 1.9: 토 응축은 "토 모으기", "일군 밭", "옹기가마" 3종 조합 시 발동
-// 광맥은 제외 (금 타격 속성이므로 응축 미발동)
-// 옹기가마: 화+토→토 낳는 융합, 배율 ×3.0 유지 (배율 상향 금지)
-export const CONDENSE_MULTIPLIER = 1.6  // 다음 공격 ×1.6
+// --- 응축 (토 응축) 배율 — Phase 1.8 구형 (deprecated, 하위 호환용)
+export const CONDENSE_MULTIPLIER = 1.6  // 하위 호환 상수 (v2에서는 아래 상수 사용)
 
-// --- 오행 연환 배율
-export const OHANG_YEONHWAN_MULTIPLIER = 10
+// --- 응축 v2 배율 (Phase 1.9.2 — E-2: 선택형 2단계)
+// 기본 응축: 공격 횟수 1 소모 → 다음 공격 +120% (×2.2)
+export const CONDENSE_V2_MULTIPLIER = 1.2       // +120% 보너스 (최종 배율 = 1 + 1.2 = ×2.2)
+// 대응축: 공격 횟수 1 소모 → 다음 공격 +180% (×2.8)
+export const GREAT_CONDENSE_MULTIPLIER = 1.8    // +180% 보너스 (최종 배율 = 1 + 1.8 = ×2.8)
+
+// --- 오행 연환 배율 (Phase 1.9.2 — E-1: ×10 → ×8 희소화)
+export const OHANG_YEONHWAN_MULTIPLIER = 8
 
 // --- 극 판정 배율
 export const GEUK_BONUS_MULTIPLIER = 1.7  // +70%
 export const ANTI_GEUK_PENALTY = 0.6      // −40%
 
 /**
- * 밸런스 튜닝 v7.0 (2026-07-10) — Phase 1.9 커브 교정: 온보딩→클라이맥스 재배분
+ * 밸런스 튜닝 v8.0 (2026-07-10) — Phase 1.9.2 역산 재수행: 탐욕 봇 기대값 기반 HP 재조정
  *
- * 문제: 1층 사망 13.4%(134판) — 온보딩인데 너무 많음
- *       4층 사망 1.1%(11판) — 보스인데 너무 적음
+ * 역산 절차 (이든 지시 2026-07-10 21:41):
+ *  1. 탐욕 봇 1000핸드 출수 기대값 측정 (고목령 보정 포함)
+ *     - 1층 출수당 평균: 80.8, maxPlays=4 → 총기대값 323
+ *     - 2층 출수당 평균: 77.7, maxPlays=4 → 총기대값 311
+ *     - 3층 출수당 평균: 87.9, maxPlays=5 → 총기대값 439
+ *     - 4층 출수당 평균: 50.1(감소후), maxPlays=6 → 총기대값 301(감소후)
+ *  2. 목표 층별 통과율 기반 HP 역산 + Step4 이분법 수렴 (클리어율 54.2% 달성):
+ *     1층 96.3% × 2층 82.5% × 3층 86.5% × 4층 78.9% ≈ 54.2%
+ *     - 1층 HP = 175  (1층 사망 3.7% ≤5% 조건 충족, 기대값 323의 54%)
+ *     - 2층 HP = 280  (기대값 311의 90%)
+ *     - 3층 HP = 380  (기대값 439의 86%)
+ *     - 4층 명목HP = 282  (실효HP 403, 4층 사망 145판 > 3층 사망 107판 ✓)
+ *  3. 4층 damage-reduction 30% 유지 (이든 지시)
  *
- * 목표: 1층 사망 ≤5%(50판), 3~4층으로 사망 이동, 4층 실효 HP > 3층
- * 총 클리어율 50~60% 유지
+ * 목표: 클리어율 50~60%, 1층 사망 ≤5%, 4층 사망 > 3층 사망, 원샷 <5%
+ * 실측: 클리어율 54.2%, 1층 사망 3.7%, 4층사망 145>3층사망 107, 원샷 0%
  *
- * HP 조정 (v6.0 → v7.0):
- *  - 1층: 220 → 130 (온보딩 완화, 고목령 +15회복/턴 있음)
- *  - 2층: 300 → 350 (소폭 상향)
- *  - 3층: 430 → 630 (정예 클라이맥스, 강공 3턴마다 8 있음)
- *  - 4층: 220 → 400 (보스, damage-reduction 30% → 실효 HP = 400/0.7 ≈ 571, 3층 실효 630보다 낮음)
- *        4층 counterDamage=4 + heavyAttack 2턴마다 8 → 플레이어 압박 ↑
+ * HP 조정 (v7.0 → v8.0):
+ *  - 1층: 130 → 175 (온보딩: 기대값의 54%)
+ *  - 2층: 290 → 280 (잡몹: 기대값의 90%)
+ *  - 3층: 460 → 380 (정예: 기대값의 86%)
+ *  - 4층: 330 → 282 (보스: 실효HP = 282/0.7 ≈ 403, damage-reduction 30%)
  *
  * 응축 발동 조건: "토 모으기", "일군 밭", "옹기가마" 3종
+ * 연환 1회 제한, 화 연소 +30%, 금 관통 보호 무시 유지
  */
 export const FLOOR_CONFIGS: FloorConfig[] = [
   {
     floor: 1,
     enemyName: '변질 오행',
-    enemyHp: 130,
+    enemyHp: 175,
     counterDamage: 1,
     maxPlays: 4,
     enemyPrimaryElement: 'mok',
@@ -205,7 +219,7 @@ export const FLOOR_CONFIGS: FloorConfig[] = [
   {
     floor: 2,
     enemyName: '변질 오행 혼성',
-    enemyHp: 290,
+    enemyHp: 280,
     counterDamage: 1,
     maxPlays: 4,
     enemyPrimaryElement: 'hwa',
@@ -215,7 +229,7 @@ export const FLOOR_CONFIGS: FloorConfig[] = [
   {
     floor: 3,
     enemyName: '정예: 고신',
-    enemyHp: 460,
+    enemyHp: 380,
     counterDamage: 2,
     maxPlays: 5,
     enemyPrimaryElement: 'to',
@@ -228,7 +242,7 @@ export const FLOOR_CONFIGS: FloorConfig[] = [
   {
     floor: 4,
     enemyName: '보스: 명외자 대장',
-    enemyHp: 330,
+    enemyHp: 282,
     counterDamage: 4,
     maxPlays: 6,
     enemyPrimaryElement: 'geum',

@@ -94,8 +94,18 @@ export interface GameState {
   // Phase 1.7 신규
   attackCount: number       // 내가 공격한 총 횟수 (강공 카운터)
   enemyPhaseSwitch: boolean // 기운 전환 발동 여부 (1회만)
-  // Phase 1.8 신규
-  condenseActive: boolean   // 토 응축 상태 (다음 공격 ×1.6)
+  // Phase 1.8 신규 (deprecated: condenseActive boolean → Phase 1.9.2에서 v2로 교체)
+  condenseActive: boolean   // 하위 호환 필드 (항상 false, v2 필드로 대체됨)
+  // Phase 1.9.2 신규 — E-1: 연환 희소화
+  yeonhwanUsed: boolean     // 오행연환 출정당 1회 제한 (true = 이미 사용됨)
+  // Phase 1.9.2 신규 — E-2: 응축 v2 (선택형 2단계)
+  condenseType: 'basic' | 'great' | null  // null = 비활성, basic = 기본응축, great = 대응축
+  condenseMultiplier: number              // 0 = 미응축, 1.2 = 기본응축, 1.8 = 대응축
+  isLastAttack: boolean                   // attacksRemaining === 1 (UI 버튼 비활성 처리용)
+  // Phase 1.9.2 신규 — E-3: 오행 특성 2차
+  sootCount: Record<string, number>       // 화 연소: 카드별 그을음 누적 카운트
+  combustionTriggered: boolean            // 화 연소 발동 여부 (UI 배너용)
+  penetrationTriggered: boolean           // 금 관통 발동 여부 (UI 배너용)
 }
 
 export type FortuneLevel = 'daegil' | 'gil' | 'pyeong' | 'hyung' | 'daehyung'

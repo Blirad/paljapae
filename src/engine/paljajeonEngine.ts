@@ -9,7 +9,7 @@ import {
   GEUK_MAP,
   detectElementClash,
 } from './pokerHandJudge'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY } from './balance'
+import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, CONDENSE_V2_MULTIPLIER, GREAT_CONDENSE_MULTIPLIER } from './balance'
 import { generateSajuDeck } from './deckGenerator'
 
 /**
@@ -124,7 +124,15 @@ export function createInitialGameState(floorIndex = 0, heroProfile?: SavedHeroPr
     amplifyActive: false,
     attackCount: 0,
     enemyPhaseSwitch: false,
-    condenseActive: false,
+    condenseActive: false,         // 하위 호환 (deprecated)
+    // Phase 1.9.2 신규 필드 초기화
+    yeonhwanUsed: false,
+    condenseType: null,
+    condenseMultiplier: 0,
+    isLastAttack: floorConfig.maxPlays === 1,
+    sootCount: {},
+    combustionTriggered: false,
+    penetrationTriggered: false,
   }
 }
 
@@ -193,42 +201,55 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     }
   }
 
-  // Phase 1.7: 4층 보스 금강불괴 — 받는 피해 -30%
-  if (floorConfig.eliteGimmickEffect?.type === 'damage-reduction' && state.currentFloor >= 3) {
-    damage = Math.round(damage * (1 - floorConfig.eliteGimmickEffect.pct))
+  // E-1: 연환 1회 제한 — 오행연환인데 이미 사용했으면 피해 0 (연환 차단)
+  const isYeonhwan = result.rank === 'ohang-yeonhwan'
+  if (isYeonhwan && state.yeonhwanUsed) {
+    damage = 0
   }
+  const newYeonhwanUsed = state.yeonhwanUsed || isYeonhwan
+  const isBlocked = isYeonhwan && state.yeonhwanUsed  // 연환 차단 여부
 
   // Phase 1.6 B — 증폭부: 다음 공격 ×2
-  if (state.amplifyActive) {
+  if (state.amplifyActive && !isBlocked) {
     damage = damage * 2
   }
 
-  // Phase 1.8 — 토 응축 소모: 이전 응축 상태이면 ×1.6
-  let newCondenseActive = state.condenseActive
-  if (state.condenseActive) {
-    damage = Math.round(damage * 1.6)
-    newCondenseActive = false
+  // Phase 1.9.2 E-2: 응축 v2 소모 — condenseType이 있으면 다음 공격에 배율 적용
+  let newCondenseType = state.condenseType
+  let newCondenseMultiplier = state.condenseMultiplier
+  if (state.condenseType !== null && !isBlocked) {
+    damage = Math.round(damage * (1 + state.condenseMultiplier))
+    newCondenseType = null
+    newCondenseMultiplier = 0
   }
 
-  // Phase 1.9 — 토 응축 적립: 마무리 기운이 토이면 즉시 피해 ×0.6 + 응축 활성
-  // 주의: 토 타격 속성 3가지만 응축 발동
-  //   1. 토 모으기 (토 기운 모으기 조합)
-  //   2. 일군 밭 (목+토→토 벼리는 융합)
-  //   3. 옹기가마 (화+토→토 낳는 융합) — 불로 구워 힘을 가둔 그릇, Phase 1.9 추가
-  const isToCondenseTrigger = finishEl === 'to' && (
-    (result.name?.includes('흙 모으기')) ||  // 토 모으기
-    result.name === '일군 밭' ||              // 일군 밭 (벼리는)
-    result.name === '옹기가마'                // 옹기가마 (낳는) — 응축 발동 3번째
-  )
+  // Phase 1.9.2 E-2: 자동 응축 폐지 — 구형 자동 응축 로직 제거
+  const newCondenseActive = false  // deprecated 필드, 항상 false 유지
 
-  if (isToCondenseTrigger && !state.condenseActive) {
-    damage = Math.round(damage * 0.6)
-    newCondenseActive = true
+  // Phase 1.9.2 E-3: 금 관통 — finishEl === 'geum' 시 피해감소 무시 플래그
+  const penetrationTriggered = (finishEl === 'geum' && !isBlocked)
+
+  // Phase 1.9.2 E-3: 화 연소 — finishEl === 'hwa' 시 +30% + 화 카드 값 -1 (실효화)
+  let newSootCount = { ...state.sootCount }
+  let combustionTriggered = false
+  if (finishEl === 'hwa' && !isBlocked) {
+    damage = Math.round(damage * 1.3)
+    combustionTriggered = true
+    for (const card of playedCards) {
+      if (card.element === 'hwa') {
+        newSootCount[card.id] = (newSootCount[card.id] ?? 0) + 1
+      }
+    }
   }
 
-  // C10(d): 붕토령 — 받는 피해 -20%
+  // Phase 1.7: 4층 보스 금강불괴 — 받는 피해 -30% (금 관통 시 건너뜀)
+  if (!penetrationTriggered && floorConfig.eliteGimmickEffect?.type === 'damage-reduction' && state.currentFloor >= 3) {
+    damage = Math.round(damage * (1 - floorConfig.eliteGimmickEffect.pct))
+  }
+
+  // C10(d): 붕토령 — 받는 피해 -20% (금 관통 시 건너뜀)
   const reductionGimmick = gimmicks.find(g => g.type === 'damage-reduction')
-  if (reductionGimmick && reductionGimmick.type === 'damage-reduction') {
+  if (!penetrationTriggered && reductionGimmick && reductionGimmick.type === 'damage-reduction') {
     damage = Math.round(damage * (1 - reductionGimmick.pct))
   }
 
@@ -289,6 +310,19 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     )
   }
 
+  // Phase 1.9.2 E-3 그을음 실효화: 화 연소 발동 시 핸드 내 화 카드 value -1 적용
+  // - sootCount 누적 기준으로 핸드 카드 값 감소 (출수한 화 카드가 핸드에 다시 들어올 경우 포함)
+  // - 최소값 1 보장 (0 아래 금지)
+  // - 다음 출정(advanceToNextFloor) 시 sootCount 리셋으로 누적 리셋
+  if (combustionTriggered) {
+    newHand = newHand.map(c => {
+      if (c.element === 'hwa' && (newSootCount[c.id] ?? 0) > 0) {
+        return { ...c, value: Math.max(1, c.value - 1) }
+      }
+      return c
+    })
+  }
+
   const floorCleared = newEnemyHp <= 0
   const playerDead = newPlayerHp <= 0
   const outOfPlays = newPlaysLeft <= 0 && newEnemyHp > 0
@@ -316,6 +350,10 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     isVictory = false
   }
 
+  // Phase 1.9.2: 마지막 공격 기회 판별 (다음 턴 기준)
+  const nextPlaysLeft = newPlaysLeft
+  const newIsLastAttack = nextPlaysLeft === 1
+
   return {
     ...state,
     enemyHp: newEnemyHp,
@@ -331,7 +369,15 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     amplifyActive: false,  // 증폭부 1회 소모
     attackCount: newAttackCount,
     enemyPhaseSwitch: newEnemyPhaseSwitch,
-    condenseActive: newCondenseActive,
+    condenseActive: newCondenseActive,         // deprecated, 항상 false
+    // Phase 1.9.2 신규 필드
+    yeonhwanUsed: newYeonhwanUsed,
+    condenseType: newCondenseType,
+    condenseMultiplier: newCondenseMultiplier,
+    isLastAttack: newIsLastAttack,
+    sootCount: newSootCount,
+    combustionTriggered,
+    penetrationTriggered,
   }
 }
 
@@ -465,5 +511,65 @@ export function advanceToNextFloor(state: GameState): GameState {
     attackCount: 0,
     enemyPhaseSwitch: false,
     condenseActive: false,
+    // Phase 1.9.2: 층 전환(=출정 시작) 시 연환 사용 리셋
+    yeonhwanUsed: false,
+    condenseType: null,
+    condenseMultiplier: 0,
+    isLastAttack: floorConfig.maxPlays === 1,
+    // 그을음은 출정마다 초기화 (카드 풀 교체)
+    sootCount: {},
+    combustionTriggered: false,
+    penetrationTriggered: false,
+  }
+}
+
+// --------------- Phase 1.9.2 신규 함수 ---------------
+
+/**
+ * 응축 v2 발동 가능 여부 판별 (토 타격 조합)
+ * - 토 모으기 → 'basic' 응축 가능
+ * - 일군 밭 → 'basic' 응축 가능
+ * - 옹기가마 → 'great' 응축 가능 (대응축)
+ * 반환: null = 응축 불가, 'basic' | 'great' = 응축 가능 유형
+ */
+export function getCondenseAvailability(
+  comboName: string | undefined,
+  finishingElement: string,
+): 'basic' | 'great' | null {
+  if (finishingElement !== 'to') return null
+  if (!comboName) return null
+  if (comboName.includes('흙 모으기')) return 'basic'    // 토 모으기
+  if (comboName === '일군 밭') return 'basic'            // 일군 밭 (벼리는)
+  if (comboName === '옹기가마') return 'great'           // 옹기가마 (낳는) → 대응축
+  return null
+}
+
+/**
+ * 응축 v2 선택 적용 함수 (UI에서 "응축" 버튼 클릭 시 호출)
+ * - 공격 횟수 1회 소모 (playsLeft -1)
+ * - 실제 피해 0
+ * - condenseType/condenseMultiplier 설정
+ * - 중첩 불가 (기존 응축 있으면 무시)
+ * - 마지막 공격 기회(isLastAttack)에는 적용 불가
+ */
+export function applyCondense(state: GameState, type: 'basic' | 'great'): GameState {
+  // 마지막 공격 기회에는 응축 불가
+  if (state.isLastAttack) return state
+  // 중첩 불가
+  if (state.condenseType !== null) return state
+  // 공격 횟수 없으면 불가
+  if (state.playsLeft <= 0) return state
+
+  const multiplier = type === 'basic' ? CONDENSE_V2_MULTIPLIER : GREAT_CONDENSE_MULTIPLIER
+  const newPlaysLeft = state.playsLeft - 1
+
+  return {
+    ...state,
+    playsLeft: newPlaysLeft,
+    condenseType: type,
+    condenseMultiplier: multiplier,
+    isLastAttack: newPlaysLeft === 1,
+    combustionTriggered: false,
+    penetrationTriggered: false,
   }
 }
