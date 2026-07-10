@@ -17,7 +17,7 @@ import {
   acquireTalisman,
   applyCondense,
 } from '../engine/paljajeonEngine'
-import { judgeHand } from '../engine/pokerHandJudge'
+import { judgeHand, judgeCombo, GEUK_MAP } from '../engine/pokerHandJudge'
 import type { HandJudgeResult } from '../types/game'
 
 function loadHeroProfileForStore(): SavedHeroProfile | null {
@@ -162,10 +162,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const newState = acquireTalisman(get(), talismanId)
     set(newState)
   },
-  // Phase 1.9.3: 응축 v2 선택 적용 — 카드 소진 포함 (selectedCards 전달)
+  // Phase 1.9.4: 응축 저장형 — 태운 조합의 예상 피해 계산 후 전달
   applyCondenseAction: (type: 'basic' | 'great') => {
     const state = get()
-    const newState = applyCondense(state, type, state.selectedCards)
+    // 예상 피해 계산: 선택된 카드들의 조합 판정 후 극 보정 반영
+    let expectedDamage = 0
+    if (state.selectedCards.length > 0) {
+      const selectedCardObjs = state.hand.filter(c => state.selectedCards.includes(c.id))
+      const comboResult = judgeCombo(selectedCardObjs)
+      const floorEnemyEl = state.currentFloor <= 4
+        ? (['mok', 'hwa', 'to', 'geum', 'su'] as const)[state.currentFloor - 1]
+        : undefined
+      let dmg = comboResult.totalScore
+      if (floorEnemyEl) {
+        const fe = comboResult.finishingElement
+        if (GEUK_MAP[fe] === floorEnemyEl) dmg = Math.round(dmg * 1.7)
+        else if (GEUK_MAP[floorEnemyEl] === fe) dmg = Math.round(dmg * 0.6)
+      }
+      if (comboResult.finishingElement === 'hwa') dmg = Math.round(dmg * 1.3)
+      expectedDamage = Math.max(0, dmg)
+    }
+    const newState = applyCondense(state, type, state.selectedCards, expectedDamage)
     set({ ...newState, previewResult: null, selectedCards: [] })
   },
 }))

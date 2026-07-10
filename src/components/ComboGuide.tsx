@@ -355,7 +355,7 @@ function TabYeonhwan() {
         borderRadius: '2px',
         marginBottom: '12px',
       }}>
-        <div style={{ color: '#FFD98A', fontSize: '13px', fontWeight: 700 }}>배율: ×10 (게임 내 최고 배율)</div>
+        <div style={{ color: '#FFD98A', fontSize: '13px', fontWeight: 700 }}>배율: ×8 (출정당 1회 한정)</div>
         <div style={{ color: '#D8CCB4', fontSize: '12px', marginTop: '4px' }}>연출: 2.5초 상생 순환 애니메이션 전용 시퀀스</div>
       </div>
       <div style={{
@@ -375,28 +375,28 @@ function TabYeonhwan() {
   )
 }
 
-// ─── 탭 4: 응축 ──────────────────────────────────────────────────────────────
+// ─── 탭 4: 응축 v2 ───────────────────────────────────────────────────────────
 function TabCondense() {
   return (
     <div>
+      {/* Phase 1.9.2: 응축 소개 문구 갱신 */}
       <div style={{ color: '#D8CCB4', fontSize: '13px', lineHeight: '1.7', letterSpacing: '0.05em', marginBottom: '16px' }}>
-        "흙은 힘을 모은다 — 지금은 약하게, 다음에 크게."
+        흙은 힘을 담는다. 불로 구운 그릇은, 더 큰 힘을 담는다.
       </div>
-      <div style={{ color: '#D8CCB4', fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>발동 조건 (3종)</div>
+      <div style={{ color: '#D8CCB4', fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>응축 발동표</div>
       <div style={{ marginBottom: '4px', display: 'flex', borderBottom: '1px solid rgba(216,204,180,0.2)' }}>
-        {['조합명', '타입', '타격 속성', '응축 발동'].map((h, i) => (
+        {['조합', '응축 유형', '다음 공격 보너스'].map((h, i) => (
           <div key={h} style={{
-            flex: [2, 2, 1.5, 1][i],
+            flex: [1.5, 1.5, 2][i],
             color: '#B33A2B', fontSize: '11px', fontWeight: 700,
             padding: '4px 6px',
           }}>{h}</div>
         ))}
       </div>
       {[
-        { name: '토 모으기', type: '기운 모으기', attr: 'to', active: true },
-        { name: '일군 밭', type: '벼리는 융합', attr: 'to', active: true },
-        { name: '옹기가마', type: '낳는 융합', attr: 'to', active: true },
-        { name: '광맥', type: '낳는 융합', attr: 'geum', active: false },
+        { name: '토 모으기', label: '응축', pct: '+120%', bg: 'rgba(217,164,65,0.1)', color: '#D9A441', fw: 600 },
+        { name: '일군 밭',  label: '응축', pct: '+120%', bg: 'rgba(217,164,65,0.1)', color: '#D9A441', fw: 600 },
+        { name: '옹기가마', label: '대응축', pct: '+180%', bg: 'rgba(255,140,0,0.12)', color: '#FF8C40', fw: 700 },
       ].map(row => (
         <div
           key={row.name}
@@ -404,28 +404,102 @@ function TabCondense() {
             display: 'flex',
             borderBottom: '1px solid rgba(216,204,180,0.08)',
             alignItems: 'center',
-            backgroundColor: row.active ? 'rgba(217,164,65,0.1)' : 'transparent',
-            opacity: row.active ? 1 : 0.5,
+            backgroundColor: row.bg,
           }}
         >
-          <div style={{ flex: 2, padding: '8px 6px', color: '#D8CCB4', fontSize: '12px', fontWeight: row.active ? 600 : 400 }}>{row.name}</div>
-          <div style={{ flex: 2, padding: '8px 6px', color: '#D8CCB4', fontSize: '11px' }}>{row.type}</div>
-          <div style={{ flex: 1.5, padding: '8px 6px', color: ELEMENT_COLORS[row.attr], fontSize: '13px', fontWeight: 700 }}>
-            {ELEMENT_HANJA[row.attr]}
-          </div>
-          <div style={{ flex: 1, padding: '8px 6px', color: row.active ? '#D9A441' : '#4A4540', fontSize: '13px', fontWeight: row.active ? 700 : 400 }}>
-            {row.active ? 'O' : 'X (금 타격)'}
-          </div>
+          <div style={{ flex: 1.5, padding: '8px 6px', color: '#D8CCB4', fontSize: '12px', fontWeight: 600 }}>{row.name}</div>
+          <div style={{ flex: 1.5, padding: '8px 6px', color: '#D8CCB4', fontSize: '12px' }}>{row.label}</div>
+          <div style={{ flex: 2, padding: '8px 6px', color: row.color, fontSize: '13px', fontWeight: row.fw }}>{row.pct}</div>
         </div>
       ))}
       <div style={{ marginTop: '16px' }}>
-        <div style={{ color: '#D8CCB4', fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>효과</div>
+        <div style={{ color: '#D8CCB4', fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>사용법</div>
         <div style={{ color: '#D8CCB4', fontSize: '12px', lineHeight: '1.8' }}>
-          <div>· 발동 후 다음 공격 1회 +60%</div>
-          <div>· 영웅 옆 황색 구슬(●)로 활성 상태 표시</div>
-          <div>· 1회 공격 후 자동 소멸</div>
+          <div>· 토 타격 조합 선택 → 공격 버튼이 2분할로 전환</div>
+          <div>· [응축] 또는 [대응축] 선택 시 공격 횟수 1회 소모</div>
+          <div>· 피해 없이 다음 공격에 보너스를 담는다</div>
+          <div>· 중첩 불가, 마지막 공격 기회에 사용 불가</div>
+          <div>· 영웅 옆 구슬로 상태 표시</div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── 탭 5: 특성 ──────────────────────────────────────────────────────────────
+function TabTraits() {
+  const TRAIT_ROWS = [
+    {
+      el: 'hwa', name: '연소', effect: '화 주 기운 조합 +30%, 사용 카드 값 −1 ("그을음" 표기)',
+      active: true, borderColor: '#C63D2F',
+    },
+    {
+      el: 'geum', name: '관통', effect: '적 보호·피해감소 무시',
+      active: true, borderColor: '#C8C0B0',
+    },
+    {
+      el: 'to', name: '응축', effect: '힘을 담아 다음 공격 강화 (v2)\n토 모으기/일군 밭: +120% / 옹기가마: +180% (대응축)',
+      active: true, borderColor: '#D9A441',
+    },
+    {
+      el: 'mok', name: '성장', effect: '(백로그 — 추후 추가)',
+      active: false, borderColor: '#4A9B6E',
+    },
+    {
+      el: 'su', name: '순환', effect: '(백로그 — 추후 추가)',
+      active: false, borderColor: '#3D5A80',
+    },
+  ] as const
+
+  const EL_EMOJI: Record<string, string> = {
+    hwa: '🔥', geum: '⚔️', to: '🪨', mok: '🌿', su: '💧',
+  }
+
+  return (
+    <div>
+      <div style={{
+        fontSize: '13px', color: '#D8CCB4', letterSpacing: '0.05em',
+        fontStyle: 'italic', marginBottom: '12px',
+      }}>
+        각 기운은 서로 다른 힘의 결을 지닌다.
+      </div>
+      <div style={{ marginBottom: '4px', display: 'flex', borderBottom: '1px solid rgba(216,204,180,0.2)' }}>
+        {['기운', '특성명', '효과'].map((h, i) => (
+          <div key={h} style={{
+            flex: [0.8, 1, 4][i],
+            color: '#B33A2B', fontSize: '11px', fontWeight: 700, padding: '4px 6px',
+          }}>{h}</div>
+        ))}
+      </div>
+      {TRAIT_ROWS.map(row => (
+        <div
+          key={row.el}
+          style={{
+            display: 'flex',
+            borderBottom: '1px solid rgba(216,204,180,0.08)',
+            borderLeft: `3px solid ${row.borderColor}`,
+            alignItems: 'flex-start',
+            paddingLeft: '4px',
+            opacity: row.active ? 1 : 0.45,
+          }}
+        >
+          <div style={{ flex: 0.8, padding: '8px 4px', fontSize: '13px', color: ELEMENT_COLORS[row.el], fontWeight: 700 }}>
+            {EL_EMOJI[row.el]} {ELEMENT_HANJA[row.el]}
+          </div>
+          <div style={{ flex: 1, padding: '8px 4px', color: row.active ? '#D8CCB4' : '#4A4540', fontSize: '12px', fontWeight: row.active ? 600 : 400 }}>
+            {row.name}
+          </div>
+          <div style={{
+            flex: 4, padding: '8px 4px',
+            color: row.active ? '#D8CCB4' : '#4A4540',
+            fontSize: '11px', lineHeight: '1.6',
+            fontStyle: row.active ? 'normal' : 'italic',
+            whiteSpace: 'pre-line',
+          }}>
+            {row.effect}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -495,13 +569,14 @@ function TabAffinity() {
 }
 
 // ─── 메인 ComboGuide ─────────────────────────────────────────────────────────
-type TabKey = 'gather' | 'fusion' | 'yeonhwan' | 'condense' | 'affinity'
+type TabKey = 'gather' | 'fusion' | 'yeonhwan' | 'condense' | 'traits' | 'affinity'
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'gather', label: '기운 모으기' },
   { key: 'fusion', label: '융합 10쌍' },
   { key: 'yeonhwan', label: '오행연환' },
   { key: 'condense', label: '응축' },
+  { key: 'traits', label: '특성' },
   { key: 'affinity', label: '상성' },
 ]
 
@@ -592,6 +667,7 @@ export default function ComboGuide({ onClose }: ComboGuideProps) {
           {activeTab === 'fusion' && <TabFusion />}
           {activeTab === 'yeonhwan' && <TabYeonhwan />}
           {activeTab === 'condense' && <TabCondense />}
+          {activeTab === 'traits' && <TabTraits />}
           {activeTab === 'affinity' && <TabAffinity />}
         </div>
       </div>

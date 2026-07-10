@@ -101,9 +101,10 @@ function getGeukKoLabel(attacker: Element, victim: Element, bonusPct: number): s
 
 // ─── Phase 1.9.2 상수 ───────────────────────────────────────────────────────
 
-const TRAIT_BANNERS = {
-  fireBurn: '불꽃이 타오른다 +30%',
-  metalPierce: '쇠가 꿰뚫는다',
+// Phase 1.9.4: 배너 텍스트는 런타임에 수치 포함하여 동적 생성
+const TRAIT_BANNER_TEMPLATES = {
+  fireBurn: (bonus: number) => bonus > 0 ? `불꽃이 타오른다 +${bonus}` : '불꽃이 타오른다 +30%',
+  metalPierce: (ignored: number) => ignored > 0 ? `쇠가 꿰뚫는다 — 보호 ${ignored} 무시` : '쇠가 꿰뚫는다 — 보호 무시',
 } as const
 
 const CONDENSE_LABELS = {
@@ -1082,10 +1083,14 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     // Phase 1.9.2 신규 필드
     yeonhwanUsed,
     condenseType,
+    condensedDamage,
     isLastAttack,
     sootCount,
     combustionTriggered,
+    combustionBonus,
     penetrationTriggered,
+    penetrationIgnored,
+    reshuffled,
     toggleCardSelect,
     playSelectedCards,
     discardSelectedCards,
@@ -1238,7 +1243,8 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
   const geukiBannerShownRef = useRef(false)
 
   // Phase 1.9.2: 특성 배너 (화 연소 / 금 관통)
-  const [traitBanner, setTraitBanner] = useState<{ type: 'fire' | 'metal'; key: number } | null>(null)
+  // Phase 1.9.4: type 외 bonus/ignored 수치 포함
+  const [traitBanner, setTraitBanner] = useState<{ type: 'fire' | 'metal'; key: number; bonus?: number; ignored?: number } | null>(null)
 
   // Phase 1.9.2: 특성 최초 발동 툴팁
   const [traitTooltip, setTraitTooltip] = useState<'fire' | 'metal' | null>(null)
@@ -1249,6 +1255,17 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
   // Phase 1.9.2 이전 combustionTriggered/penetrationTriggered 추적
   const prevCombustionTriggered = useRef(false)
   const prevPenetrationTriggered = useRef(false)
+
+  // Phase 1.9.4: 덱 재순환 배너
+  const [reshuffleBanner, setReshuffleBanner] = useState<boolean>(false)
+  const prevReshuffled = useRef(false)
+  useEffect(() => {
+    if (reshuffled && !prevReshuffled.current) {
+      setReshuffleBanner(true)
+      setTimeout(() => setReshuffleBanner(false), 1800)
+    }
+    prevReshuffled.current = reshuffled
+  }, [reshuffled])
 
   // Phase 1.9.2: 전투 진입 시 기세 죽음 배너 (1회)
   useEffect(() => {
@@ -1272,10 +1289,10 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     }
   }, [hand.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Phase 1.9.2: 화 연소 / 금 관통 배너
+  // Phase 1.9.4: 화 연소 / 금 관통 배너 (수치 포함)
   useEffect(() => {
     if (combustionTriggered && !prevCombustionTriggered.current) {
-      setTraitBanner({ type: 'fire', key: Date.now() })
+      setTraitBanner({ type: 'fire', key: Date.now(), bonus: combustionBonus })
       setTimeout(() => setTraitBanner(null), 1700)
       // 최초 툴팁
       try {
@@ -1290,7 +1307,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
 
   useEffect(() => {
     if (penetrationTriggered && !prevPenetrationTriggered.current) {
-      setTraitBanner({ type: 'metal', key: Date.now() })
+      setTraitBanner({ type: 'metal', key: Date.now(), ignored: penetrationIgnored })
       setTimeout(() => setTraitBanner(null), 1700)
       // 최초 툴팁
       try {
@@ -2421,7 +2438,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
             animation: 'fireRise 1.5s ease-out forwards',
           }}
         >
-          {TRAIT_BANNERS.fireBurn}
+          {TRAIT_BANNER_TEMPLATES.fireBurn(traitBanner?.bonus ?? 0)}
         </div>
       )}
       {traitBanner?.type === 'metal' && (
@@ -2445,7 +2462,30 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
             animation: 'metalSlash 1.5s ease-out forwards',
           }}
         >
-          {TRAIT_BANNERS.metalPierce}
+          {TRAIT_BANNER_TEMPLATES.metalPierce(traitBanner?.ignored ?? 0)}
+        </div>
+      )}
+
+      {/* Phase 1.9.4: 덱 재순환 배너 */}
+      {reshuffleBanner && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '28%',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            fontSize: '14px',
+            fontWeight: 600,
+            color: '#D8CCB4',
+            textShadow: '0 0 6px rgba(216,204,180,0.5)',
+            letterSpacing: '0.1em',
+            pointerEvents: 'none',
+            zIndex: 200,
+            whiteSpace: 'nowrap',
+            animation: 'fireRise 1.5s ease-out forwards',
+          }}
+        >
+          패를 다시 섞는다.
         </div>
       )}
 
@@ -3116,11 +3156,14 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           )
 
           // condenseInfo: 토 타격 조합
-          // Phase 1.9.3: 미리보기에 조합명 노출 — "옹기가마 (土) · 공격: 예상 18 / 대응축: 다음 공격 +180%"
+          // Phase 1.9.4: 저장형 응축 미리보기 —
+          // "옹기가마 (土) · 공격: 예상 45 / 대응축: 45를 굽는다 → 다음 공격 +90"
           if (preview?.condenseInfo) {
             const { attack, type, comboName } = preview.condenseInfo
-            const pct = type === 'great' ? 180 : 120
+            const mult = type === 'great' ? 2.0 : 1.5
+            const savedBonus = Math.round(attack * mult)
             const label = type === 'great' ? '대응축' : '응축'
+            const verbPhrase = type === 'great' ? '를 굽는다' : '를 담는다'
             const labelColor = type === 'great' ? '#FF8C40' : '#D9A441'
             return (
               <div style={{
@@ -3139,7 +3182,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                 <span style={{ fontSize: '13px', color: '#FFFDF7' }}>공격: 예상 {attack}</span>
                 <span style={{ fontSize: '13px', color: '#4A4540' }}>/</span>
                 <span style={{ fontSize: '13px', color: labelColor, fontWeight: type === 'great' ? 700 : 600 }}>
-                  {label}: 다음 공격 +{pct}%
+                  {label}: {attack}{verbPhrase} → 다음 공격 +{savedBonus}
                 </span>
               </div>
             )
@@ -3257,7 +3300,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                 {/* 팔자 — 소형 텍스트 */}
                 <text x="18" y="34" textAnchor="middle" fontSize="6" fill="#D9A441" opacity="0.6" fontWeight="bold">팔자</text>
               </svg>
-              {/* Phase 1.9.2: 응축 v2 구슬 + 라벨 (condenseType 기반) */}
+              {/* Phase 1.9.4: 응축 저장형 구슬 + 라벨 "응축 +N 대기" */}
             {condenseType === 'basic' && (
               <div style={{
                 display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px',
@@ -3270,7 +3313,9 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                   animation: 'orbPulse 1.5s ease-in-out infinite',
                 }} />
                 <span style={{ color: '#D9A441', fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
-                  응축: 다음 공격 +120%
+                  {condensedDamage > 0
+                    ? `응축 +${Math.round(condensedDamage * 1.5)} 대기`
+                    : '응축 대기 중'}
                 </span>
               </div>
             )}
@@ -3286,7 +3331,9 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                   animation: 'superOrbPulse 1.0s ease-in-out infinite',
                 }} />
                 <span style={{ color: '#FF8C40', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
-                  대응축: 다음 공격 +180%
+                  {condensedDamage > 0
+                    ? `대응축 +${Math.round(condensedDamage * 2.0)} 대기`
+                    : '대응축 대기 중'}
                 </span>
               </div>
             )}

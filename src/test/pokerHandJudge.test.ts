@@ -30,7 +30,7 @@ describe('Phase 1.9 조합 판정: 오행연환', () => {
     ]
     const result = judgeHand(cards)
     expect(result.rank).toBe('ohang-yeonhwan')
-    expect(result.multiplier).toBe(10)
+    expect(result.multiplier).toBe(8)  // Phase 1.9.2: ×10 → ×8
     expect(isOhangYeonhwan(cards)).toBe(true)
   })
 
@@ -219,6 +219,74 @@ describe('Phase 1.9 조합 판정: 융합', () => {
       makeCard('to', 'yang', 5),
     ]
     expect(isFusionCombo(cards)).toBe(false)
+  })
+
+  describe('Phase 1.9.3 다장 융합 (장수 제약 제거)', () => {
+    it('화1+화8+수7+수5 = 담금불(火) · 공격력 21 × 3.5 (이든 실기 검증 케이스)', () => {
+      const cards = [
+        makeCard('hwa', 'yang', 1),
+        makeCard('hwa', 'yin', 8),
+        makeCard('su', 'yang', 7),
+        makeCard('su', 'yin', 5),
+      ]
+      expect(isFusionCombo(cards)).toBe(true)
+      const result = judgeCombo(cards)
+      expect(result.type).toBe('fusion-hone')
+      expect(result.name).toBe('담금불')
+      expect(result.finishingElement).toBe('hwa')
+      expect(result.baseScore).toBe(21)
+      expect(result.multiplier).toBe(3.5)
+      expect(result.totalScore).toBe(Math.round(21 * 3.5))  // 73
+    })
+
+    it('3장 융합: 목+목+화 = 들불(火) · 공격력 합산', () => {
+      const cards = [
+        makeCard('mok', 'yang', 3),
+        makeCard('mok', 'yin', 4),
+        makeCard('hwa', 'yang', 6),
+      ]
+      expect(isFusionCombo(cards)).toBe(true)
+      const result = judgeCombo(cards)
+      expect(result.type).toBe('fusion-birth')
+      expect(result.name).toBe('들불')
+      expect(result.baseScore).toBe(13)
+    })
+
+    it('5장 융합 (상한): 화×3 + 금×2 = 벼린 검(金)', () => {
+      const cards = [
+        makeCard('hwa', 'yang', 2),
+        makeCard('hwa', 'yin', 3),
+        makeCard('hwa', 'yang', 1),
+        makeCard('geum', 'yin', 4),
+        makeCard('geum', 'yang', 5),
+      ]
+      expect(isFusionCombo(cards)).toBe(true)
+      const result = judgeCombo(cards)
+      expect(result.type).toBe('fusion-hone')
+      expect(result.name).toBe('벼린 검')
+      expect(result.baseScore).toBe(15)
+    })
+
+    it('6장은 융합 불가 (상한 5장 초과)', () => {
+      const cards = [
+        makeCard('hwa', 'yang', 1),
+        makeCard('hwa', 'yin', 2),
+        makeCard('hwa', 'yang', 3),
+        makeCard('su', 'yin', 1),
+        makeCard('su', 'yang', 2),
+        makeCard('su', 'yin', 3),
+      ]
+      expect(isFusionCombo(cards)).toBe(false)
+    })
+
+    it('3기운 × 다장 선택은 여전히 융합 아님', () => {
+      const cards = [
+        makeCard('mok', 'yang', 3),
+        makeCard('hwa', 'yin', 3),
+        makeCard('to', 'yang', 3),
+      ]
+      expect(isFusionCombo(cards)).toBe(false)
+    })
   })
 })
 

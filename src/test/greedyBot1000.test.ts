@@ -24,10 +24,11 @@ import { FLOOR_CONFIGS, HAND_SIZE, FUSION_COMBOS } from '../engine/balance'
 import type { Card, Element } from '../types/game'
 
 // 단일 런에서 선택된 융합 이름 수집
-function collectFusionNames(hand: Card[], enemyEl: Element, condenseActive: boolean): string | null {
-  const selectedIds = greedySelectCards(hand, enemyEl, undefined, condenseActive)
+// Phase 1.9.3: 다장 융합(2~5장) 인식 — selectedCards.length !== 2 제약 제거
+function collectFusionNames(hand: Card[], enemyEl: Element, condenseType: 'basic' | 'great' | null): string | null {
+  const selectedIds = greedySelectCards(hand, enemyEl, undefined, condenseType)
   const selectedCards = hand.filter(c => selectedIds.includes(c.id))
-  if (selectedCards.length !== 2) return null
+  if (selectedCards.length < 2 || selectedCards.length > 5) return null
   const result = judgeCombo(selectedCards)
   if (result.type === 'fusion-birth' || result.type === 'fusion-hone') {
     return result.name
@@ -61,7 +62,7 @@ describe('A-3 재밸런스: 탐욕 봇 1000판 — Phase 1.9', () => {
 
         // 최대 4번 플레이 시뮬
         for (let play = 0; play < (FLOOR_CONFIGS[floor].maxPlays ?? 4); play++) {
-          const fusionName = collectFusionNames(hand, enemyEl, false)
+          const fusionName = collectFusionNames(hand, enemyEl, null)
           if (fusionName && fusionName in fusionUsage) {
             fusionUsage[fusionName]++
             fusionTotalSelections++

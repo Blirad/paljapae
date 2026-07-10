@@ -138,14 +138,14 @@ describe('Phase 1.9 QA — 새 조합 체계 + 응축 + 극/반극', () => {
     })
   })
 
-  describe('4. 오행연환 배율 (×10)', () => {
-    it('5기운 모두 필수 + 정확히 5장 → 배율 ×10', () => {
+  describe('4. 오행연환 배율 (×8 — Phase 1.9.2 희소화)', () => {
+    it('5기운 모두 필수 + 정확히 5장 → 배율 ×8', () => {
       const result = judgeCombo([
         makeCard('mok', 'yang', 5), makeCard('hwa', 'yin', 5), makeCard('to', 'yang', 5),
         makeCard('geum', 'yin', 5), makeCard('su', 'yang', 5),
       ])
       expect(result.type).toBe('ohang-yeonhwan')
-      expect(result.multiplier).toBe(10)
+      expect(result.multiplier).toBe(8)
     })
 
     it('4기운만 → 오행연환 아님', () => {
@@ -185,7 +185,7 @@ describe('Phase 1.9 QA — 새 조합 체계 + 응축 + 극/반극', () => {
         makeCard('geum', 'yin', 5), makeCard('su', 'yang', 5),
       ])
       expect(ohang.type).toBe('ohang-yeonhwan')
-      expect(ohang.multiplier).toBe(10)
+      expect(ohang.multiplier).toBe(8)  // Phase 1.9.2: ×10 → ×8
 
       // 같은 카드 값으로 비교
       const fusion = judgeCombo([makeCard('mok', 'yang', 5), makeCard('hwa', 'yin', 5)])

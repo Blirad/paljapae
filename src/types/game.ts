@@ -100,12 +100,17 @@ export interface GameState {
   yeonhwanUsed: boolean     // 오행연환 출정당 1회 제한 (true = 이미 사용됨)
   // Phase 1.9.2 신규 — E-2: 응축 v2 (선택형 2단계)
   condenseType: 'basic' | 'great' | null  // null = 비활성, basic = 기본응축, great = 대응축
-  condenseMultiplier: number              // 0 = 미응축, 1.2 = 기본응축, 1.8 = 대응축
+  condenseMultiplier: number              // 0 = 미응축, 1.5 = 기본응축, 2.0 = 대응축
+  condensedDamage: number                 // Phase 1.9.4: 저장형 응축 — 태운 조합의 예상 피해 저장값 (0 = 미저장)
   isLastAttack: boolean                   // attacksRemaining === 1 (UI 버튼 비활성 처리용)
   // Phase 1.9.2 신규 — E-3: 오행 특성 2차
   sootCount: Record<string, number>       // 화 연소: 카드별 그을음 누적 카운트
   combustionTriggered: boolean            // 화 연소 발동 여부 (UI 배너용)
+  combustionBonus: number                 // Phase 1.9.4: 화 연소로 추가된 피해량 (UI 배너 표시용)
   penetrationTriggered: boolean           // 금 관통 발동 여부 (UI 배너용)
+  penetrationIgnored: number              // Phase 1.9.4: 관통으로 무시된 피해감소량 (UI 배너 표시용)
+  // Phase 1.9.4 신규 — 덱 재순환
+  reshuffled: boolean                     // 이번 턴 덱 재순환 발동 여부 (UI 배너용)
 }
 
 export type FortuneLevel = 'daegil' | 'gil' | 'pyeong' | 'hyung' | 'daehyung'

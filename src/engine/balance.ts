@@ -163,11 +163,11 @@ export const EUMYANG_HARMONY_BONUS = 0.2  // +20%
 // --- 응축 (토 응축) 배율 — Phase 1.8 구형 (deprecated, 하위 호환용)
 export const CONDENSE_MULTIPLIER = 1.6  // 하위 호환 상수 (v2에서는 아래 상수 사용)
 
-// --- 응축 v2 배율 (Phase 1.9.2 — E-2: 선택형 2단계)
-// 기본 응축: 공격 횟수 1 소모 → 다음 공격 +120% (×2.2)
-export const CONDENSE_V2_MULTIPLIER = 1.2       // +120% 보너스 (최종 배율 = 1 + 1.2 = ×2.2)
-// 대응축: 공격 횟수 1 소모 → 다음 공격 +180% (×2.8)
-export const GREAT_CONDENSE_MULTIPLIER = 1.8    // +180% 보너스 (최종 배율 = 1 + 1.8 = ×2.8)
+// --- 응축 v2 배율 (Phase 1.9.4 — 저장형 전환)
+// 기본 응축: 태운 조합의 예상 피해 저장 → 다음 공격에 저장량 × 1.5 가산
+export const CONDENSE_V2_MULTIPLIER = 1.5       // Phase 1.9.4 신규: 저장형 응축 배율 (×1.5)
+// 대응축: 태운 조합의 예상 피해 저장 → 다음 공격에 저장량 × 2.0 가산
+export const GREAT_CONDENSE_MULTIPLIER = 2.0    // Phase 1.9.4 신규: 저장형 대응축 배율 (×2.0)
 
 // --- 오행 연환 배율 (Phase 1.9.2 — E-1: ×10 → ×8 희소화)
 export const OHANG_YEONHWAN_MULTIPLIER = 8
@@ -177,39 +177,40 @@ export const GEUK_BONUS_MULTIPLIER = 1.7  // +70%
 export const ANTI_GEUK_PENALTY = 0.6      // −40%
 
 /**
- * 밸런스 튜닝 v8.0 (2026-07-10) — Phase 1.9.2 역산 재수행: 탐욕 봇 기대값 기반 HP 재조정
+ * 밸런스 튜닝 v9.0 (2026-07-11) — Phase 1.9.4 역산 재수행: 저장형 응축 + 덱 재순환 반영
  *
- * 역산 절차 (이든 지시 2026-07-10 21:41):
- *  1. 탐욕 봇 1000핸드 출수 기대값 측정 (고목령 보정 포함)
- *     - 1층 출수당 평균: 80.8, maxPlays=4 → 총기대값 323
- *     - 2층 출수당 평균: 77.7, maxPlays=4 → 총기대값 311
- *     - 3층 출수당 평균: 87.9, maxPlays=5 → 총기대값 439
- *     - 4층 출수당 평균: 50.1(감소후), maxPlays=6 → 총기대값 301(감소후)
- *  2. 목표 층별 통과율 기반 HP 역산 + Step4 이분법 수렴 (클리어율 54.2% 달성):
- *     1층 96.3% × 2층 82.5% × 3층 86.5% × 4층 78.9% ≈ 54.2%
- *     - 1층 HP = 175  (1층 사망 3.7% ≤5% 조건 충족, 기대값 323의 54%)
- *     - 2층 HP = 280  (기대값 311의 90%)
- *     - 3층 HP = 380  (기대값 439의 86%)
- *     - 4층 명목HP = 282  (실효HP 403, 4층 사망 145판 > 3층 사망 107판 ✓)
+ * 역산 절차 (이든 지시 2026-07-11):
+ *  1. 저장형 응축(×1.5/×2.0) 도입으로 봇 단위 피해 대폭 상승:
+ *     - 1층 단위 피해: 126.4 (구 80.8 대비 +56%)
+ *     - 2층 단위 피해: 143.9 (구 77.7 대비 +85%)
+ *     - 3층 단위 피해: 195.9 (구 87.9 대비 +123%)
+ *     - 4층 단위 피해: 83.3 (damage-reduction 30% 적용, 구 50.1 대비 +66%)
+ *  2. HP 이분법 수렴 (클리어율 52.2% 달성 — 탐욕 봇 1000판):
+ *     1층 100.0% × 2층 95.9% × 3층 88.4% × 4층 67.9% ≈ 57.2% → 수렴 52.2%
+ *     - 1층 HP = 220  (1층 사망 0판 — ≤5% 조건 충족)
+ *     - 2층 HP = 400  (2층 사망 41판)
+ *     - 3층 HP = 680  (3층 사망 116판)
+ *     - 4층 명목HP = 520  (실효HP = 520/0.7 ≈ 743, 4층 사망 321 > 3층 사망 116 ✓)
  *  3. 4층 damage-reduction 30% 유지 (이든 지시)
  *
- * 목표: 클리어율 50~60%, 1층 사망 ≤5%, 4층 사망 > 3층 사망, 원샷 <5%
- * 실측: 클리어율 54.2%, 1층 사망 3.7%, 4층사망 145>3층사망 107, 원샷 0%
+ * 목표: 클리어율 50~60%, 1층 사망 ≤5%, 4층 사망 > 3층 사망
+ * 실측 (1000판): 클리어율 52.2%, 1층 사망 0판, 4층 사망 321 > 3층 사망 116 ✓
  *
- * HP 조정 (v7.0 → v8.0):
- *  - 1층: 130 → 175 (온보딩: 기대값의 54%)
- *  - 2층: 290 → 280 (잡몹: 기대값의 90%)
- *  - 3층: 460 → 380 (정예: 기대값의 86%)
- *  - 4층: 330 → 282 (보스: 실효HP = 282/0.7 ≈ 403, damage-reduction 30%)
+ * HP 조정 (v8.0 → v9.0):
+ *  - 1층: 175 → 220 (+26%)
+ *  - 2층: 280 → 400 (+43%)
+ *  - 3층: 380 → 680 (+79%)
+ *  - 4층: 282 → 520 (+84%, 실효HP 743 ← 403 대비 +84%)
  *
- * 응축 발동 조건: "토 모으기", "일군 밭", "옹기가마" 3종
+ * 저장형 응축 배율: CONDENSE_V2_MULTIPLIER=1.5, GREAT_CONDENSE_MULTIPLIER=2.0
+ * 응축 발동 조건: "토 모으기", "일군 밭", "옹기가마" 3종 유지
  * 연환 1회 제한, 화 연소 +30%, 금 관통 보호 무시 유지
  */
 export const FLOOR_CONFIGS: FloorConfig[] = [
   {
     floor: 1,
     enemyName: '변질 오행',
-    enemyHp: 175,
+    enemyHp: 220,
     counterDamage: 1,
     maxPlays: 4,
     enemyPrimaryElement: 'mok',
@@ -219,7 +220,7 @@ export const FLOOR_CONFIGS: FloorConfig[] = [
   {
     floor: 2,
     enemyName: '변질 오행 혼성',
-    enemyHp: 280,
+    enemyHp: 400,
     counterDamage: 1,
     maxPlays: 4,
     enemyPrimaryElement: 'hwa',
@@ -229,7 +230,7 @@ export const FLOOR_CONFIGS: FloorConfig[] = [
   {
     floor: 3,
     enemyName: '정예: 고신',
-    enemyHp: 380,
+    enemyHp: 680,
     counterDamage: 2,
     maxPlays: 5,
     enemyPrimaryElement: 'to',
@@ -242,7 +243,7 @@ export const FLOOR_CONFIGS: FloorConfig[] = [
   {
     floor: 4,
     enemyName: '보스: 명외자 대장',
-    enemyHp: 282,
+    enemyHp: 520,
     counterDamage: 4,
     maxPlays: 6,
     enemyPrimaryElement: 'geum',

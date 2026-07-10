@@ -129,10 +129,14 @@ export function createInitialGameState(floorIndex = 0, heroProfile?: SavedHeroPr
     yeonhwanUsed: false,
     condenseType: null,
     condenseMultiplier: 0,
+    condensedDamage: 0,            // Phase 1.9.4: 저장형 응축
     isLastAttack: floorConfig.maxPlays === 1,
     sootCount: {},
     combustionTriggered: false,
+    combustionBonus: 0,
     penetrationTriggered: false,
+    penetrationIgnored: 0,
+    reshuffled: false,
   }
 }
 
@@ -214,13 +218,17 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     damage = damage * 2
   }
 
-  // Phase 1.9.2 E-2: 응축 v2 소모 — condenseType이 있으면 다음 공격에 배율 적용
+  // Phase 1.9.4 E-2: 응축 저장형 소모 — condenseType이 있으면 저장된 피해 × 배율 가산
   let newCondenseType = state.condenseType
   let newCondenseMultiplier = state.condenseMultiplier
+  let newCondensedDamage = state.condensedDamage
   if (state.condenseType !== null && !isBlocked) {
-    damage = Math.round(damage * (1 + state.condenseMultiplier))
+    // 저장형: 저장량 × 배율 가산 (fixed % 방식 → saved × multiplier 방식)
+    const addedDamage = Math.round(state.condensedDamage * state.condenseMultiplier)
+    damage = damage + addedDamage
     newCondenseType = null
     newCondenseMultiplier = 0
+    newCondensedDamage = 0
   }
 
   // Phase 1.9.2 E-2: 자동 응축 폐지 — 구형 자동 응축 로직 제거
@@ -232,8 +240,11 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
   // Phase 1.9.2 E-3: 화 연소 — finishEl === 'hwa' 시 +30% + 화 카드 값 -1 (실효화)
   let newSootCount = { ...state.sootCount }
   let combustionTriggered = false
+  let combustionBonus = 0
   if (finishEl === 'hwa' && !isBlocked) {
+    const beforeCombustion = damage
     damage = Math.round(damage * 1.3)
+    combustionBonus = damage - beforeCombustion  // Phase 1.9.4: 연소로 추가된 피해량
     combustionTriggered = true
     for (const card of playedCards) {
       if (card.element === 'hwa') {
@@ -243,14 +254,32 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
   }
 
   // Phase 1.7: 4층 보스 금강불괴 — 받는 피해 -30% (금 관통 시 건너뜀)
+  // Phase 1.9.4: 관통 시 무시된 감소량 계산 (UI 배너용)
+  let penetrationIgnored = 0
   if (!penetrationTriggered && floorConfig.eliteGimmickEffect?.type === 'damage-reduction' && state.currentFloor >= 3) {
-    damage = Math.round(damage * (1 - floorConfig.eliteGimmickEffect.pct))
+    const pct = floorConfig.eliteGimmickEffect.pct
+    penetrationIgnored += Math.round(damage * pct)
+    damage = Math.round(damage * (1 - pct))
   }
 
   // C10(d): 붕토령 — 받는 피해 -20% (금 관통 시 건너뜀)
   const reductionGimmick = gimmicks.find(g => g.type === 'damage-reduction')
   if (!penetrationTriggered && reductionGimmick && reductionGimmick.type === 'damage-reduction') {
-    damage = Math.round(damage * (1 - reductionGimmick.pct))
+    const pct = reductionGimmick.pct
+    penetrationIgnored += Math.round(damage * pct)
+    damage = Math.round(damage * (1 - pct))
+  }
+  // penetrationTriggered === true이면 penetrationIgnored = 위에서 건너뛴 총 감소량
+  if (penetrationTriggered) {
+    // 방어 효과가 있을 때만 의미 있는 무시량 계산
+    let ignoredSum = 0
+    if (floorConfig.eliteGimmickEffect?.type === 'damage-reduction' && state.currentFloor >= 3) {
+      ignoredSum += Math.round(damage * floorConfig.eliteGimmickEffect.pct)
+    }
+    if (reductionGimmick && reductionGimmick.type === 'damage-reduction') {
+      ignoredSum += Math.round(damage * reductionGimmick.pct)
+    }
+    penetrationIgnored = ignoredSum
   }
 
   // C10(d): 고목령 — 매 턴 체력 15 회복 (피해 적용 후, 생존 시에만)
@@ -293,8 +322,18 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
   )
   const newPlaysLeft = state.playsLeft - 1
 
-  // 덱에서 플레이한 장수만큼 다시 뽑기
-  const newDeck = [...state.deck]
+  // Phase 1.9.4 수정 1: 덱 부족 시 버림+사용 카드 섞어 재순환 (소프트락 방지)
+  // 불변 조건: "공격 기회가 남아 있는 한, 핸드는 항상 리필된다" — 진행 불능 상태 금지
+  let newDeck = [...state.deck]
+  // 플레이한 카드는 버림더미로 이동 (리필 전 먼저 계산)
+  const newDiscardPileBase = [...state.discardPile, ...playedCards]
+  let reshuffled = false
+  if (newDeck.length < playedCards.length) {
+    // 덱 부족: 버림더미(방금 사용한 카드 포함)를 섞어 덱 재구성 (카드 상태 유지)
+    const allCards = [...newDeck, ...newDiscardPileBase]
+    newDeck = shuffleDeck(allCards)
+    reshuffled = true
+  }
   const drawnCards: Card[] = []
   for (let i = 0; i < playedCards.length && newDeck.length > 0; i++) {
     drawnCards.push(newDeck.shift()!)
@@ -360,7 +399,7 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     playerHp: newPlayerHp,
     hand: newHand,
     deck: newDeck,
-    discardPile: [...state.discardPile, ...playedCards],
+    discardPile: reshuffled ? [] : newDiscardPileBase,
     selectedCards: [],
     playsLeft: newPlaysLeft,
     phase,
@@ -374,10 +413,15 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     yeonhwanUsed: newYeonhwanUsed,
     condenseType: newCondenseType,
     condenseMultiplier: newCondenseMultiplier,
+    condensedDamage: newCondensedDamage,
     isLastAttack: newIsLastAttack,
     sootCount: newSootCount,
     combustionTriggered,
+    combustionBonus,
     penetrationTriggered,
+    penetrationIgnored,
+    // Phase 1.9.4: 덱 재순환 배너용 플래그
+    reshuffled,
   }
 }
 
@@ -387,7 +431,16 @@ export function discardCards(state: GameState, cardIds: string[]): GameState {
 
   const discarded = state.hand.filter(c => cardIds.includes(c.id))
   const remainHand = state.hand.filter(c => !cardIds.includes(c.id))
-  const newDeck = [...state.deck]
+
+  // Phase 1.9.4: 덱 부족 시 재순환 (버리기도 동일 불변 조건 적용)
+  const newDiscardPileBase = [...state.discardPile, ...discarded]
+  let newDeck = [...state.deck]
+  let reshuffled = false
+  if (newDeck.length < discarded.length) {
+    const allCards = [...newDeck, ...newDiscardPileBase]
+    newDeck = shuffleDeck(allCards)
+    reshuffled = true
+  }
   const drawnCards: Card[] = []
   for (let i = 0; i < discarded.length && newDeck.length > 0; i++) {
     drawnCards.push(newDeck.shift()!)
@@ -405,10 +458,11 @@ export function discardCards(state: GameState, cardIds: string[]): GameState {
     ...state,
     hand: [...remainHand, ...drawnCards],
     deck: newDeck,
-    discardPile: [...state.discardPile, ...discarded],
+    discardPile: reshuffled ? [] : newDiscardPileBase,
     selectedCards: [],
     discardsLeft: state.discardsLeft - 1,
     playerHp: newPlayerHp,
+    reshuffled,
   }
 }
 
@@ -515,11 +569,15 @@ export function advanceToNextFloor(state: GameState): GameState {
     yeonhwanUsed: false,
     condenseType: null,
     condenseMultiplier: 0,
+    condensedDamage: 0,
     isLastAttack: floorConfig.maxPlays === 1,
     // 그을음은 출정마다 초기화 (카드 풀 교체)
     sootCount: {},
     combustionTriggered: false,
+    combustionBonus: 0,
     penetrationTriggered: false,
+    penetrationIgnored: 0,
+    reshuffled: false,
   }
 }
 
@@ -547,13 +605,13 @@ export function getCondenseAvailability(
 /**
  * 응축 v2 선택 적용 함수 (UI에서 "응축" 버튼 클릭 시 호출)
  * - Phase 1.9.3: 공격과 동일하게 카드 소진 + 리필 (치명 결함 수정)
+ * - Phase 1.9.4: 저장형 전환 — 태운 조합의 예상 피해 저장 (expectedDamage 파라미터)
  * - 공격 횟수 1회 소모 (playsLeft -1)
- * - 실제 피해 0
- * - condenseType/condenseMultiplier 설정
+ * - 실제 피해 0, condenseType/condenseMultiplier/condensedDamage 설정
  * - 중첩 불가 (기존 응축 있으면 무시)
  * - 마지막 공격 기회(isLastAttack)에는 적용 불가
  */
-export function applyCondense(state: GameState, type: 'basic' | 'great', cardIds?: string[]): GameState {
+export function applyCondense(state: GameState, type: 'basic' | 'great', cardIds?: string[], expectedDamage?: number): GameState {
   // 마지막 공격 기회에는 응축 불가
   if (state.isLastAttack) return state
   // 중첩 불가
@@ -564,6 +622,9 @@ export function applyCondense(state: GameState, type: 'basic' | 'great', cardIds
   const multiplier = type === 'basic' ? CONDENSE_V2_MULTIPLIER : GREAT_CONDENSE_MULTIPLIER
   const newPlaysLeft = state.playsLeft - 1
 
+  // Phase 1.9.4: 예상 피해 저장 (파라미터 없으면 0)
+  const savedDamage = expectedDamage ?? 0
+
   // Phase 1.9.3: 카드 소진 + 리필 (공격과 동일)
   const condensedCards = cardIds
     ? state.hand.filter(c => cardIds.includes(c.id))
@@ -571,7 +632,14 @@ export function applyCondense(state: GameState, type: 'basic' | 'great', cardIds
   const remainHand = cardIds
     ? state.hand.filter(c => !cardIds.includes(c.id))
     : [...state.hand]
-  const newDeck = [...state.deck]
+
+  // Phase 1.9.4: 덱 부족 시 재순환 (applyCondense에도 동일 불변 조건 적용)
+  const newDiscardPileBase = [...state.discardPile, ...condensedCards]
+  let newDeck = [...state.deck]
+  if (newDeck.length < condensedCards.length) {
+    const allCards = [...newDeck, ...newDiscardPileBase]
+    newDeck = shuffleDeck(allCards)
+  }
   const drawnCards: Card[] = []
   for (let i = 0; i < condensedCards.length && newDeck.length > 0; i++) {
     drawnCards.push(newDeck.shift()!)
@@ -582,13 +650,17 @@ export function applyCondense(state: GameState, type: 'basic' | 'great', cardIds
     ...state,
     hand: newHand,
     deck: newDeck,
-    discardPile: [...state.discardPile, ...condensedCards],
+    discardPile: newDiscardPileBase,
     playsLeft: newPlaysLeft,
     selectedCards: [],
     condenseType: type,
     condenseMultiplier: multiplier,
+    condensedDamage: savedDamage,  // Phase 1.9.4: 저장형
     isLastAttack: newPlaysLeft === 1,
     combustionTriggered: false,
+    combustionBonus: 0,
     penetrationTriggered: false,
+    penetrationIgnored: 0,
+    reshuffled: false,
   }
 }

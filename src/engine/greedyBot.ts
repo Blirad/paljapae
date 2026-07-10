@@ -39,7 +39,7 @@ function combinations<T>(arr: T[], k: number): T[][] {
 }
 
 /**
- * Phase 1.9.2 — 예상 데미지 계산 (E-1~E-4 갱신)
+ * Phase 1.9.4 — 예상 데미지 계산 (저장형 응축 반영)
  *
  * 로직:
  *  1. judgeCombo()로 조합 판정 (type + finishingElement + multiplier)
@@ -47,7 +47,7 @@ function combinations<T>(arr: T[], k: number): T[][] {
  *  3. 극 보너스: +70% (GEUK_BONUS_MULTIPLIER = 1.7)
  *  4. 반극 페널티: −40% (ANTI_GEUK_PENALTY = 0.6)
  *  5. E-1: 연환 yeonhwanUsed 체크 → 사용됐으면 0점
- *  6. E-2: 응축 v2 2턴 시야: condenseType 있으면 소모, 없으면 기대값 계산
+ *  6. E-2: 응축 저장형: condenseType 있으면 저장량×배율 가산
  *  7. E-3: 화 연소 +30% (finishEl === 'hwa')
  *  8. E-3: 금 관통 — 적 방어 있을 때 가중치 증가 (finishEl === 'geum')
  *
@@ -61,6 +61,7 @@ export function calcExpectedDamage(
   yeonhwanUsed?: boolean,
   isLastAttack?: boolean,
   enemyHasDamageReduction?: boolean,
+  condensedDamage?: number,  // Phase 1.9.4: 저장된 예상 피해
 ): number {
   const result = judgeCombo(combo)
   let damage = result.totalScore
@@ -81,21 +82,18 @@ export function calcExpectedDamage(
     damage = Math.round(damage * ANTI_GEUK_PENALTY)
   }
 
-  // E-2: 응축 v2 소모 — condenseType 있으면 배율 적용
-  if (condenseType) {
-    const mult = condenseType === 'basic' ? (1 + CONDENSE_V2_MULTIPLIER) : (1 + GREAT_CONDENSE_MULTIPLIER)
-    damage = Math.round(damage * mult)
-  } else {
+  // E-2: 응축 저장형 소모 — condenseType 있으면 저장량 × 배율 가산
+  if (condenseType && condensedDamage != null && condensedDamage > 0) {
+    const mult = condenseType === 'basic' ? CONDENSE_V2_MULTIPLIER : GREAT_CONDENSE_MULTIPLIER
+    damage = damage + Math.round(condensedDamage * mult)
+  } else if (!condenseType) {
     // 2턴 시야: 응축 기대값 평가 (마지막 공격이 아닌 경우만)
     const condenseKind = getCondenseAvailability(result.name, finishEl)
     if (condenseKind && !isLastAttack) {
-      // 응축 선택 시: 이번 턴 피해 0 + 다음 턴 배율
-      // 기대값 = 0 + (nextDamage × mult) / 2 ≈ damage × mult / 2
-      const mult = condenseKind === 'basic'
-        ? (1 + CONDENSE_V2_MULTIPLIER)
-        : (1 + GREAT_CONDENSE_MULTIPLIER)
-      // 2턴 평균: (0 + damage × mult) / 2
-      const condenseExpected = Math.round(damage * mult / 2)
+      // 저장형: 이번 피해 저장 → 다음 공격 = nextDamage + damage × mult
+      // 기대값 = (0 + damage + damage × mult) / 2
+      const mult = condenseKind === 'basic' ? CONDENSE_V2_MULTIPLIER : GREAT_CONDENSE_MULTIPLIER
+      const condenseExpected = Math.round(damage * (1 + mult) / 2)
       // 즉시 공격 vs 응축 기대값 비교: 높은 쪽 반영
       damage = Math.max(damage, condenseExpected)
     }
@@ -127,6 +125,7 @@ export function greedySelectCards(
   yeonhwanUsed?: boolean,
   isLastAttack?: boolean,
   enemyHasDamageReduction?: boolean,
+  condensedDamage?: number,  // Phase 1.9.4: 저장된 예상 피해
 ): string[] {
   if (hand.length === 0) return []
 
@@ -154,6 +153,7 @@ export function greedySelectCards(
             yeonhwanUsed,
             isLastAttack,
             enemyHasDamageReduction,
+            condensedDamage,
           )
         : result.totalScore
 
@@ -234,10 +234,14 @@ function createDeterministicState(floorIndex: number, rng: () => number): GameSt
     yeonhwanUsed: false,
     condenseType: null,
     condenseMultiplier: 0,
+    condensedDamage: 0,
     isLastAttack: floorConfig.maxPlays === 1,
     sootCount: {},
     combustionTriggered: false,
+    combustionBonus: 0,
     penetrationTriggered: false,
+    penetrationIgnored: 0,
+    reshuffled: false,
   }
 }
 
@@ -284,10 +288,14 @@ export function simulateGreedyRun(seed: number): RunResult {
         yeonhwanUsed: false,
         condenseType: null,
         condenseMultiplier: 0,
+        condensedDamage: 0,
         isLastAttack: floorConfig.maxPlays === 1,
         sootCount: {},
         combustionTriggered: false,
+        combustionBonus: 0,
         penetrationTriggered: false,
+        penetrationIgnored: 0,
+        reshuffled: false,
       }
     } else {
       state = { ...state, playerHp }
@@ -339,7 +347,7 @@ export function simulateGreedyRun(seed: number): RunResult {
         : floorConf.enemySubElement
       // 적 피해감소 여부 (금 관통 가중치용)
       const hasDmgReduction = floorConf.eliteGimmickEffect?.type === 'damage-reduction'
-      // Phase 1.9.2: 연환 1회 제한 + 응축 v2 + 마지막 공격 기회 봇에 전달
+      // Phase 1.9.4: 연환 1회 제한 + 응축 저장형 + 마지막 공격 기회 봇에 전달
       const selectedIds = greedySelectCards(
         state.hand,
         currentPrimaryEl,
@@ -348,6 +356,7 @@ export function simulateGreedyRun(seed: number): RunResult {
         state.yeonhwanUsed,
         state.isLastAttack,
         hasDmgReduction,
+        state.condensedDamage,
       )
       if (selectedIds.length === 0) {
         deathFloor = floor
@@ -355,7 +364,7 @@ export function simulateGreedyRun(seed: number): RunResult {
         return { victory: false, floorsCleared, deathFloor, floorStats, condenseCount, greatCondenseCount, combustionCount }
       }
 
-      // Phase 1.9.2 지시 4(g): 봇 응축 학습 — 토 타격 조합 선택 시 응축 기회 평가
+      // Phase 1.9.4: 봇 응축 학습 — 저장형 전환
       // 조건: 응축 미활성 AND 마지막 공격 기회 아님 AND 공격 횟수 2회 이상 남음
       if (
         state.condenseType === null &&
@@ -366,7 +375,7 @@ export function simulateGreedyRun(seed: number): RunResult {
         const comboResult = judgeCombo(selectedCards)
         const condenseKind = getCondenseAvailability(comboResult.name, comboResult.finishingElement)
         if (condenseKind !== null) {
-          // 응축 효과 기대값 비교: 즉시 공격 vs 응축 후 다음 공격
+          // 저장형: 이번 피해 저장 → 다음 공격에 저장량×배율 가산
           const currentDamage = calcExpectedDamage(
             selectedCards,
             currentPrimaryEl,
@@ -376,17 +385,16 @@ export function simulateGreedyRun(seed: number): RunResult {
             state.isLastAttack,
             hasDmgReduction,
           )
-          const condenseMult = condenseKind === 'basic'
-            ? (1 + CONDENSE_V2_MULTIPLIER)
-            : (1 + GREAT_CONDENSE_MULTIPLIER)
-          // 응축 후 다음 공격 기대값 = 현재 조합 × 응축배율 (같은 조합이 다시 나온다고 가정)
-          const condenseNextExpected = Math.round(currentDamage * condenseMult)
+          const condenseMult = condenseKind === 'basic' ? CONDENSE_V2_MULTIPLIER : GREAT_CONDENSE_MULTIPLIER
+          // 저장형 기대값: (0 + nextDamage + currentDamage × condenseMult) / 2
+          // nextDamage ≈ currentDamage (같은 조합 가정)
+          const condenseNextExpected = Math.round((currentDamage + currentDamage + Math.round(currentDamage * condenseMult)) / 2)
           // 응축이 즉시 공격보다 유리하면 응축 선택
           if (condenseNextExpected > currentDamage) {
             if (condenseKind === 'basic') condenseCount++
             else greatCondenseCount++
-            // Phase 1.9.3: 카드 소진 포함 — 선택 카드 ID 전달
-            state = applyCondense(state, condenseKind, selectedIds)
+            // Phase 1.9.4: 예상 피해 저장 (저장형 응축)
+            state = applyCondense(state, condenseKind, selectedIds, currentDamage)
             // 응축 선택 후 다음 루프에서 실제 공격 수행 (이번 턴 건너뜀)
             continue
           }
