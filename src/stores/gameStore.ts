@@ -15,6 +15,7 @@ import {
   activateHwanpae,
   activateJeungpok,
   acquireTalisman,
+  applyCondense,
 } from '../engine/paljajeonEngine'
 import { judgeHand } from '../engine/pokerHandJudge'
 import type { HandJudgeResult } from '../types/game'
@@ -64,6 +65,8 @@ interface GameStore extends GameState {
   useHwanpae: () => void
   useJeungpok: () => void
   gainTalisman: (talismanId: string) => void
+  // Phase 1.9.2: 응축 v2 선택 적용
+  applyCondenseAction: (type: 'basic' | 'great') => void
 }
 
 const INITIAL_BATTLE_STATS: BattleStats = {
@@ -158,5 +161,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   gainTalisman: (talismanId: string) => {
     const newState = acquireTalisman(get(), talismanId)
     set(newState)
+  },
+  // Phase 1.9.3: 응축 v2 선택 적용 — 카드 소진 포함 (selectedCards 전달)
+  applyCondenseAction: (type: 'basic' | 'great') => {
+    const state = get()
+    const newState = applyCondense(state, type, state.selectedCards)
+    set({ ...newState, previewResult: null, selectedCards: [] })
   },
 }))

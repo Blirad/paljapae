@@ -385,7 +385,8 @@ export function simulateGreedyRun(seed: number): RunResult {
           if (condenseNextExpected > currentDamage) {
             if (condenseKind === 'basic') condenseCount++
             else greatCondenseCount++
-            state = applyCondense(state, condenseKind)
+            // Phase 1.9.3: 카드 소진 포함 — 선택 카드 ID 전달
+            state = applyCondense(state, condenseKind, selectedIds)
             // 응축 선택 후 다음 루프에서 실제 공격 수행 (이번 턴 건너뜀)
             continue
           }

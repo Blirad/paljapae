@@ -31,6 +31,7 @@ import { FLOOR_CONFIGS, GEUK_BONUS_MULTIPLIER } from '../engine/balance'
 import { useGameContext } from '../context/GameContext'
 import { audioManager } from '../services/audioManager'
 import { judgeHand, detectElementClash, calcGeukBonusMultiplier, detectYeokgeukPenalty, determinePrimaryElement, judgeCombo } from '../engine/pokerHandJudge'
+import { getCondenseAvailability } from '../engine/paljajeonEngine'
 import type { Element } from '../types/game'
 import TalismanBar from './TalismanBar'
 import type { TalismanId } from '../engine/talismans'
@@ -98,6 +99,30 @@ function getGeukKoLabel(attacker: Element, victim: Element, bonusPct: number): s
   return `${josa(ELEMENT_KO[attacker], '이', '가')} ${josa(ELEMENT_KO[victim], '을', '를')} 이긴다 +${bonusPct}%`
 }
 
+// ─── Phase 1.9.2 상수 ───────────────────────────────────────────────────────
+
+const TRAIT_BANNERS = {
+  fireBurn: '불꽃이 타오른다 +30%',
+  metalPierce: '쇠가 꿰뚫는다',
+} as const
+
+const CONDENSE_LABELS = {
+  condense: '응축 — 힘을 담는다',
+  superCondense: '대응축 — 가마에 굽는다',
+  lastHandWarning: '마지막 패는 구울 수 없다',
+} as const
+
+const PREVIEW_IDLE = '기운을 골라 공격하라 — 같은 기운을 모으거나, 맺고 끊는 짝을 찾아라.'
+const PREVIEW_BLOCKED = '서로 다른 기운은 둘까지만 손을 잡는다 — 다섯이 모이면 연환이 된다.'
+const PREVIEW_YEONHWAN_READY = "오행이 모두 모였다 — '연환 완성하기'로 대의식을 완성하라."
+const BATTLE_INTRO_DEAD = (element: string) => `오늘 ${element}의 기세가 죽어 있다 — 평소 힘의 6할만 낸다.`
+
+// 오행 상극 역관계: B가 A를 극한다 → A는 B에게 기세 죽음
+// GEUK_MAP[A] = B → A가 B를 극함
+// B에게 눌리는 기운 목록 계산: GEUK_MAP[enemy] = X → X가 기세 죽음
+// 카드 기운이 적 기운을 이기는지: GEUK_MAP[card.element] === enemyElement → 기세 오름
+// 적 기운이 카드 기운을 이기는지: GEUK_MAP[enemyElement] === card.element → 기세 죽음
+
 // ─── B-1: 신형 미리보기 빌더 ───────────────────────────────────────────────
 
 const ELEMENT_GEUK_REASON: Record<Element, string> = {
@@ -119,54 +144,109 @@ const ELEMENT_ANTI_REASON: Record<Element, string> = {
 function buildPreviewText(
   cards: Array<{ element: Element; value: number; polarity: string; id: string }>,
   enemyElement: Element,
-): { line1: string; line2: string | null; line1Color: string } | null {
-  if (cards.length === 0) return null
+  options?: {
+    hasAllFive?: boolean
+  },
+): {
+  line1: string
+  line2: string | null
+  line1Color: string
+  line1Style?: React.CSSProperties
+  condenseInfo?: { attack: number; type: 'basic' | 'great'; comboName: string }
+  isIdle?: boolean
+  isYeonhwanReady?: boolean
+  isInvalidCombo?: boolean
+} | null {
+  const { hasAllFive = false } = options ?? {}
+
+  // 상태 ⑤: 연환 가능 (선택 0장이어도 핸드에 5기운 있으면 표시)
+  if (hasAllFive && cards.length === 0) {
+    return {
+      line1: PREVIEW_YEONHWAN_READY,
+      line2: null,
+      line1Color: '#8B5CF6',
+      isYeonhwanReady: true,
+    }
+  }
+
+  // 상태 ①: 선택 0장
+  if (cards.length === 0) {
+    return {
+      line1: PREVIEW_IDLE,
+      line2: null,
+      line1Color: '#8B9BB4',
+      isIdle: true,
+    }
+  }
+
+  // 상태 ② 1장 낱장
+  if (cards.length === 1) {
+    const card = cards[0]
+    const isDeadGeuki = GEUK_MAP[enemyElement] === card.element
+    const baseVal = isDeadGeuki ? Math.round(card.value * 0.6) : card.value
+    return {
+      line1: `낱장 — 공격력 ${baseVal}`,
+      line2: null,
+      line1Color: '#FFFDF7',
+    }
+  }
 
   const comboResult = judgeCombo(cards as any)
-  if (comboResult.type === 'none') return null
+
+  // 상태 ④: 무효 조합
+  if (comboResult.type === 'none') {
+    return {
+      line1: '이 기운들은 조합이 맺어지지 않는다 — 같은 기운끼리, 또는 맞는 짝을 골라라.',
+      line2: null,
+      line1Color: '#C63D2F',
+      isInvalidCombo: true,
+    }
+  }
 
   const fe = comboResult.finishingElement
   const feHanja = ELEMENT_LABELS[fe]
   const geuksEnemy = GEUK_MAP[fe] === enemyElement
   const enemyGeuksFinish = GEUK_MAP[enemyElement] === fe
 
+  // 상태 ⑤: 연환
   if (comboResult.type === 'ohang-yeonhwan') {
     return {
-      line1: '오행연환 · 배율 ×10',
+      line1: '오행연환 (五行) · 배율 ×8',
       line2: null,
-      line1Color: '#D9A441',
+      line1Color: '#C8A8E8',
+      isYeonhwanReady: true,
     }
   }
 
-  if (comboResult.type === 'gather') {
-    const elementName = ELEMENT_KO[cards[0].element]
+  // 상태 ⑥: 토 타격 조합 (condenseType이 있을 때)
+  const condenseAvail = getCondenseAvailability(comboResult.name ?? '', fe)
+  if (condenseAvail !== null) {
     const mult = comboResult.multiplier
     const baseScore = comboResult.baseScore
-    let line1 = `${elementName} 모으기 ${cards.length} · 배율 ×${mult}`
-    let line1Color = '#D8CCB4'
-    let geukInfo = ''
-    if (geuksEnemy) {
-      geukInfo = ` +70%`
-      line1Color = '#4A9B6E'
-    } else if (enemyGeuksFinish) {
-      geukInfo = ` −40%`
-      line1Color = '#C63D2F'
+    const geukMult = geuksEnemy ? 1.7 : enemyGeuksFinish ? 0.6 : 1.0
+    const finalDamage = Math.round(baseScore * mult * geukMult)
+    // Phase 1.9.3: 조합명 포함
+    return {
+      line1: '',
+      line2: null,
+      line1Color: '#FFFDF7',
+      condenseInfo: { attack: finalDamage, type: condenseAvail, comboName: comboResult.name },
     }
-    if (geukInfo) line1 += geukInfo
-    const finalMult = geuksEnemy ? mult * 1.7 : enemyGeuksFinish ? mult * 0.6 : mult
-    const line2 = `기본 ${baseScore} × ${mult}(모으기)${geuksEnemy ? ' × 1.7(극 유리)' : enemyGeuksFinish ? ' × 0.6(극 불리)' : ''} = ${Math.round(baseScore * finalMult)}`
-    return { line1, line2, line1Color }
   }
 
-  // 융합 (낳는 / 벼리는)
-  const comboName = comboResult.name
+  // 상태 ③: 유효 조합
   const mult = comboResult.multiplier
   const baseScore = comboResult.baseScore
   const typeLabel = comboResult.type === 'fusion-hone' ? '벼리는' : '낳는'
+  const comboName = comboResult.name
 
   let geukSuffix = ''
   let geukMultLabel = ''
   let line1Color = '#D8CCB4'
+
+  if (comboResult.type === 'fusion-hone') {
+    line1Color = '#E8C870'
+  }
 
   if (geuksEnemy) {
     const reason = ELEMENT_GEUK_REASON[fe] ?? `${feHanja}이 이긴다`
@@ -180,9 +260,21 @@ function buildPreviewText(
     line1Color = '#C63D2F'
   }
 
+  // gather 타입
+  if (comboResult.type === 'gather') {
+    const elementName = ELEMENT_KO[cards[0].element]
+    let line1 = `${elementName} 모으기 ${cards.length} (${ELEMENT_LABELS[cards[0].element]}) · 공격력 ${baseScore} × ${mult}`
+    let gColor = '#D8CCB4'
+    if (geuksEnemy) { line1 += ' +70%'; gColor = '#4A9B6E' }
+    else if (enemyGeuksFinish) { line1 += ' −40%'; gColor = '#C63D2F' }
+    const finalMult = geuksEnemy ? mult * 1.7 : enemyGeuksFinish ? mult * 0.6 : mult
+    const line2 = `예상 ${Math.round(baseScore * finalMult)}${geukMultLabel ? ` (극 보정 포함)` : ''}`
+    return { line1, line2, line1Color: gColor }
+  }
+
   const finalMult = geuksEnemy ? mult * 1.7 : enemyGeuksFinish ? mult * 0.6 : mult
-  const line1 = `${comboName} (${feHanja})${geukSuffix}`
-  const line2 = `기본 ${baseScore} × ${mult}(${typeLabel})${geukMultLabel} = ${Math.round(baseScore * finalMult)}`
+  const line1 = `${comboName} (${feHanja})${geukSuffix} · 공격력 ${baseScore} × ${mult} = 예상 ${Math.round(baseScore * finalMult)}`
+  const line2 = geukMultLabel ? `기본 ${baseScore} × ${mult}(${typeLabel})${geukMultLabel} = ${Math.round(baseScore * finalMult)}` : null
 
   return { line1, line2, line1Color }
 }
@@ -987,6 +1079,13 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     attackCount,
     enemyPhaseSwitch,
     condenseActive,
+    // Phase 1.9.2 신규 필드
+    yeonhwanUsed,
+    condenseType,
+    isLastAttack,
+    sootCount,
+    combustionTriggered,
+    penetrationTriggered,
     toggleCardSelect,
     playSelectedCards,
     discardSelectedCards,
@@ -1000,6 +1099,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     useJeonghwa,
     useHwanpae,
     useJeungpok,
+    applyCondenseAction,
   } = useGameStore()
 
   const { getCssDuration, getDuration, playbackSpeed, togglePlaybackSpeed } = useGameContext()
@@ -1132,6 +1232,76 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
 
   // B-3: 오행연환 shimmer 상태 (5기운 보유 여부)
   const hasAllFiveElements = handHasAllFiveElements(hand)
+
+  // Phase 1.9.2: 기세 죽음 전투 진입 배너
+  const [geukiBanner, setGeukiBanner] = useState<string | null>(null)
+  const geukiBannerShownRef = useRef(false)
+
+  // Phase 1.9.2: 특성 배너 (화 연소 / 금 관통)
+  const [traitBanner, setTraitBanner] = useState<{ type: 'fire' | 'metal'; key: number } | null>(null)
+
+  // Phase 1.9.2: 특성 최초 발동 툴팁
+  const [traitTooltip, setTraitTooltip] = useState<'fire' | 'metal' | null>(null)
+
+  // Phase 1.9.2: 응축 발동 연출 구슬
+  const [condenseOrb, setCondenseOrb] = useState<'basic' | 'great' | null>(null)
+
+  // Phase 1.9.2 이전 combustionTriggered/penetrationTriggered 추적
+  const prevCombustionTriggered = useRef(false)
+  const prevPenetrationTriggered = useRef(false)
+
+  // Phase 1.9.2: 전투 진입 시 기세 죽음 배너 (1회)
+  useEffect(() => {
+    if (!geukiBannerShownRef.current && hand.length > 0) {
+      const deadEl = GEUK_MAP[enemyElement]  // 적에게 눌리는 기운
+      const hasDeadEl = hand.some(c => c.element === deadEl)
+      if (hasDeadEl) {
+        geukiBannerShownRef.current = true
+        const geukiIntroKey = `paljajeon_geuki_intro_${deadEl}`
+        // localStorage 1회 제한 체크
+        let alreadyShown = false
+        try { alreadyShown = !!localStorage.getItem(geukiIntroKey) } catch { /* noop */ }
+        if (!alreadyShown) {
+          try { localStorage.setItem(geukiIntroKey, '1') } catch { /* noop */ }
+          setTimeout(() => {
+            setGeukiBanner(BATTLE_INTRO_DEAD(ELEMENT_KO[deadEl]))
+            setTimeout(() => setGeukiBanner(null), 3800)
+          }, 600)
+        }
+      }
+    }
+  }, [hand.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Phase 1.9.2: 화 연소 / 금 관통 배너
+  useEffect(() => {
+    if (combustionTriggered && !prevCombustionTriggered.current) {
+      setTraitBanner({ type: 'fire', key: Date.now() })
+      setTimeout(() => setTraitBanner(null), 1700)
+      // 최초 툴팁
+      try {
+        const key = 'paljajeon_trait_fire_burn_explained'
+        if (!localStorage.getItem(key)) {
+          setTimeout(() => setTraitTooltip('fire'), 200)
+        }
+      } catch { /* noop */ }
+    }
+    prevCombustionTriggered.current = combustionTriggered
+  }, [combustionTriggered])
+
+  useEffect(() => {
+    if (penetrationTriggered && !prevPenetrationTriggered.current) {
+      setTraitBanner({ type: 'metal', key: Date.now() })
+      setTimeout(() => setTraitBanner(null), 1700)
+      // 최초 툴팁
+      try {
+        const key = 'paljajeon_trait_metal_pierce_explained'
+        if (!localStorage.getItem(key)) {
+          setTimeout(() => setTraitTooltip('metal'), 200)
+        }
+      } catch { /* noop */ }
+    }
+    prevPenetrationTriggered.current = penetrationTriggered
+  }, [penetrationTriggered])
 
   // B-4: 응축 최초 툴팁 (localStorage 플래그)
   const CONDENSE_TOOLTIP_KEY = 'paljajeon_condensation_explained'
@@ -1621,7 +1791,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
       // 5기운 전부 있으면 연환 모드이므로 차단 안 함
       if (!hasAllFiveElements) {
         if (blockMsgTimerRef.current) clearTimeout(blockMsgTimerRef.current)
-        setBlockMsg('서로 다른 기운은 둘까지만 손을 잡는다 — 다섯이 모이면 연환이 된다.')
+        setBlockMsg(PREVIEW_BLOCKED)
         blockMsgTimerRef.current = setTimeout(() => setBlockMsg(null), 500)
         return  // 선택 자체를 막음
       }
@@ -1736,6 +1906,26 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     }
     console.log('[UX] 훈수 버튼 — 최강 조합 하이라이트', { bestIds, bestScore, timestamp: Date.now() })
   }, [hand])
+
+  // Phase 1.9.3: 응축 버튼 핸들러 — 발동 배너 포함
+  const handleApplyCondense = useCallback((type: 'basic' | 'great') => {
+    // 발동 배너: "옹기가마 — 가마에 굽는다!" (great) / "응축 — 힘을 담는다" (basic)
+    const currentSelected = useGameStore.getState().selectedCards
+    const currentHand = useGameStore.getState().hand
+    const selObjs = currentHand.filter(c => currentSelected.includes(c.id))
+    if (selObjs.length >= 2) {
+      const comboRes = judgeCombo(selObjs as any)
+      const comboName = comboRes.name
+      const bannerText = type === 'great'
+        ? `${comboName} — 가마에 굽는다!`
+        : `${comboName} — 힘을 담는다`
+      showBanner(bannerText)
+    }
+    applyCondenseAction(type)
+    // 구슬 연출
+    setCondenseOrb(type)
+    setTimeout(() => setCondenseOrb(null), type === 'great' ? 2000 : 2500)
+  }, [applyCondenseAction, showBanner])
 
   // B-3: 연환 완성하기 — 각 기운 최고값 카드 1장씩 자동 선택
   const handleYeonhwanComplete = useCallback(() => {
@@ -2045,6 +2235,42 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           70%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
           100% { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
         }
+        /* Phase 1.9.2 애니메이션 */
+        @keyframes sealShimmer {
+          0%   { box-shadow: 0 0 3px rgba(212, 175, 55, 0.5); }
+          50%  { box-shadow: 0 0 8px rgba(212, 175, 55, 0.9), 0 0 14px rgba(240, 208, 80, 0.4); }
+          100% { box-shadow: 0 0 3px rgba(212, 175, 55, 0.5); }
+        }
+        @keyframes textPulse {
+          0%, 100% { opacity: 1; }
+          50%       { opacity: 0.65; }
+        }
+        @keyframes orbPulse {
+          0%, 100% { transform: scale(1.0); box-shadow: 0 0 6px rgba(217, 164, 65, 0.8); }
+          50%       { transform: scale(1.12); box-shadow: 0 0 12px rgba(217, 164, 65, 1.0); }
+        }
+        @keyframes superOrbPulse {
+          0%, 100% { transform: scale(1.0); box-shadow: 0 0 10px rgba(255, 140, 0, 0.9); }
+          50%       { transform: scale(1.18); box-shadow: 0 0 18px rgba(255, 140, 0, 1.0), 0 0 30px rgba(212, 175, 55, 0.6); }
+        }
+        @keyframes fireRise {
+          0%   { opacity: 0; transform: translateX(-50%) translateY(0); }
+          20%  { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+          80%  { opacity: 1; transform: translateX(-50%) translateY(-12px); }
+          100% { opacity: 0; transform: translateX(-50%) translateY(-24px); }
+        }
+        @keyframes metalSlash {
+          0%   { opacity: 0; transform: translateX(-80%); }
+          15%  { opacity: 1; transform: translateX(-50%); }
+          75%  { opacity: 1; transform: translateX(-50%); }
+          100% { opacity: 0; transform: translateX(-20%); }
+        }
+        @keyframes geukiBannerFade {
+          0%   { opacity: 0; }
+          10%  { opacity: 1; }
+          80%  { opacity: 1; }
+          100% { opacity: 0; }
+        }
       `}</style>
 
       {/* B-4: 응축 최초 툴팁 (localStorage 1회) */}
@@ -2096,6 +2322,50 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
         </div>
       )}
 
+      {/* Phase 1.9.2: 특성 최초 발동 툴팁 */}
+      {traitTooltip && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 350,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backgroundColor: 'rgba(22,19,15,0.7)',
+        }}>
+          <div style={{
+            background: 'rgba(28,23,16,0.97)',
+            border: '1px solid rgba(216,204,180,0.3)',
+            borderRadius: '4px',
+            padding: '12px 16px',
+            maxWidth: '280px',
+            fontSize: '13px',
+            color: '#D8CCB4',
+            position: 'relative',
+          }}>
+            <div style={{ fontSize: '14px', fontWeight: 700, marginBottom: '8px', color: '#E8D8A0' }}>
+              {traitTooltip === 'fire' ? '연소 (火 특성)' : '관통 (金 특성)'}
+            </div>
+            <div style={{ lineHeight: '1.6', marginBottom: '10px' }}>
+              {traitTooltip === 'fire'
+                ? '화 주 기운 조합은 즉시 피해 +30%.\n사용한 화 카드는 값이 줄어든다.'
+                : '금 주 기운 조합은 적의 보호·피해감소를\n무시하고 꿰뚫는다.'}
+            </div>
+            <button
+              onClick={() => {
+                const key = traitTooltip === 'fire'
+                  ? 'paljajeon_trait_fire_burn_explained'
+                  : 'paljajeon_trait_metal_pierce_explained'
+                try { localStorage.setItem(key, '1') } catch { /* noop */ }
+                setTraitTooltip(null)
+              }}
+              style={{
+                background: '#D8CCB4', color: '#1C1710',
+                height: '36px', width: '100%',
+                border: 'none', borderRadius: '4px',
+                fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+              }}
+            >확인</button>
+          </div>
+        </div>
+      )}
+
       {/* 오행연환 오버레이 */}
       <ElementalSequenceOverlay seq={elementalSeq} getCssDuration={getCssDuration} />
 
@@ -2128,6 +2398,54 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           pointerEvents: 'none',
         }}>
           {gimmickBanner}
+        </div>
+      )}
+
+      {/* Phase 1.9.2: 특성 배너 (화 연소 / 금 관통) */}
+      {traitBanner?.type === 'fire' && (
+        <div
+          key={traitBanner.key}
+          style={{
+            position: 'fixed',
+            top: '20%',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            fontSize: '16px',
+            fontWeight: 700,
+            color: '#FF6B35',
+            textShadow: '0 0 8px rgba(255,107,53,0.8), 0 0 16px rgba(255,60,0,0.4)',
+            letterSpacing: '0.08em',
+            pointerEvents: 'none',
+            zIndex: 200,
+            whiteSpace: 'nowrap',
+            animation: 'fireRise 1.5s ease-out forwards',
+          }}
+        >
+          {TRAIT_BANNERS.fireBurn}
+        </div>
+      )}
+      {traitBanner?.type === 'metal' && (
+        <div
+          key={traitBanner.key}
+          style={{
+            position: 'fixed',
+            top: '20%',
+            left: '50%',
+            fontSize: '16px',
+            fontWeight: 700,
+            background: 'linear-gradient(90deg, #C0C0C0, #E8F4FD, #C0C0C0)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+            filter: 'drop-shadow(0 0 4px rgba(192,192,192,0.6))',
+            letterSpacing: '0.12em',
+            pointerEvents: 'none',
+            zIndex: 200,
+            whiteSpace: 'nowrap',
+            animation: 'metalSlash 1.5s ease-out forwards',
+          }}
+        >
+          {TRAIT_BANNERS.metalPierce}
         </div>
       )}
 
@@ -2685,6 +3003,24 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
             </div>
           </div>
 
+          {/* Phase 1.9.2: 기세 죽음 전투 진입 배너 */}
+          {geukiBanner && (
+            <div style={{
+              background: 'rgba(139, 115, 85, 0.85)',
+              border: '1px solid rgba(139, 115, 85, 0.6)',
+              borderRadius: '4px',
+              padding: '6px 12px',
+              fontSize: '12px',
+              color: '#D8CCB4',
+              letterSpacing: '0.05em',
+              textAlign: 'center',
+              pointerEvents: 'none',
+              animation: 'geukiBannerFade 3.8s ease-out forwards',
+            }}>
+              {geukiBanner}
+            </div>
+          )}
+
           {/* 피해 내역 패널: 적 HP바 아래 인라인 배치 */}
           <DamageBreakdownPanel breakdown={damageBreakdown} getCssDuration={getCssDuration} />
 
@@ -2752,87 +3088,108 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           </div>
         )}
 
-        {/* B-1: 신형 미리보기 패널 */}
+        {/* Phase 1.9.2: 미리보기 패널 (6종 상태 + 차단 안내) */}
         {(() => {
-          const preview = selectedCards.length > 0
-            ? buildPreviewText(selectedCardObjs, enemyElement)
-            : null
+          // blockMsg 우선: 이종 3장 차단 시도 안내
+          if (blockMsg) {
+            return (
+              <div style={{
+                background: 'rgba(28,23,16,0.9)',
+                border: '1px solid rgba(216,204,180,0.2)',
+                borderRadius: '4px',
+                padding: '8px 12px',
+                minHeight: '44px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                <span style={{ fontSize: '12px', color: '#D9A441', letterSpacing: '0.04em', textAlign: 'center' }}>
+                  {blockMsg}
+                </span>
+              </div>
+            )
+          }
+
+          const preview = buildPreviewText(
+            selectedCardObjs,
+            enemyElement,
+            { hasAllFive: hasAllFiveElements },
+          )
+
+          // condenseInfo: 토 타격 조합
+          // Phase 1.9.3: 미리보기에 조합명 노출 — "옹기가마 (土) · 공격: 예상 18 / 대응축: 다음 공격 +180%"
+          if (preview?.condenseInfo) {
+            const { attack, type, comboName } = preview.condenseInfo
+            const pct = type === 'great' ? 180 : 120
+            const label = type === 'great' ? '대응축' : '응축'
+            const labelColor = type === 'great' ? '#FF8C40' : '#D9A441'
+            return (
+              <div style={{
+                background: 'rgba(28,23,16,0.9)',
+                border: '1px solid rgba(216,204,180,0.2)',
+                borderRadius: '4px',
+                padding: '8px 12px',
+                minHeight: '44px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+                gap: '6px',
+                flexWrap: 'wrap',
+              }}>
+                <span style={{ fontSize: '13px', color: '#D9A441', fontWeight: 700 }}>{comboName} (土)</span>
+                <span style={{ fontSize: '13px', color: '#4A4540' }}>·</span>
+                <span style={{ fontSize: '13px', color: '#FFFDF7' }}>공격: 예상 {attack}</span>
+                <span style={{ fontSize: '13px', color: '#4A4540' }}>/</span>
+                <span style={{ fontSize: '13px', color: labelColor, fontWeight: type === 'great' ? 700 : 600 }}>
+                  {label}: 다음 공격 +{pct}%
+                </span>
+              </div>
+            )
+          }
+
+          if (!preview) return null
+
+          const isIdleState = preview.isIdle
+          const isYeonhwan = preview.isYeonhwanReady
+          const isInvalid = preview.isInvalidCombo
+
           return (
             <div
               style={{
-                minHeight: '64px',
-                backgroundColor: preview ? 'rgba(28,23,16,0.85)' : 'transparent',
-                borderTop: '1px solid #2A2620',
-                borderBottom: '1px solid #2A2620',
-                padding: '8px 16px',
+                background: 'rgba(28,23,16,0.9)',
+                border: '1px solid rgba(216,204,180,0.2)',
+                borderRadius: '4px',
+                padding: '8px 12px',
+                minHeight: '44px',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                transition: `background-color ${getCssDuration(150)}`,
                 flexShrink: 0,
                 gap: '4px',
-                borderRadius: '4px',
               }}
             >
-              {preview ? (
-                <>
-                  {/* 라인1: 조합명 (속성 한자) · 상성 사유 + 극 배율 */}
-                  <div
-                    style={{
-                      animation: previewBounce ? `previewBounce 220ms ease-out` : undefined,
-                      textAlign: 'center',
-                    }}
-                  >
-                    <span style={{
-                      color: preview.line1Color,
-                      fontSize: '14px',
-                      fontWeight: 'bold',
-                      letterSpacing: '0.04em',
-                    }}>
-                      {preview.line1}
-                    </span>
-                  </div>
-                  {/* 라인2: 계산 과정 투명 표시 */}
-                  {preview.line2 && (
-                    <div style={{
-                      color: '#D8CCB4',
-                      fontSize: '12px',
-                      letterSpacing: '0.03em',
-                      opacity: 0.85,
-                      textAlign: 'center',
-                    }}>
-                      {preview.line2}
-                    </div>
-                  )}
-                  {/* B-2: 차단 안내 인라인 (11px, #D9A441) */}
-                  {blockMsg && (
-                    <div style={{
-                      color: '#D9A441',
-                      fontSize: '11px',
-                      letterSpacing: '0.04em',
-                      textAlign: 'center',
-                      marginTop: '2px',
-                    }}>
-                      {blockMsg}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div style={{ textAlign: 'center' }}>
-                  {blockMsg ? (
-                    <div style={{
-                      color: '#D9A441',
-                      fontSize: '11px',
-                      letterSpacing: '0.04em',
-                    }}>
-                      {blockMsg}
-                    </div>
-                  ) : (
-                    <span style={{ color: '#6A6560', fontSize: '11px', opacity: 0.6 }}>
-                      — 카드를 골라 공격 —
-                    </span>
-                  )}
+              <div
+                style={{
+                  animation: previewBounce && !isIdleState && !isYeonhwan ? `previewBounce 220ms ease-out` : undefined,
+                  textAlign: 'center',
+                }}
+              >
+                <span style={{
+                  color: preview.line1Color,
+                  fontSize: isIdleState || isInvalid ? '12px' : '13px',
+                  fontStyle: isIdleState ? 'italic' : 'normal',
+                  fontWeight: (!isIdleState && !isInvalid) ? 600 : 400,
+                  letterSpacing: '0.04em',
+                  animation: isYeonhwan ? 'textPulse 1.5s ease-in-out infinite' : undefined,
+                }}>
+                  {isYeonhwan && !preview.line1.startsWith('오행연환') && '✦ '}{preview.line1}
+                </span>
+              </div>
+              {preview.line2 && (
+                <div style={{
+                  color: '#D8CCB4', fontSize: '12px',
+                  letterSpacing: '0.03em', opacity: 0.85, textAlign: 'center',
+                }}>
+                  {preview.line2}
                 </div>
               )}
             </div>
@@ -2900,33 +3257,59 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                 {/* 팔자 — 소형 텍스트 */}
                 <text x="18" y="34" textAnchor="middle" fontSize="6" fill="#D9A441" opacity="0.6" fontWeight="bold">팔자</text>
               </svg>
-              {/* B-4: 응축 황색 구슬 + 라벨 */}
-            {condenseActive && (
+              {/* Phase 1.9.2: 응축 v2 구슬 + 라벨 (condenseType 기반) */}
+            {condenseType === 'basic' && (
               <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                marginTop: '4px',
+                display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px',
               }}>
                 <div style={{
-                  width: '12px',
-                  height: '12px',
-                  borderRadius: '50%',
+                  width: '12px', height: '12px', borderRadius: '50%',
                   background: 'radial-gradient(circle at 30% 30%, #FFE8A8, #D9A441)',
                   boxShadow: '0 0 6px rgba(217,164,65,0.8)',
                   flexShrink: 0,
-                  animation: 'condensePulse 1.5s ease-in-out infinite',
+                  animation: 'orbPulse 1.5s ease-in-out infinite',
                 }} />
-                <span style={{
-                  color: '#D9A441',
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  letterSpacing: '0.05em',
-                  whiteSpace: 'nowrap',
-                }}>
-                  응축: 다음 공격 +60%
+                <span style={{ color: '#D9A441', fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
+                  응축: 다음 공격 +120%
                 </span>
               </div>
+            )}
+            {condenseType === 'great' && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px',
+              }}>
+                <div style={{
+                  width: '16px', height: '16px', borderRadius: '50%',
+                  background: 'radial-gradient(circle at 30% 30%, #FFFA80, #FF8C00, #D4AF37)',
+                  boxShadow: '0 0 10px rgba(255,140,0,0.9), 0 0 20px rgba(212,175,55,0.5)',
+                  flexShrink: 0,
+                  animation: 'superOrbPulse 1.0s ease-in-out infinite',
+                }} />
+                <span style={{ color: '#FF8C40', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
+                  대응축: 다음 공격 +180%
+                </span>
+              </div>
+            )}
+            {/* 응축 발동 시 연출 구슬 (일회성) */}
+            {condenseOrb === 'basic' && (
+              <div style={{
+                position: 'absolute', top: '0', left: '50%',
+                width: '12px', height: '12px', borderRadius: '50%',
+                background: 'radial-gradient(circle at 30% 30%, #FFE8A8, #D9A441)',
+                boxShadow: '0 0 6px rgba(217,164,65,0.8)',
+                animation: 'orbPulse 1.5s ease-in-out 2',
+                pointerEvents: 'none',
+              }} />
+            )}
+            {condenseOrb === 'great' && (
+              <div style={{
+                position: 'absolute', top: '0', left: '50%',
+                width: '16px', height: '16px', borderRadius: '50%',
+                background: 'radial-gradient(circle at 30% 30%, #FFFA80, #FF8C00, #D4AF37)',
+                boxShadow: '0 0 10px rgba(255,140,0,0.9), 0 0 20px rgba(212,175,55,0.5)',
+                animation: 'superOrbPulse 1.0s ease-in-out 2',
+                pointerEvents: 'none',
+              }} />
             )}
 
             {/* 정령 구체 D11: 조합에 포함된 오행 차례 소환 */}
@@ -3007,8 +3390,12 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
             const w = Math.max(minW, Math.min(maxW, Math.floor((window.innerWidth - 48) / Math.max(totalCards, 1)) - 4))
             const h = Math.round(w * 7 / 5)
 
-            // 역극 카드: opacity 0.35, 필터 더 강하게
-            const isYeokgeukInHand = GEUK_MAP[enemyElement] === card.element
+            // Phase 1.9.2: 기세 오름 / 기세 죽음 판정
+            // 기세 오름: 카드 기운이 적 기운을 이긴다 (GEUK_MAP[card.element] === enemyElement)
+            // 기세 죽음: 적 기운이 카드 기운을 이긴다 (GEUK_MAP[enemyElement] === card.element)
+            const isGeukiOleum = GEUK_MAP[card.element] === enemyElement   // 기세 오름
+            const isGeukiJugeum = GEUK_MAP[enemyElement] === card.element  // 기세 죽음 (구 역극)
+            const isYeokgeukInHand = isGeukiJugeum  // 하위 호환성 유지
             // A4: 훈수 하이라이트
             const isHinted = hintActive && hintCards.includes(card.id)
 
@@ -3056,14 +3443,15 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                 style={{
                   width: w,
                   height: h,
-                  backgroundColor: isYeokgeukInHand ? '#1A1614' : '#E8DCC4',
+                  // Phase 1.9.3: 기세 죽음 카드 배경색 유지 (#E8DCC4) — 카드면 색상 변경 금지
+                  backgroundColor: '#E8DCC4',
                   border: isHinted
                     ? `2px solid #D9A441`
                     : isYeonhwanCandidate && !isSelected
                     ? `2px solid #FFD98A`
                     : isDropTarget && dragState.fusionPreview?.type !== 'reject'
                     ? `2px solid #D9A441`
-                    : `2px solid ${isSelected ? elColor : isYeokgeukInHand ? '#2A2620' : '#2A2620'}`,
+                    : `2px solid ${isSelected ? elColor : '#2A2620'}`,
                   borderRadius: '2px',
                   position: 'relative',
                   cursor: isBlockedByDiversity ? 'not-allowed' : 'grab',
@@ -3084,53 +3472,95 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                     : isSelected ? `0 0 8px ${glowColor}` : 'none',
                   flexShrink: 0,
                   padding: 0,
-                  // A-1 Phase 1.9: 죽은 기운 카드 — 채도 -70%만 적용 (opacity 제거)
-                  // B-2: 차단 카드 opacity 0.4
+                  // Phase 1.9.3: 기세 죽음 — filter 전체 제거 (배경 색상 변경 금지)
+                  // B-2 차단 opacity 0.4
                   opacity: isDraggingThis ? 0.5 : isBlockedByDiversity ? 0.4 : 1,
-                  filter: isYeokgeukInHand ? 'saturate(0.3)' : 'none',
                   // B-3: shimmer 애니메이션
                   animation: isYeonhwanCandidate && !isSelected
                     ? 'yeonhwanShimmer 300ms ease-in-out 3'
                     : undefined,
                 }}
               >
+                {/* Phase 1.9.3: 기세 죽음 — 내부 테두리에만 saturate(0.6) 적용 */}
                 <div style={{
                   position: 'absolute', inset: '2px',
                   border: `1px solid ${isSelected ? elColor : '#B33A2B'}`,
                   opacity: isSelected ? 0.9 : 0.3,
                   borderRadius: '1px',
+                  filter: isGeukiJugeum ? 'saturate(0.6)' : 'none',
                 }} />
-                {/* A-1 Phase 1.9: 죽은 기운 카드 — 먹색 리본 상단 */}
-                {isYeokgeukInHand && (
+                {/* Phase 1.9.2: 기세 오름 도장 (우상단 20×20) */}
+                {isGeukiOleum && (
                   <div style={{
                     position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: '16px',
-                    backgroundColor: '#2F2F2F',
+                    top: '4px',
+                    right: '4px',
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '50%',
+                    background: 'radial-gradient(circle at 35% 35%, #F0D060, #D4AF37, #A08020)',
+                    border: '1px solid rgba(212,175,55,0.9)',
+                    boxShadow: '0 0 4px rgba(212,175,55,0.7), inset 0 1px 2px rgba(255,240,150,0.5)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    zIndex: 2,
-                    borderRadius: '1px 1px 0 0',
+                    flexDirection: 'column',
+                    zIndex: 3,
+                    animation: 'sealShimmer 2s ease-in-out infinite',
+                    lineHeight: 1,
                   }}>
-                    <span style={{ color: '#FFFFFF', fontSize: '10px', fontWeight: 'bold', letterSpacing: '0.05em' }}>
-                      힘 없음
-                    </span>
+                    <span style={{ color: '#FFFDF7', fontSize: '4px', letterSpacing: 0, textAlign: 'center', display: 'block', lineHeight: '1.1' }}>기세</span>
+                    <span style={{ color: '#FFFDF7', fontSize: '4px', letterSpacing: 0, textAlign: 'center', display: 'block', lineHeight: '1.1' }}>오름</span>
                   </div>
                 )}
-                {/* A-1: 값(숫자) 좌상단 18px */}
+                {/* Phase 1.9.2: 기세 죽음 도장 (우상단 20×20) */}
+                {isGeukiJugeum && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '4px',
+                    right: '4px',
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '50%',
+                    background: 'radial-gradient(circle at 40% 40%, #A09070, #8B7355, #6B5535)',
+                    border: '1px solid rgba(139,115,85,0.6)',
+                    boxShadow: '0 0 2px rgba(0,0,0,0.4)',
+                    opacity: 0.85,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexDirection: 'column',
+                    zIndex: 3,
+                    lineHeight: 1,
+                    overflow: 'hidden',
+                  }}>
+                    <span style={{ color: '#9B9080', fontSize: '4px', letterSpacing: 0, textAlign: 'center', display: 'block', lineHeight: '1.1' }}>기세</span>
+                    <span style={{ color: '#9B9080', fontSize: '4px', letterSpacing: 0, textAlign: 'center', display: 'block', lineHeight: '1.1' }}>죽음</span>
+                    {/* 균열선 */}
+                    <div style={{
+                      position: 'absolute',
+                      top: '3px', left: '8px',
+                      width: '1px', height: '14px',
+                      background: 'rgba(0,0,0,0.4)',
+                      transform: 'rotate(15deg)',
+                    }} />
+                  </div>
+                )}
+                {/* A-1: 값(숫자) 좌상단 18px — 그을음 적용 */}
+                {/* Phase 1.9.3: 기세 죽음 — 글자에만 saturate(0.6) 적용 */}
                 <span style={{
                   color: '#2A2620',
                   fontSize: '18px',
                   fontWeight: 'bold',
                   position: 'absolute',
-                  top: isYeokgeukInHand ? '20px' : '4px',
+                  top: '4px',
                   left: '5px',
                   lineHeight: 1,
+                  filter: isGeukiJugeum ? 'saturate(0.6)' : 'none',
                 }}>
-                  {card.value}
+                  {card.element === 'hwa' && sootCount[card.id]
+                    ? Math.max(0, card.value - (sootCount[card.id] ?? 0))
+                    : card.value}
                 </span>
                 {/* A-1: 속성(한자) 중앙 32px */}
                 <span style={{
@@ -3142,6 +3572,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                   left: '50%',
                   transform: 'translate(-50%, -50%)',
                   lineHeight: 1,
+                  filter: isGeukiJugeum ? 'saturate(0.6)' : 'none',
                 }}>
                   {ELEMENT_LABELS[card.element]}
                 </span>
@@ -3152,6 +3583,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                   position: 'absolute', bottom: '3px', left: '50%',
                   transform: 'translateX(-50%)',
                   opacity: 0.8,
+                  filter: isGeukiJugeum ? 'saturate(0.6)' : 'none',
                 }}>
                   {ELEMENT_KO[card.element]}
                 </span>
@@ -3176,6 +3608,20 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                     pointerEvents: 'none',
                   }}>
                     오늘은 이 기운이 힘을 못 쓰는 날
+                  </div>
+                )}
+                {/* Phase 1.9.2: 그을음 라벨 */}
+                {card.element === 'hwa' && sootCount[card.id] > 0 && (
+                  <div style={{
+                    position: 'absolute',
+                    bottom: '4px',
+                    right: '4px',
+                    fontSize: '9px',
+                    color: '#8B8070',
+                    letterSpacing: '0.02em',
+                    pointerEvents: 'none',
+                  }}>
+                    {sootCount[card.id] === 1 ? '그을음' : `그을음×${sootCount[card.id]}`}
                   </div>
                 )}
                 {/* Phase 1.8: 역극 툴팁 팝업 */}
@@ -3209,29 +3655,36 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
         {/* 핸드+부적슬롯 외부 flex 컨테이너 닫기 */}
         </div>
 
-        {/* B-3: 연환 완성하기 버튼 (5기운 보유 시만 표시) */}
+        {/* Phase 1.9.2: 연환 완성하기 버튼 (5기운 보유 시 표시, yeonhwanUsed 비활성) */}
         {hasAllFiveElements && (
           <div style={{ padding: '0 8px', flexShrink: 0 }}>
             <button
-              onClick={handleYeonhwanComplete}
+              onClick={yeonhwanUsed ? undefined : handleYeonhwanComplete}
+              disabled={yeonhwanUsed}
               style={{
                 width: '100%',
                 height: '44px',
-                backgroundColor: 'rgba(61,90,128,0.8)',
-                border: '1.5px solid #8FB8DE',
-                color: '#FFFDF7',
+                backgroundColor: yeonhwanUsed ? 'rgba(42,38,32,0.6)' : 'rgba(61,90,128,0.8)',
+                border: yeonhwanUsed ? '1.5px solid #4A4540' : '1.5px solid #8FB8DE',
+                color: yeonhwanUsed ? '#4A4540' : '#FFFDF7',
                 fontSize: '14px',
                 fontWeight: 'bold',
                 letterSpacing: '0.08em',
-                cursor: 'pointer',
+                cursor: yeonhwanUsed ? 'not-allowed' : 'pointer',
                 borderRadius: '4px',
                 position: 'relative',
                 overflow: 'hidden',
-                animation: 'yeonhwanButtonShimmer 2s ease-in-out infinite',
+                opacity: yeonhwanUsed ? 0.5 : 1,
+                animation: yeonhwanUsed ? undefined : 'yeonhwanButtonShimmer 2s ease-in-out infinite',
               }}
             >
-              연환 완성하기 →
+              {yeonhwanUsed ? '연환 완성됨 (출정당 1회)' : '연환 완성하기 →'}
             </button>
+            {yeonhwanUsed && (
+              <div style={{ fontSize: '11px', color: '#6B6560', textAlign: 'center', marginTop: '4px', letterSpacing: '0.04em' }}>
+                연환은 출정마다 한 번만 이룰 수 있는 대의식이다.
+              </div>
+            )}
           </div>
         )}
 
@@ -3291,6 +3744,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
             gap: '8px',
             padding: '8px 16px',
             alignItems: 'center',
+            position: 'relative',
           }}
         >
           <button
@@ -3311,25 +3765,124 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           >
             버리기 {discardsLeft}회 남음
           </button>
-          <button
-            onClick={handlePlayCards}
-            disabled={selectedCards.length === 0 || playsLeft <= 0 || isInputLocked}
-            style={{
-              flex: 1,
-              height: '48px',
-              backgroundColor: selectedCards.length > 0 && playsLeft > 0 && !isInputLocked ? '#B33A2B' : '#2A2620',
-              border: 'none',
-              color: '#E8DCC4',
-              fontSize: '14px',
-              cursor: selectedCards.length === 0 || playsLeft <= 0 || isInputLocked ? 'not-allowed' : 'pointer',
-              opacity: playsLeft <= 0 || isInputLocked ? 0.4 : 1,
-              letterSpacing: '0.1em',
-              transition: `background-color ${getCssDuration(150)}`,
-              pointerEvents: isInputLocked ? 'none' : undefined,
-            }}
-          >
-            공격 {playsLeft}/{floorConfig.maxPlays}
-          </button>
+          {/* Phase 1.9.2: 토 타격 조합 선택 시 2분할, 아니면 단일 공격 버튼 */}
+          {(() => {
+            const selectedComboResult = selectedCardObjs.length >= 2
+              ? judgeCombo(selectedCardObjs as any)
+              : null
+            const condenseAvail = selectedComboResult
+              ? getCondenseAvailability(selectedComboResult.name ?? '', selectedComboResult.finishingElement)
+              : null
+            const canAttack = selectedCards.length > 0 && playsLeft > 0 && !isInputLocked
+            const isGreat = condenseAvail === 'great'
+            // Phase 1.9.3: 버튼 라벨에 조합명 포함
+            // great(옹기가마): "대응축 — 옹기가마에 굽는다"
+            // basic(토 모으기/일군 밭): "응축 — 힘을 담는다"
+            const condenseBtnLabel = isGreat
+              ? `대응축 — ${selectedComboResult?.name ?? '옹기가마'}에 굽는다`
+              : CONDENSE_LABELS.condense
+
+            if (condenseAvail !== null) {
+              // 2분할 버튼
+              return (
+                <div style={{ flex: 1, display: 'flex', gap: '0', height: '48px' }}>
+                  {/* 공격 */}
+                  <button
+                    onClick={handlePlayCards}
+                    disabled={!canAttack}
+                    style={{
+                      flex: 0.9,
+                      height: '48px',
+                      background: '#3B4A6B',
+                      border: 'none',
+                      color: '#FFFDF7',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      letterSpacing: '0.06em',
+                      cursor: canAttack ? 'pointer' : 'not-allowed',
+                      opacity: canAttack ? 1 : 0.4,
+                      borderRadius: '4px 0 0 4px',
+                    }}
+                  >
+                    공격
+                  </button>
+                  {/* 응축/대응축 */}
+                  <button
+                    onClick={isLastAttack ? undefined : () => handleApplyCondense(condenseAvail)}
+                    disabled={isLastAttack || !canAttack}
+                    style={{
+                      flex: 1.1,
+                      height: '48px',
+                      background: isLastAttack
+                        ? '#2A2620'
+                        : isGreat
+                        ? 'linear-gradient(90deg, #FF8C00, #D4AF37)'
+                        : '#D9A441',
+                      border: 'none',
+                      color: isGreat ? '#FFFDF7' : '#3B2A0A',
+                      fontSize: '13px',
+                      fontWeight: 700,
+                      letterSpacing: '0.04em',
+                      cursor: (isLastAttack || !canAttack) ? 'not-allowed' : 'pointer',
+                      opacity: isLastAttack ? 0.3 : canAttack ? 1 : 0.4,
+                      borderRadius: '0 4px 4px 0',
+                      boxShadow: (!isLastAttack && isGreat) ? '0 0 8px rgba(255,140,0,0.4), 0 0 4px rgba(212,175,55,0.3)' : 'none',
+                      pointerEvents: isLastAttack ? 'none' : undefined,
+                    }}
+                  >
+                    {condenseBtnLabel}
+                  </button>
+                </div>
+              )
+            }
+
+            // 단일 공격 버튼
+            return (
+              <button
+                onClick={handlePlayCards}
+                disabled={selectedCards.length === 0 || playsLeft <= 0 || isInputLocked}
+                style={{
+                  flex: 1,
+                  height: '48px',
+                  backgroundColor: canAttack ? '#B33A2B' : '#2A2620',
+                  border: 'none',
+                  color: '#E8DCC4',
+                  fontSize: '14px',
+                  cursor: canAttack ? 'pointer' : 'not-allowed',
+                  opacity: (playsLeft <= 0 || isInputLocked) ? 0.4 : 1,
+                  letterSpacing: '0.1em',
+                  transition: `background-color ${getCssDuration(150)}`,
+                  pointerEvents: isInputLocked ? 'none' : undefined,
+                  borderRadius: '4px',
+                }}
+              >
+                공격 {playsLeft}/{floorConfig.maxPlays}
+              </button>
+            )
+          })()}
+          {/* Phase 1.9.2: 마지막 패 경고 */}
+          {isLastAttack && (() => {
+            const selectedComboResult = selectedCardObjs.length >= 2
+              ? judgeCombo(selectedCardObjs as any)
+              : null
+            const condenseAvail = selectedComboResult
+              ? getCondenseAvailability(selectedComboResult.name ?? '', selectedComboResult.finishingElement)
+              : null
+            if (condenseAvail !== null) {
+              return (
+                <div style={{
+                  position: 'absolute', bottom: '2px', left: '50%',
+                  transform: 'translateX(-50%)',
+                  fontSize: '11px', color: '#6B6560',
+                  whiteSpace: 'nowrap', letterSpacing: '0.04em',
+                  pointerEvents: 'none',
+                }}>
+                  {CONDENSE_LABELS.lastHandWarning}
+                </div>
+              )
+            }
+            return null
+          })()}
         </div>
 
         {/* 패시브 슬롯 (3-A: 실제 카드로 표시) */}

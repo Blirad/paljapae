@@ -85,9 +85,12 @@ export function hasEumyangHarmony(cards: Card[]): boolean {
   return yangCount > 0 && yinCount > 0  // 양음 모두 존재
 }
 
-/** 융합 검사: 서로 다른 기운 정확히 2장인가? */
+/**
+ * 융합 검사: 선택 카드의 기운이 정확히 2종류이고 유효 쌍인가?
+ * Phase 1.9.3: 총 선택 상한 5장, 장수 제약 제거 (다장 융합 일반화)
+ */
 export function isFusionCombo(cards: Card[]): boolean {
-  if (cards.length !== 2) return false
+  if (cards.length < 2 || cards.length > 5) return false
   const elements = new Set(cards.map((c) => c.element))
   if (elements.size !== 2) return false
   const [el1, el2] = Array.from(elements) as Element[]

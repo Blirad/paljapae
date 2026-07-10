@@ -546,13 +546,14 @@ export function getCondenseAvailability(
 
 /**
  * 응축 v2 선택 적용 함수 (UI에서 "응축" 버튼 클릭 시 호출)
+ * - Phase 1.9.3: 공격과 동일하게 카드 소진 + 리필 (치명 결함 수정)
  * - 공격 횟수 1회 소모 (playsLeft -1)
  * - 실제 피해 0
  * - condenseType/condenseMultiplier 설정
  * - 중첩 불가 (기존 응축 있으면 무시)
  * - 마지막 공격 기회(isLastAttack)에는 적용 불가
  */
-export function applyCondense(state: GameState, type: 'basic' | 'great'): GameState {
+export function applyCondense(state: GameState, type: 'basic' | 'great', cardIds?: string[]): GameState {
   // 마지막 공격 기회에는 응축 불가
   if (state.isLastAttack) return state
   // 중첩 불가
@@ -563,9 +564,27 @@ export function applyCondense(state: GameState, type: 'basic' | 'great'): GameSt
   const multiplier = type === 'basic' ? CONDENSE_V2_MULTIPLIER : GREAT_CONDENSE_MULTIPLIER
   const newPlaysLeft = state.playsLeft - 1
 
+  // Phase 1.9.3: 카드 소진 + 리필 (공격과 동일)
+  const condensedCards = cardIds
+    ? state.hand.filter(c => cardIds.includes(c.id))
+    : []
+  const remainHand = cardIds
+    ? state.hand.filter(c => !cardIds.includes(c.id))
+    : [...state.hand]
+  const newDeck = [...state.deck]
+  const drawnCards: Card[] = []
+  for (let i = 0; i < condensedCards.length && newDeck.length > 0; i++) {
+    drawnCards.push(newDeck.shift()!)
+  }
+  const newHand = [...remainHand, ...drawnCards]
+
   return {
     ...state,
+    hand: newHand,
+    deck: newDeck,
+    discardPile: [...state.discardPile, ...condensedCards],
     playsLeft: newPlaysLeft,
+    selectedCards: [],
     condenseType: type,
     condenseMultiplier: multiplier,
     isLastAttack: newPlaysLeft === 1,
