@@ -190,6 +190,8 @@ export function judgeCombo(selectedCards: Card[]): ComboJudgeResult {
  * Phase 1.8 호환성 함수: judgeHand()
  * 기존 코드와의 호환성을 위해 유지
  * 내부적으로 judgeCombo()를 호출하고 HandJudgeResult로 변환
+ *
+ * Phase 1.9 — 조합 이름 추가: 응축 조건 판정 시 사용
  */
 export function judgeHand(selectedCards: Card[]): HandJudgeResult {
   const result = judgeCombo(selectedCards)
@@ -200,6 +202,7 @@ export function judgeHand(selectedCards: Card[]): HandJudgeResult {
     totalScore: result.totalScore,
     description: result.description,
     finishingElement: result.finishingElement,
+    name: result.name,  // Phase 1.9: 조합 이름 (응축 조건 판정용)
   }
 }
 

@@ -210,8 +210,17 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     newCondenseActive = false
   }
 
-  // Phase 1.8 — 토 응축 적립: 마무리 기운이 토이면 즉시 피해 ×0.6 + 응축 활성
-  if (finishEl === 'to' && !state.condenseActive) {
+  // Phase 1.9 — 토 응축 적립: 마무리 기운이 토이면 즉시 피해 ×0.6 + 응축 활성
+  // 주의: 토 타격 속성 3가지만 응축 발동
+  //   1. 토 모으기 (토 기운 모으기 조합)
+  //   2. 일군 밭 (목+토→토 벼리는 융합)
+  //   3. [제거됨] 광맥 — 실제로는 금 타격이므로 제외
+  const isToCondenseTrigger = finishEl === 'to' && (
+    (result.name?.includes('흙 모으기')) ||  // 토 모으기
+    result.name === '일군 밭'                 // 일군 밭 (벼리는)
+  )
+
+  if (isToCondenseTrigger && !state.condenseActive) {
     damage = Math.round(damage * 0.6)
     newCondenseActive = true
   }

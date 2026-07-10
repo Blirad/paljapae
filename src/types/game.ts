@@ -47,6 +47,7 @@ export interface HandJudgeResult {
   totalScore: number
   description: string
   finishingElement: Element  // 마무리 기운 (Phase 1.8)
+  name?: string  // 조합 이름 (Phase 1.9 — 응축 조건 판정용)
 }
 
 export type EnemyGimmickEffect =

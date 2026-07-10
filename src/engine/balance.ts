@@ -14,7 +14,8 @@ import type { FloorConfig, Element } from '../types/game'
  *  3. 오행연환 (5기운 전부, 배율 ×10)
  *
  * 음양 조화 보너스: 같은 기운 조합 내 양음 혼재 시 +20%
- * 응축(토 응축): 토 타격 속성 공격 후 다음 공격 ×1.6
+ * 응축(토 응축): 토 타격 속성 2종만 발동 ("토 모으기", "일군 밭")
+ *   - 광맥(토+금→금)은 금 타격이므로 응축 미발동
  * 극 판정: 융합의 타격 속성 기준 (기존 로직 재사용)
  *
  * 탐욕 봇 1000판 테스트 예상 (v1.0):
@@ -159,6 +160,8 @@ export function findFusionCombo(el1: Element, el2: Element): FusionCombo | null 
 export const EUMYANG_HARMONY_BONUS = 0.2  // +20%
 
 // --- 응축 (토 응축) 배율
+// Phase 1.9: 토 응축은 "토 모으기" 또는 "일군 밭" 조합 시만 발동
+// 광맥은 제외 (금 타격 속성이므로 응축 미발동)
 export const CONDENSE_MULTIPLIER = 1.6  // 다음 공격 ×1.6
 
 // --- 오행 연환 배율
@@ -170,6 +173,7 @@ export const ANTI_GEUK_PENALTY = 0.6      // −40%
 
 /**
  * 밸런스 튜닝 v5.0 (2026-07-10) — Phase 1.9 신규 조합 체계
+ * Phase 1.9 정정 (2026-07-10) — 응축 발동 조건 명확화
  *
  * Phase 1.9:
  *  - 기운 모으기: 배율 1.5~5.0 (기존 유지)
@@ -177,8 +181,9 @@ export const ANTI_GEUK_PENALTY = 0.6      // −40%
  *  - 융합 벼리는: 배율 ×3.5
  *  - 오행연환: 배율 ×10
  *  - 음양 조화: +20% 보너스 (모으기 조합 내)
- *  - 응축: 다음 공격 ×1.6
- *  - 극/반극: 融합의 타격 속성 기준
+ *  - 응축: 토 모으기 + 일군 밭만 발동 → 다음 공격 ×1.6
+ *    (광맥 제외: 금 타격 속성)
+ *  - 극/반극: 融合의 타격 속성 기준
  */
 export const FLOOR_CONFIGS: FloorConfig[] = [
   {
