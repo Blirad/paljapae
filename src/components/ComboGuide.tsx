@@ -24,8 +24,6 @@ const ELEMENT_COLORS: Record<string, string> = {
   mok: '#4A9B6E', hwa: '#C63D2F', to: '#D9A441', geum: '#C8C0B0', su: '#3D5A80',
 }
 
-// 상극: A → B (A가 B를 이긴다)
-const GEUK_CYCLE: Element[] = ['mok', 'to', 'su', 'hwa', 'geum']
 // 상극 관계 (나무→흙→물→불→쇠→나무)
 const GEUK_MAP: Record<Element, Element> = {
   mok: 'to', to: 'su', su: 'hwa', hwa: 'geum', geum: 'mok',

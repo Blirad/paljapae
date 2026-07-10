@@ -27,7 +27,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useGameStore } from '../stores/gameStore'
 import { FLOOR_CONFIGS, GEUK_BONUS_MULTIPLIER } from '../engine/balance'
-import { FLOOR_ENEMY_ELEMENTS as ENGINE_FLOOR_ENEMY_ELEMENTS } from '../engine/paljajeonEngine'
+// Phase 1.7: FLOOR_ENEMY_ELEMENTS는 floorConfig.enemyPrimaryElement로 대체됨
 import { useGameContext } from '../context/GameContext'
 import { audioManager } from '../services/audioManager'
 import { judgeHand, detectElementClash, calcGeukBonusMultiplier, detectYeokgeukPenalty, determinePrimaryElement } from '../engine/pokerHandJudge'
@@ -782,9 +782,6 @@ function getCardPositions(hand: Array<{ id: string; element: string }>, selected
     y: 60,
   }))
 }
-
-// ---------- 적 속성 결정 (층별 고정 — 엔진에서 import) ----------
-const FLOOR_ENEMY_ELEMENTS: Record<number, Element> = ENGINE_FLOOR_ENEMY_ELEMENTS as Record<number, Element>
 
 // C10: 층별 적 정보 (이름, 속성, 기믹 예고, 대사)
 const FLOOR_ENEMY_INFO: Record<number, {

@@ -24,7 +24,6 @@ import {
   createFixedDeck,
   shuffleDeck,
   playCards,
-  FLOOR_ENEMY_ELEMENTS,
 } from './paljajeonEngine'
 import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, SUB_GEUK_BONUS } from './balance'
 
