@@ -1,8 +1,8 @@
 /**
- * Phase 1.9.2 엔진 유닛 테스트
+ * Phase 1.9.2 엔진 유닛 테스트 (Phase 1.9.5 사양으로 갱신)
  * E-1: 오행연환 1회 제한
- * E-2: 응축 v2 선택형 (기본/대응축)
- * E-3: 화 연소 +30%, 금 관통
+ * E-2: 응축 확정판 (% 방식, 옹기가마 전용)
+ * E-3: 저격(snipe)/번짐(wildfire) 특성 — 연소/관통 폐지 대체
  */
 
 import { describe, it, expect } from 'vitest'
@@ -13,7 +13,7 @@ import {
   getCondenseAvailability,
   advanceToNextFloor,
 } from '../engine/paljajeonEngine'
-import { CONDENSE_V2_MULTIPLIER, GREAT_CONDENSE_MULTIPLIER, OHANG_YEONHWAN_MULTIPLIER } from '../engine/balance'
+import { getCondenseMultiplier, OHANG_YEONHWAN_MULTIPLIER } from '../engine/balance'
 import type { Card, GameState } from '../types/game'
 
 function makeCard(element: Card['element'], polarity: Card['polarity'], value: number, id?: string): Card {
@@ -106,31 +106,30 @@ describe('E-1: 오행연환 1회 제한', () => {
 })
 
 // ============================================================
-// E-2: 응축 저장형 (Phase 1.9.4 — 저장량×배율 가산)
+// E-2: 응축 확정판 (Phase 1.9.5 — % 방식, 옹기가마 전용)
 // ============================================================
-describe('E-2: 응축 v2 선택형', () => {
-  it('balance.ts CONDENSE_V2_MULTIPLIER = 1.5 (Phase 1.9.4 저장형)', () => {
-    expect(CONDENSE_V2_MULTIPLIER).toBe(1.5)
-  })
-
-  it('balance.ts GREAT_CONDENSE_MULTIPLIER = 2.0 (Phase 1.9.4 저장형)', () => {
-    expect(GREAT_CONDENSE_MULTIPLIER).toBe(2.0)
-  })
-
-  it('condenseType 초기값은 null', () => {
+describe('E-2: 응축 확정판 (% 방식)', () => {
+  it('condensedMultiplier 초기값은 0', () => {
     const state = makeState()
-    expect(state.condenseType).toBeNull()
+    expect(state.condensedMultiplier).toBe(0)
   })
 
-  it('applyCondense(basic) — playsLeft -1, condenseType = basic, 피해 0', () => {
-    const state = makeState({ playsLeft: 4, condenseType: null, isLastAttack: false })
-    const newState = applyCondense(state, 'basic')
-    expect(newState.playsLeft).toBe(3)
-    expect(newState.condenseType).toBe('basic')
-    expect(newState.condenseMultiplier).toBe(CONDENSE_V2_MULTIPLIER)
+  it('getCondenseMultiplier — 2장=1.2, 3장=1.6, 4장=2.0, 5장=2.4', () => {
+    expect(getCondenseMultiplier(2)).toBe(1.2)
+    expect(getCondenseMultiplier(3)).toBe(1.6)
+    expect(getCondenseMultiplier(4)).toBe(2.0)
+    expect(getCondenseMultiplier(5)).toBe(2.4)
   })
 
-  it('Phase 1.9.3: 응축 시 카드 소진 — 카드가 핸드에서 제거되고 discardPile에 추가', () => {
+  it('getCondenseMultiplier — 1장=0 (불가)', () => {
+    expect(getCondenseMultiplier(1)).toBe(0)
+  })
+
+  it('getCondenseMultiplier — 6장=2.4 (5장 상한 클램프)', () => {
+    expect(getCondenseMultiplier(6)).toBe(2.4)
+  })
+
+  it('applyCondense(2장) — playsLeft -1, condensedMultiplier = 1.2, 카드 소진', () => {
     const toCard1 = makeCard('to', 'yang', 4, 'to-c1')
     const toCard2 = makeCard('to', 'yin', 5, 'to-c2')
     const deck = Array.from({ length: 10 }, (_, i) =>
@@ -140,11 +139,13 @@ describe('E-2: 응축 v2 선택형', () => {
       hand: [toCard1, toCard2],
       deck,
       playsLeft: 3,
-      condenseType: null,
+      condensedMultiplier: 0,
       isLastAttack: false,
     })
     const cardIds = [toCard1.id, toCard2.id]
-    const newState = applyCondense(state, 'basic', cardIds)
+    const newState = applyCondense(state, cardIds)
+    expect(newState.playsLeft).toBe(2)
+    expect(newState.condensedMultiplier).toBe(1.2)
     // 카드 소진 확인
     expect(newState.hand.some(c => c.id === toCard1.id)).toBe(false)
     expect(newState.hand.some(c => c.id === toCard2.id)).toBe(false)
@@ -153,104 +154,60 @@ describe('E-2: 응축 v2 선택형', () => {
     expect(newState.discardPile.some(c => c.id === toCard2.id)).toBe(true)
     // 덱에서 2장 리필
     expect(newState.hand.length).toBe(2)
-    // 응축 상태 설정
-    expect(newState.condenseType).toBe('basic')
-    expect(newState.playsLeft).toBe(2)
+    // selectedCards 초기화
+    expect(newState.selectedCards).toEqual([])
   })
 
-  it('Phase 1.9.3: cardIds 없이 applyCondense 호출 — 카드 소진 없음 (하위 호환)', () => {
-    const toCard = makeCard('to', 'yang', 5, 'to-nc')
-    const state = makeState({
-      hand: [toCard],
-      deck: [],
-      playsLeft: 3,
-      condenseType: null,
-      isLastAttack: false,
-    })
-    const newState = applyCondense(state, 'basic')
-    // cardIds 없으면 핸드 그대로
-    expect(newState.hand.some(c => c.id === toCard.id)).toBe(true)
-    expect(newState.condenseType).toBe('basic')
+  it('applyCondense(4장) — condensedMultiplier = 2.0', () => {
+    const cards = Array.from({ length: 4 }, (_, i) => makeCard('to', 'yang', 5, `to-${i}`))
+    const deck = Array.from({ length: 5 }, (_, i) => makeCard('su', 'yang', 1, `dk-${i}`))
+    const state = makeState({ hand: cards, deck, playsLeft: 3, condensedMultiplier: 0, isLastAttack: false })
+    const newState = applyCondense(state, cards.map(c => c.id))
+    expect(newState.condensedMultiplier).toBe(2.0)
   })
 
-  it('applyCondense(great) — playsLeft -1, condenseType = great', () => {
-    const state = makeState({ playsLeft: 4, condenseType: null, isLastAttack: false })
-    const newState = applyCondense(state, 'great')
+  it('응축 중첩 불가 — 이미 condensedMultiplier > 0이면 무시', () => {
+    const cards = [makeCard('to', 'yang', 5, 'to-dup1'), makeCard('to', 'yin', 5, 'to-dup2')]
+    const state = makeState({ hand: cards, playsLeft: 3, condensedMultiplier: 1.6, isLastAttack: false })
+    const newState = applyCondense(state, [cards[0].id, cards[1].id])
+    // 중첩 무시: 기존 1.6 유지
+    expect(newState.condensedMultiplier).toBe(1.6)
     expect(newState.playsLeft).toBe(3)
-    expect(newState.condenseType).toBe('great')
-    expect(newState.condenseMultiplier).toBe(GREAT_CONDENSE_MULTIPLIER)
-  })
-
-  it('응축 중첩 불가 — 이미 condenseType 있으면 무시', () => {
-    const state = makeState({ playsLeft: 4, condenseType: 'basic', isLastAttack: false })
-    const newState = applyCondense(state, 'great')
-    // 중첩 무시: 기존 basic 유지
-    expect(newState.condenseType).toBe('basic')
-    expect(newState.playsLeft).toBe(4)
   })
 
   it('마지막 공격 기회에는 응축 적용 불가', () => {
-    const state = makeState({ playsLeft: 2, condenseType: null, isLastAttack: true })
-    const newState = applyCondense(state, 'basic')
+    const cards = [makeCard('to', 'yang', 5, 'to-la1'), makeCard('to', 'yin', 5, 'to-la2')]
+    const state = makeState({ hand: cards, playsLeft: 2, condensedMultiplier: 0, isLastAttack: true })
+    const newState = applyCondense(state, [cards[0].id, cards[1].id])
     // 차단: 상태 변화 없음
-    expect(newState.condenseType).toBeNull()
+    expect(newState.condensedMultiplier).toBe(0)
     expect(newState.playsLeft).toBe(2)
   })
 
-  it('기본 응축 소모 후 저장량×1.5 가산 (Phase 1.9.4 저장형)', () => {
-    // Phase 1.9.4: condenseType=basic, condensedDamage=20 → 다음 공격 +30 (20×1.5)
-    const singleHwaCard = makeCard('hwa', 'yang', 10, 'hwa-test')
-    const deck = Array.from({ length: 10 }, (_, i) =>
-      makeCard('mok', 'yang', 1, `deck-${i}`),
-    )
-    const stateWithCondense = makeState({
-      hand: [singleHwaCard],
-      deck,
-      condenseType: 'basic',
-      condenseMultiplier: CONDENSE_V2_MULTIPLIER,  // 1.5
-      condensedDamage: 20,  // 저장된 예상 피해
+  it('응축 소모 후 피해 증가 + condensedMultiplier 0으로 리셋', () => {
+    const card = makeCard('mok', 'yang', 10, 'mok-condense')
+    const deck = Array.from({ length: 5 }, (_, i) => makeCard('su', 'yang', 1, `dk-${i}`))
+    // 응축 없는 상태
+    const stateNormal = makeState({ hand: [card], deck: [...deck], playsLeft: 3, condensedMultiplier: 0 })
+    // 응축 2.0 활성 상태
+    const cardB = makeCard('mok', 'yang', 10, 'mok-condense-b')
+    const stateCondensed = makeState({
+      hand: [cardB],
+      deck: Array.from({ length: 5 }, (_, i) => makeCard('su', 'yang', 1, `dk2-${i}`)),
       playsLeft: 3,
+      condensedMultiplier: 2.0,
     })
-    const newState = playCards(stateWithCondense, [singleHwaCard.id])
-    expect(newState.condenseType).toBeNull()   // 소모됨
-    expect(newState.condenseMultiplier).toBe(0) // 리셋
-    expect(newState.condensedDamage).toBe(0)    // 리셋
-    // 저장형: damage += 20×1.5 = 30 가산 → 적 HP 감소
-    expect(newState.enemyHp).toBeLessThan(stateWithCondense.enemyHp)
-  })
-
-  it('대응축 소모 후 저장량×2.0 가산 (Phase 1.9.4 저장형)', () => {
-    const singleCard = makeCard('mok', 'yang', 10, 'mok-test')
-    const deck = Array.from({ length: 10 }, (_, i) =>
-      makeCard('mok', 'yang', 1, `deck-${i}`),
-    )
-    const stateWithGreat = makeState({
-      hand: [singleCard],
-      deck,
-      condenseType: 'great',
-      condenseMultiplier: GREAT_CONDENSE_MULTIPLIER,  // 2.0
-      condensedDamage: 15,  // 저장된 예상 피해
-      playsLeft: 3,
-    })
-    const newState = playCards(stateWithGreat, [singleCard.id])
-    expect(newState.condenseType).toBeNull()
-    expect(newState.condenseMultiplier).toBe(0)
-    expect(newState.condensedDamage).toBe(0)
-    // 저장형: damage += 15×2.0 = 30 가산 → 적 HP 감소
-    expect(newState.enemyHp).toBeLessThan(stateWithGreat.enemyHp)
+    const dmgNormal = stateNormal.enemyHp - playCards(stateNormal, [card.id]).enemyHp
+    const dmgCondensed = stateCondensed.enemyHp - playCards(stateCondensed, [cardB.id]).enemyHp
+    // 응축 +200% → 피해가 더 커야 함
+    expect(dmgCondensed).toBeGreaterThan(dmgNormal)
+    // 응축 소모 확인
+    const afterCondensed = playCards(stateCondensed, [cardB.id])
+    expect(afterCondensed.condensedMultiplier).toBe(0)
   })
 
   describe('응축 발동 조건 판별 (getCondenseAvailability)', () => {
-    it('토 모으기 → basic', () => {
-      expect(getCondenseAvailability('흙 모으기 2', 'to')).toBe('basic')
-      expect(getCondenseAvailability('흙 모으기 3', 'to')).toBe('basic')
-    })
-
-    it('일군 밭 → basic', () => {
-      expect(getCondenseAvailability('일군 밭', 'to')).toBe('basic')
-    })
-
-    it('옹기가마 → great', () => {
+    it('옹기가마 + 토 타격 → great', () => {
       expect(getCondenseAvailability('옹기가마', 'to')).toBe('great')
     })
 
@@ -265,141 +222,58 @@ describe('E-2: 응축 v2 선택형', () => {
     it('들불(목+화→화) → null', () => {
       expect(getCondenseAvailability('들불', 'hwa')).toBeNull()
     })
+
+    it('일군 밭(목+토→토) → null (옹기가마만 허용)', () => {
+      expect(getCondenseAvailability('일군 밭', 'to')).toBeNull()
+    })
+
+    it('토 모으기(finishingElement=to, comboName 없음) → null (옹기가마만 허용)', () => {
+      expect(getCondenseAvailability(undefined, 'to')).toBeNull()
+    })
   })
 })
 
 // ============================================================
-// E-3: 화 연소 + 금 관통
+// E-3: 저격(snipe)/번짐(wildfire) — 연소/관통 폐지 대체 (Phase 1.9.5)
 // ============================================================
-describe('E-3: 오행 특성 2차', () => {
-  describe('화 연소', () => {
-    it('화 타격 조합 시 combustionTriggered = true', () => {
-      const hwaCards = [
-        makeCard('hwa', 'yang', 5, 'hwa-a'),
-        makeCard('hwa', 'yin', 5, 'hwa-b'),
-      ]
-      const deck = Array.from({ length: 10 }, (_, i) =>
-        makeCard('mok', 'yang', 1, `deck-${i}`),
-      )
-      const state = makeState({ hand: hwaCards, deck, playsLeft: 4 })
-      const newState = playCards(state, hwaCards.map(c => c.id))
-      expect(newState.combustionTriggered).toBe(true)
+describe('E-3: 저격·번짐 특성 (10종 융합 특성)', () => {
+  describe('저격 (깎은 화살 — 金+木)', () => {
+    it('金+木 융합 → lastTraitTriggered = snipe', () => {
+      const geumCard = makeCard('geum', 'yang', 5, 'geum-s')
+      const mokCard = makeCard('mok', 'yin', 5, 'mok-s')
+      const deck = Array.from({ length: 5 }, (_, i) => makeCard('to', 'yang', 1, `dk-s-${i}`))
+      const state = makeState({ hand: [geumCard, mokCard], deck, playsLeft: 3 })
+      const newState = playCards(state, [geumCard.id, mokCard.id])
+      expect(newState.lastTraitTriggered).toBe('snipe')
     })
 
-    it('화 타격 시 화 카드 sootCount 증가', () => {
-      const hwaCards = [
-        makeCard('hwa', 'yang', 5, 'hwa-soot-1'),
-        makeCard('hwa', 'yin', 5, 'hwa-soot-2'),
-      ]
-      const deck = Array.from({ length: 10 }, (_, i) =>
-        makeCard('mok', 'yang', 1, `deck-${i}`),
-      )
-      const state = makeState({ hand: hwaCards, deck, playsLeft: 4 })
-      const newState = playCards(state, hwaCards.map(c => c.id))
-      expect(newState.sootCount['hwa-soot-1']).toBe(1)
-      expect(newState.sootCount['hwa-soot-2']).toBe(1)
-    })
-
-    it('화 타격 +30%: damage가 단순 합계보다 큼', () => {
-      const hwaCards = [
-        makeCard('hwa', 'yang', 10, 'hwa-big-1'),
-        makeCard('hwa', 'yin', 10, 'hwa-big-2'),
-      ]
-      const deck = Array.from({ length: 10 }, (_, i) =>
-        makeCard('mok', 'yang', 1, `deck-${i}`),
-      )
-      // 응축/증폭 없는 순수 화 조합
-      const stateWithCombustion = makeState({
-        hand: hwaCards,
-        deck,
-        playsLeft: 4,
-        condenseType: null,
-        amplifyActive: false,
-        yeonhwanUsed: false,
-      })
-      // 화 모으기 2장: baseScore=20, multiplier=1.5, totalScore=30
-      // 화 연소 +30%: 30 × 1.3 = 39
-      const newState = playCards(stateWithCombustion, hwaCards.map(c => c.id))
-      // 1층 고목령: counterDamage=1, heal=15 → 적 HP = max(0, 100 - 39) + 15 = 76
-      // 세부 계산보다 방향성 확인 (화 연소 없이 30, 연소 후 39)
-      const damageDealt = stateWithCombustion.enemyHp - newState.enemyHp
-      // 고목령 회복 15 포함이지만, 연소 +30% 효과로 30보다 큰 데미지 딜
-      // 정확히: 39피해 → enemyHp = 100-39 = 61, 회복 +15 = 76
-      // damageDealt = 100 - 76 = 24 (net)
-      expect(damageDealt).toBeGreaterThan(0)
-      expect(newState.combustionTriggered).toBe(true)
-    })
-
-    it('목 타격 시 combustionTriggered = false', () => {
-      const mokCards = [
-        makeCard('mok', 'yang', 5, 'mok-nc-1'),
-        makeCard('mok', 'yin', 5, 'mok-nc-2'),
-      ]
-      const deck = Array.from({ length: 10 }, (_, i) =>
-        makeCard('mok', 'yang', 1, `deck-${i}`),
-      )
-      const state = makeState({ hand: mokCards, deck, playsLeft: 4 })
-      const newState = playCards(state, mokCards.map(c => c.id))
-      expect(newState.combustionTriggered).toBe(false)
+    it('木+木 모으기 → lastTraitTriggered가 snipe 아님', () => {
+      const mokA = makeCard('mok', 'yang', 5, 'mok-ns-1')
+      const mokB = makeCard('mok', 'yin', 5, 'mok-ns-2')
+      const deck = Array.from({ length: 5 }, (_, i) => makeCard('to', 'yang', 1, `dk-ns-${i}`))
+      const state = makeState({ hand: [mokA, mokB], deck, playsLeft: 3 })
+      const newState = playCards(state, [mokA.id, mokB.id])
+      expect(newState.lastTraitTriggered).not.toBe('snipe')
     })
   })
 
-  describe('금 관통', () => {
-    it('금 타격 조합 시 penetrationTriggered = true', () => {
-      const geumCards = [
-        makeCard('geum', 'yang', 5, 'geum-p-1'),
-        makeCard('geum', 'yin', 5, 'geum-p-2'),
-      ]
-      const deck = Array.from({ length: 10 }, (_, i) =>
-        makeCard('mok', 'yang', 1, `deck-${i}`),
-      )
-      const state = makeState({ hand: geumCards, deck, playsLeft: 4 })
-      const newState = playCards(state, geumCards.map(c => c.id))
-      expect(newState.penetrationTriggered).toBe(true)
+  describe('번짐 (들불 — 木+火)', () => {
+    it('木+火 융합 → lastTraitTriggered = wildfire', () => {
+      const mokCard = makeCard('mok', 'yang', 5, 'mok-wf')
+      const hwaCard = makeCard('hwa', 'yin', 5, 'hwa-wf')
+      const deck = Array.from({ length: 5 }, (_, i) => makeCard('to', 'yang', 1, `dk-wf-${i}`))
+      const state = makeState({ hand: [mokCard, hwaCard], deck, playsLeft: 3 })
+      const newState = playCards(state, [mokCard.id, hwaCard.id])
+      expect(newState.lastTraitTriggered).toBe('wildfire')
     })
 
-    it('4층 금강불괴 — 금 관통 시 피해감소 무시 (관통 없을 때보다 피해 큼)', () => {
-      // 4층: eliteGimmickEffect = damage-reduction 30%
-      const geumCards = [
-        makeCard('geum', 'yang', 10, 'geum-boss-1'),
-        makeCard('geum', 'yin', 10, 'geum-boss-2'),
-      ]
-      const deck = Array.from({ length: 15 }, (_, i) =>
-        makeCard('mok', 'yang', 1, `deck-${i}`),
-      )
-      const state4F = makeState({
-        currentFloor: 4,
-        hand: geumCards,
-        deck,
-        enemyHp: 330,
-        enemyMaxHp: 330,
-        playsLeft: 6,
-      })
-      const newState = playCards(state4F, geumCards.map(c => c.id))
-      // 금 관통 → 피해감소 무시
-      // 금 모으기 2장: baseScore=20, ×1.5=30
-      // 4층 주기운=geum, 금이 금을 극하지 않으므로 극 보너스 없음
-      // 금 관통 → damage-reduction(0.3) 건너뜀
-      // 피해 = 30 (관통 없으면 30 × 0.7 = 21)
-      expect(newState.penetrationTriggered).toBe(true)
-      // 피해 계산: 금 모으기 2장(값10+10=20) × 1.5 = 30, 음양조화+20% → 36
-      // 부 기운(목) 극 보너스+25%: 36 × 1.25 = 45
-      // 금 관통 → damage-reduction(30%) 건너뜀
-      // 최종 피해 = 45 → enemyHp = 330 - 45 = 285
-      expect(newState.enemyHp).toBe(285)
-    })
-
-    it('목 타격 시 penetrationTriggered = false', () => {
-      const mokCards = [
-        makeCard('mok', 'yang', 5, 'mok-np-1'),
-        makeCard('mok', 'yin', 5, 'mok-np-2'),
-      ]
-      const deck = Array.from({ length: 10 }, (_, i) =>
-        makeCard('mok', 'yang', 1, `deck-${i}`),
-      )
-      const state = makeState({ hand: mokCards, deck, playsLeft: 4 })
-      const newState = playCards(state, mokCards.map(c => c.id))
-      expect(newState.penetrationTriggered).toBe(false)
+    it('번짐 발동 후 carryoverBurn이 0보다 커야 함', () => {
+      const mokCard = makeCard('mok', 'yang', 5, 'mok-cb')
+      const hwaCard = makeCard('hwa', 'yin', 5, 'hwa-cb')
+      const deck = Array.from({ length: 5 }, (_, i) => makeCard('to', 'yang', 1, `dk-cb-${i}`))
+      const state = makeState({ hand: [mokCard, hwaCard], deck, playsLeft: 3, carryoverBurn: 0 })
+      const newState = playCards(state, [mokCard.id, hwaCard.id])
+      expect(newState.carryoverBurn).toBeGreaterThan(0)
     })
   })
 })
@@ -429,9 +303,10 @@ describe('isLastAttack — 마지막 공격 기회 감지', () => {
   })
 
   it('isLastAttack = true 상태에서 applyCondense 차단', () => {
-    const state = makeState({ playsLeft: 1, condenseType: null, isLastAttack: true })
-    const newState = applyCondense(state, 'basic')
-    expect(newState.condenseType).toBeNull()
+    const cards = [makeCard('to', 'yang', 5, 'to-la'), makeCard('to', 'yin', 5, 'to-la2')]
+    const state = makeState({ hand: cards, playsLeft: 1, condensedMultiplier: 0, isLastAttack: true })
+    const newState = applyCondense(state, [cards[0].id, cards[1].id])
+    expect(newState.condensedMultiplier).toBe(0)
     expect(newState.playsLeft).toBe(1)  // 소모 없음
   })
 })

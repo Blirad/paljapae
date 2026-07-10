@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'vitest'
 import { judgeCombo, judgeHand } from '../engine/pokerHandJudge'
-import { findFusionCombo, CONDENSE_MULTIPLIER, EUMYANG_HARMONY_BONUS } from '../engine/balance'
+import { findFusionCombo, getCondenseMultiplier, EUMYANG_HARMONY_BONUS } from '../engine/balance'
 import type { Card } from '../types/game'
 
 function makeCard(element: Card['element'], polarity: Card['polarity'], value: number, id?: string): Card {
@@ -207,9 +207,12 @@ describe('Phase 1.9 QA — 새 조합 체계 + 응축 + 극/반극', () => {
     })
   })
 
-  describe('6. 응축(Condense) 발동 조건 — 토 타격 속성 3가지', () => {
-    it('토 응축 배율 상수: 1.6', () => {
-      expect(CONDENSE_MULTIPLIER).toBe(1.6)
+  describe('6. 응축(Condense) — Phase 1.9.5 옹기가마 전용 장수 비례', () => {
+    it('응축 장수 배율 (getCondenseMultiplier)', () => {
+      expect(getCondenseMultiplier(2)).toBe(1.2)  // +120%
+      expect(getCondenseMultiplier(3)).toBe(1.6)  // +160%
+      expect(getCondenseMultiplier(4)).toBe(2.0)  // +200%
+      expect(getCondenseMultiplier(5)).toBe(2.4)  // +240%
     })
 
     it('토 모으기 → 타격 속성 토', () => {
@@ -219,17 +222,18 @@ describe('Phase 1.9 QA — 새 조합 체계 + 응축 + 극/반극', () => {
 
     it('광맥(토+금→금) → 타격 속성 금 (응축 발동 안 함)', () => {
       const fusion = findFusionCombo('to', 'geum')
-      expect(fusion?.result).toBe('geum') // 타격 속성이 금이므로 토 응축 발동 안 함
+      expect(fusion?.result).toBe('geum') // 타격 속성이 금이므로 응축 발동 안 함
     })
 
-    it('일군 밭(목+토→토) → 타격 속성 토 (응축 발동)', () => {
-      const fusion = findFusionCombo('mok', 'to')
+    it('옹기가마(화+토→토) → 타격 속성 토 (응축 발동)', () => {
+      const fusion = findFusionCombo('hwa', 'to')
+      expect(fusion?.name).toBe('옹기가마')
       expect(fusion?.result).toBe('to') // 타격 속성이 토이므로 응축 발동
     })
 
     it('맑은 못(토+수→수) → 타격 속성 수 (응축 발동 안 함)', () => {
       const fusion = findFusionCombo('to', 'su')
-      expect(fusion?.result).toBe('su') // 타격 속성이 수이므로 토 응축 발동 안 함
+      expect(fusion?.result).toBe('su') // 타격 속성이 수이므로 응축 발동 안 함
     })
   })
 

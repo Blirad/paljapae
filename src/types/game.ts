@@ -98,17 +98,12 @@ export interface GameState {
   condenseActive: boolean   // 하위 호환 필드 (항상 false, v2 필드로 대체됨)
   // Phase 1.9.2 신규 — E-1: 연환 희소화
   yeonhwanUsed: boolean     // 오행연환 출정당 1회 제한 (true = 이미 사용됨)
-  // Phase 1.9.2 신규 — E-2: 응축 v2 (선택형 2단계)
-  condenseType: 'basic' | 'great' | null  // null = 비활성, basic = 기본응축, great = 대응축
-  condenseMultiplier: number              // 0 = 미응축, 1.5 = 기본응축, 2.0 = 대응축
-  condensedDamage: number                 // Phase 1.9.4: 저장형 응축 — 태운 조합의 예상 피해 저장값 (0 = 미저장)
+  // Phase 1.9.5: 응축 확정판 (옹기가마 전용, % 방식)
+  condensedMultiplier: number             // 0 = 비활성, 1.2~2.4 = 다음 공격에 적용될 % 배율
   isLastAttack: boolean                   // attacksRemaining === 1 (UI 버튼 비활성 처리용)
-  // Phase 1.9.2 신규 — E-3: 오행 특성 2차
-  sootCount: Record<string, number>       // 화 연소: 카드별 그을음 누적 카운트
-  combustionTriggered: boolean            // 화 연소 발동 여부 (UI 배너용)
-  combustionBonus: number                 // Phase 1.9.4: 화 연소로 추가된 피해량 (UI 배너 표시용)
-  penetrationTriggered: boolean           // 금 관통 발동 여부 (UI 배너용)
-  penetrationIgnored: number              // Phase 1.9.4: 관통으로 무시된 피해감소량 (UI 배너 표시용)
+  // Phase 1.9.5: 10종 융합 특성
+  lastTraitTriggered?: string             // 마지막 발동 특성 ID ('wildfire', 'mining', ...)
+  carryoverBurn?: number                  // 번짐 이월 피해 수치
   // Phase 1.9.4 신규 — 덱 재순환
   reshuffled: boolean                     // 이번 턴 덱 재순환 발동 여부 (UI 배너용)
 }

@@ -26,7 +26,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useGameStore } from '../stores/gameStore'
-import { FLOOR_CONFIGS, GEUK_BONUS_MULTIPLIER } from '../engine/balance'
+import { FLOOR_CONFIGS, GEUK_BONUS_MULTIPLIER, TRAIT_CONFIGS } from '../engine/balance'
 // Phase 1.7: FLOOR_ENEMY_ELEMENTS는 floorConfig.enemyPrimaryElement로 대체됨
 import { useGameContext } from '../context/GameContext'
 import { audioManager } from '../services/audioManager'
@@ -101,17 +101,7 @@ function getGeukKoLabel(attacker: Element, victim: Element, bonusPct: number): s
 
 // ─── Phase 1.9.2 상수 ───────────────────────────────────────────────────────
 
-// Phase 1.9.4: 배너 텍스트는 런타임에 수치 포함하여 동적 생성
-const TRAIT_BANNER_TEMPLATES = {
-  fireBurn: (bonus: number) => bonus > 0 ? `불꽃이 타오른다 +${bonus}` : '불꽃이 타오른다 +30%',
-  metalPierce: (ignored: number) => ignored > 0 ? `쇠가 꿰뚫는다 — 보호 ${ignored} 무시` : '쇠가 꿰뚫는다 — 보호 무시',
-} as const
-
-const CONDENSE_LABELS = {
-  condense: '응축 — 힘을 담는다',
-  superCondense: '대응축 — 가마에 굽는다',
-  lastHandWarning: '마지막 패는 구울 수 없다',
-} as const
+// Phase 1.9.5: 연소·관통 배너 폐지 → 10종 융합 특성 배너로 대체 (TRAIT_CONFIGS 사용)
 
 const PREVIEW_IDLE = '기운을 골라 공격하라 — 같은 기운을 모으거나, 맺고 끊는 짝을 찾아라.'
 const PREVIEW_BLOCKED = '서로 다른 기운은 둘까지만 손을 잡는다 — 다섯이 모이면 연환이 된다.'
@@ -1080,16 +1070,12 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     attackCount,
     enemyPhaseSwitch,
     condenseActive,
-    // Phase 1.9.2 신규 필드
+    // Phase 1.9.5 신규 필드
     yeonhwanUsed,
-    condenseType,
-    condensedDamage,
+    condensedMultiplier,
     isLastAttack,
-    sootCount,
-    combustionTriggered,
-    combustionBonus,
-    penetrationTriggered,
-    penetrationIgnored,
+    lastTraitTriggered,
+    carryoverBurn: _carryoverBurn,
     reshuffled,
     toggleCardSelect,
     playSelectedCards,
@@ -1242,19 +1228,14 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
   const [geukiBanner, setGeukiBanner] = useState<string | null>(null)
   const geukiBannerShownRef = useRef(false)
 
-  // Phase 1.9.2: 특성 배너 (화 연소 / 금 관통)
-  // Phase 1.9.4: type 외 bonus/ignored 수치 포함
-  const [traitBanner, setTraitBanner] = useState<{ type: 'fire' | 'metal'; key: number; bonus?: number; ignored?: number } | null>(null)
+  // Phase 1.9.5: 특성 배너 (10종 융합 특성)
+  const [traitBanner, setTraitBanner] = useState<{ type: string; key: number } | null>(null)
 
-  // Phase 1.9.2: 특성 최초 발동 툴팁
-  const [traitTooltip, setTraitTooltip] = useState<'fire' | 'metal' | null>(null)
+  // Phase 1.9.5: 특성 최초 발동 툴팁
+  const [traitTooltip, setTraitTooltip] = useState<string | null>(null)
 
-  // Phase 1.9.2: 응축 발동 연출 구슬
-  const [condenseOrb, setCondenseOrb] = useState<'basic' | 'great' | null>(null)
-
-  // Phase 1.9.2 이전 combustionTriggered/penetrationTriggered 추적
-  const prevCombustionTriggered = useRef(false)
-  const prevPenetrationTriggered = useRef(false)
+  // Phase 1.9.5: 이전 lastTraitTriggered 추적
+  const prevLastTrait = useRef<string | undefined>(undefined)
 
   // Phase 1.9.4: 덱 재순환 배너
   const [reshuffleBanner, setReshuffleBanner] = useState<boolean>(false)
@@ -1289,61 +1270,24 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     }
   }, [hand.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Phase 1.9.4: 화 연소 / 금 관통 배너 (수치 포함)
+  // Phase 1.9.5: 10종 융합 특성 배너
   useEffect(() => {
-    if (combustionTriggered && !prevCombustionTriggered.current) {
-      setTraitBanner({ type: 'fire', key: Date.now(), bonus: combustionBonus })
-      setTimeout(() => setTraitBanner(null), 1700)
-      // 최초 툴팁
+    if (lastTraitTriggered && lastTraitTriggered !== prevLastTrait.current) {
+      setTraitBanner({ type: lastTraitTriggered, key: Date.now() })
+      const timer = setTimeout(() => setTraitBanner(null), 1500)
+      // 최초 발동 툴팁 (localStorage 플래그)
       try {
-        const key = 'paljajeon_trait_fire_burn_explained'
-        if (!localStorage.getItem(key)) {
-          setTimeout(() => setTraitTooltip('fire'), 200)
+        const storageKey = `paljajeon_trait_${lastTraitTriggered}_explained`
+        if (!localStorage.getItem(storageKey)) {
+          setTimeout(() => setTraitTooltip(lastTraitTriggered), 200)
         }
       } catch { /* noop */ }
+      return () => clearTimeout(timer)
     }
-    prevCombustionTriggered.current = combustionTriggered
-  }, [combustionTriggered])
+    prevLastTrait.current = lastTraitTriggered
+  }, [lastTraitTriggered])
 
-  useEffect(() => {
-    if (penetrationTriggered && !prevPenetrationTriggered.current) {
-      setTraitBanner({ type: 'metal', key: Date.now(), ignored: penetrationIgnored })
-      setTimeout(() => setTraitBanner(null), 1700)
-      // 최초 툴팁
-      try {
-        const key = 'paljajeon_trait_metal_pierce_explained'
-        if (!localStorage.getItem(key)) {
-          setTimeout(() => setTraitTooltip('metal'), 200)
-        }
-      } catch { /* noop */ }
-    }
-    prevPenetrationTriggered.current = penetrationTriggered
-  }, [penetrationTriggered])
-
-  // B-4: 응축 최초 툴팁 (localStorage 플래그)
-  const CONDENSE_TOOLTIP_KEY = 'paljajeon_condensation_explained'
-  const [showCondenseTooltip, setShowCondenseTooltip] = useState(false)
-  const condensePrevActive = useRef(false)
-
-  // B-4: 최초 응축 발동 시 툴팁 표시
-  useEffect(() => {
-    if (condenseActive && !condensePrevActive.current) {
-      try {
-        const explained = localStorage.getItem(CONDENSE_TOOLTIP_KEY)
-        if (!explained) {
-          setShowCondenseTooltip(true)
-        }
-      } catch { /* noop */ }
-    }
-    condensePrevActive.current = condenseActive
-  }, [condenseActive])
-
-  const handleCondenseTooltipClose = useCallback(() => {
-    setShowCondenseTooltip(false)
-    try {
-      localStorage.setItem(CONDENSE_TOOLTIP_KEY, '1')
-    } catch { /* noop */ }
-  }, [])
+  // Phase 1.9.5: 응축 최초 툴팁은 lastTraitTriggered='yonggigama'로 통합 처리됨
 
   // 2번: 드래그 앤 드롭 훅 (합성 소환 인터랙션)
   const { dragState, handleDragStart, handleDragOver, handleDragEnd, handleDragCancel, rejectAnimCardId } = useDragAndDrop()
@@ -1503,14 +1447,12 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     }
   }, [hand.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // G1 수정 #4 — 첫 버리기 가능 시 안내
+  // Phase 1.9.5: 첫 출정 버리기 툴팁 (1회)
   useEffect(() => {
-    if (!hasShownFirstDiscard && discardsLeft > 0 && hand.length > 0) {
-      if (selectedCards.length > 0) {
-        markFirstDiscardShown()
-        showBanner('마음에 안 드는 카드는 버리고 새로 받을 수 있다')
-        console.log('[UX] 인라인 안내 2: 첫 버리기', { timestamp: Date.now() })
-      }
+    if (!hasShownFirstDiscard && currentFloor === 1 && playsLeft === 5 && hand.length > 0) {
+      markFirstDiscardShown()
+      showBanner('마음에 안 드는 패는 공격 전에 무료로 바꿀 수 있다.')
+      console.log('[UX] 첫 버리기 툴팁', { timestamp: Date.now() })
     }
   }, [selectedCards.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1924,25 +1866,11 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     console.log('[UX] 훈수 버튼 — 최강 조합 하이라이트', { bestIds, bestScore, timestamp: Date.now() })
   }, [hand])
 
-  // Phase 1.9.3: 응축 버튼 핸들러 — 발동 배너 포함
-  const handleApplyCondense = useCallback((type: 'basic' | 'great') => {
-    // 발동 배너: "옹기가마 — 가마에 굽는다!" (great) / "응축 — 힘을 담는다" (basic)
+  // Phase 1.9.5: 응축 버튼 핸들러 (옹기가마 전용, 장수 기반 % 배율)
+  const handleApplyCondense = useCallback(() => {
     const currentSelected = useGameStore.getState().selectedCards
-    const currentHand = useGameStore.getState().hand
-    const selObjs = currentHand.filter(c => currentSelected.includes(c.id))
-    if (selObjs.length >= 2) {
-      const comboRes = judgeCombo(selObjs as any)
-      const comboName = comboRes.name
-      const bannerText = type === 'great'
-        ? `${comboName} — 가마에 굽는다!`
-        : `${comboName} — 힘을 담는다`
-      showBanner(bannerText)
-    }
-    applyCondenseAction(type)
-    // 구슬 연출
-    setCondenseOrb(type)
-    setTimeout(() => setCondenseOrb(null), type === 'great' ? 2000 : 2500)
-  }, [applyCondenseAction, showBanner])
+    applyCondenseAction(currentSelected)
+  }, [applyCondenseAction])
 
   // B-3: 연환 완성하기 — 각 기운 최고값 카드 1장씩 자동 선택
   const handleYeonhwanComplete = useCallback(() => {
@@ -2288,100 +2216,70 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           80%  { opacity: 1; }
           100% { opacity: 0; }
         }
+        @keyframes waterFade {
+          0%   { opacity: 0; transform: translateX(-50%) translateY(6px); }
+          20%  { opacity: 1; transform: translateX(-50%) translateY(0); }
+          70%  { opacity: 1; }
+          100% { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+        }
+        @keyframes leafRise {
+          0%   { opacity: 0; transform: translateX(-50%) translateY(8px) scale(0.95); }
+          15%  { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+          70%  { opacity: 1; }
+          100% { opacity: 0; transform: translateX(-50%) translateY(-14px) scale(1.05); }
+        }
+        @keyframes condenseFlare {
+          0%   { opacity: 0; transform: translateX(-50%) scale(0.9); }
+          10%  { opacity: 1; transform: translateX(-50%) scale(1.05); }
+          20%  { transform: translateX(-50%) scale(1); }
+          70%  { opacity: 1; }
+          100% { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+        }
       `}</style>
 
-      {/* B-4: 응축 최초 툴팁 (localStorage 1회) */}
-      {showCondenseTooltip && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 250,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: 'rgba(22,19,15,0.6)',
-        }}>
+      {/* Phase 1.9.5: 특성 최초 발동 툴팁 (10종 융합 특성, B-4 응축 툴팁 대체) */}
+      {traitTooltip && (() => {
+        const config = TRAIT_CONFIGS[traitTooltip]
+        if (!config) return null
+        return (
           <div style={{
-            maxWidth: '280px',
-            width: '90%',
-            backgroundColor: 'rgba(28,23,16,0.95)',
-            border: '1px solid #D9A441',
-            borderRadius: '4px',
-            padding: '16px 20px',
-            textAlign: 'center',
+            position: 'fixed', inset: 0, zIndex: 350,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            backgroundColor: 'rgba(22,19,15,0.7)',
           }}>
             <div style={{
-              color: '#D8CCB4',
+              background: 'rgba(28,23,16,0.97)',
+              border: '1px solid rgba(216,204,180,0.3)',
+              borderRadius: '4px',
+              padding: '12px 16px',
+              maxWidth: '280px',
               fontSize: '13px',
-              lineHeight: '1.7',
-              letterSpacing: '0.04em',
-              marginBottom: '16px',
+              color: '#D8CCB4',
+              position: 'relative',
             }}>
-              "흙은 힘을 모은다 —<br />지금은 약하게, 다음에 크게."
+              <div style={{ fontSize: '14px', fontWeight: 700, marginBottom: '8px', color: config.textColor }}>
+                {config.tooltipTitle} — 처음 발동되었습니다
+              </div>
+              <div style={{ lineHeight: '1.6', marginBottom: '10px', whiteSpace: 'pre-line' }}>
+                {config.tooltipBody}
+              </div>
+              <button
+                onClick={() => {
+                  const key = `paljajeon_trait_${traitTooltip}_explained`
+                  try { localStorage.setItem(key, '1') } catch { /* noop */ }
+                  setTraitTooltip(null)
+                }}
+                style={{
+                  background: '#D8CCB4', color: '#1C1710',
+                  height: '36px', width: '100%',
+                  border: 'none', borderRadius: '4px',
+                  fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                }}
+              >확인</button>
             </div>
-            <button
-              onClick={handleCondenseTooltipClose}
-              style={{
-                width: '44px',
-                height: '36px',
-                backgroundColor: '#D9A441',
-                border: 'none',
-                color: '#1C1710',
-                fontSize: '14px',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                borderRadius: '2px',
-              }}
-            >
-              확인
-            </button>
           </div>
-        </div>
-      )}
-
-      {/* Phase 1.9.2: 특성 최초 발동 툴팁 */}
-      {traitTooltip && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 350,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          backgroundColor: 'rgba(22,19,15,0.7)',
-        }}>
-          <div style={{
-            background: 'rgba(28,23,16,0.97)',
-            border: '1px solid rgba(216,204,180,0.3)',
-            borderRadius: '4px',
-            padding: '12px 16px',
-            maxWidth: '280px',
-            fontSize: '13px',
-            color: '#D8CCB4',
-            position: 'relative',
-          }}>
-            <div style={{ fontSize: '14px', fontWeight: 700, marginBottom: '8px', color: '#E8D8A0' }}>
-              {traitTooltip === 'fire' ? '연소 (火 특성)' : '관통 (金 특성)'}
-            </div>
-            <div style={{ lineHeight: '1.6', marginBottom: '10px' }}>
-              {traitTooltip === 'fire'
-                ? '화 주 기운 조합은 즉시 피해 +30%.\n사용한 화 카드는 값이 줄어든다.'
-                : '금 주 기운 조합은 적의 보호·피해감소를\n무시하고 꿰뚫는다.'}
-            </div>
-            <button
-              onClick={() => {
-                const key = traitTooltip === 'fire'
-                  ? 'paljajeon_trait_fire_burn_explained'
-                  : 'paljajeon_trait_metal_pierce_explained'
-                try { localStorage.setItem(key, '1') } catch { /* noop */ }
-                setTraitTooltip(null)
-              }}
-              style={{
-                background: '#D8CCB4', color: '#1C1710',
-                height: '36px', width: '100%',
-                border: 'none', borderRadius: '4px',
-                fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-              }}
-            >확인</button>
-          </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* 오행연환 오버레이 */}
       <ElementalSequenceOverlay seq={elementalSeq} getCssDuration={getCssDuration} />
@@ -2419,52 +2317,33 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
       )}
 
       {/* Phase 1.9.2: 특성 배너 (화 연소 / 금 관통) */}
-      {traitBanner?.type === 'fire' && (
-        <div
-          key={traitBanner.key}
-          style={{
-            position: 'fixed',
-            top: '20%',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            fontSize: '16px',
-            fontWeight: 700,
-            color: '#FF6B35',
-            textShadow: '0 0 8px rgba(255,107,53,0.8), 0 0 16px rgba(255,60,0,0.4)',
-            letterSpacing: '0.08em',
-            pointerEvents: 'none',
-            zIndex: 200,
-            whiteSpace: 'nowrap',
-            animation: 'fireRise 1.5s ease-out forwards',
-          }}
-        >
-          {TRAIT_BANNER_TEMPLATES.fireBurn(traitBanner?.bonus ?? 0)}
-        </div>
-      )}
-      {traitBanner?.type === 'metal' && (
-        <div
-          key={traitBanner.key}
-          style={{
-            position: 'fixed',
-            top: '20%',
-            left: '50%',
-            fontSize: '16px',
-            fontWeight: 700,
-            background: 'linear-gradient(90deg, #C0C0C0, #E8F4FD, #C0C0C0)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
-            filter: 'drop-shadow(0 0 4px rgba(192,192,192,0.6))',
-            letterSpacing: '0.12em',
-            pointerEvents: 'none',
-            zIndex: 200,
-            whiteSpace: 'nowrap',
-            animation: 'metalSlash 1.5s ease-out forwards',
-          }}
-        >
-          {TRAIT_BANNER_TEMPLATES.metalPierce(traitBanner?.ignored ?? 0)}
-        </div>
-      )}
+      {/* Phase 1.9.5: 10종 융합 특성 배너 */}
+      {traitBanner && (() => {
+        const config = TRAIT_CONFIGS[traitBanner.type]
+        if (!config) return null
+        return (
+          <div
+            key={traitBanner.key}
+            style={{
+              position: 'fixed',
+              top: '20%',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              fontSize: '16px',
+              fontWeight: 700,
+              color: config.textColor,
+              textShadow: config.textShadow,
+              letterSpacing: '0.08em',
+              pointerEvents: 'none',
+              zIndex: 200,
+              whiteSpace: 'nowrap',
+              animation: `${config.keyframe} 1.5s ease-out forwards`,
+            }}
+          >
+            {config.bannerText}
+          </div>
+        )
+      })()}
 
       {/* Phase 1.9.4: 덱 재순환 배너 */}
       {reshuffleBanner && (
@@ -3300,63 +3179,22 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                 {/* 팔자 — 소형 텍스트 */}
                 <text x="18" y="34" textAnchor="middle" fontSize="6" fill="#D9A441" opacity="0.6" fontWeight="bold">팔자</text>
               </svg>
-              {/* Phase 1.9.4: 응축 저장형 구슬 + 라벨 "응축 +N 대기" */}
-            {condenseType === 'basic' && (
+              {/* Phase 1.9.5: 응축 구슬 + 라벨 "응축 +P% 대기" */}
+            {(condensedMultiplier ?? 0) > 0 && (
               <div style={{
                 display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px',
               }}>
                 <div style={{
-                  width: '12px', height: '12px', borderRadius: '50%',
-                  background: 'radial-gradient(circle at 30% 30%, #FFE8A8, #D9A441)',
-                  boxShadow: '0 0 6px rgba(217,164,65,0.8)',
-                  flexShrink: 0,
-                  animation: 'orbPulse 1.5s ease-in-out infinite',
-                }} />
-                <span style={{ color: '#D9A441', fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
-                  {condensedDamage > 0
-                    ? `응축 +${Math.round(condensedDamage * 1.5)} 대기`
-                    : '응축 대기 중'}
-                </span>
-              </div>
-            )}
-            {condenseType === 'great' && (
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px',
-              }}>
-                <div style={{
-                  width: '16px', height: '16px', borderRadius: '50%',
-                  background: 'radial-gradient(circle at 30% 30%, #FFFA80, #FF8C00, #D4AF37)',
-                  boxShadow: '0 0 10px rgba(255,140,0,0.9), 0 0 20px rgba(212,175,55,0.5)',
+                  width: '14px', height: '14px', borderRadius: '50%',
+                  background: 'radial-gradient(circle at 30% 30%, #FFF4CC, #FFD98A)',
+                  boxShadow: '0 0 10px rgba(255,217,138,0.9), 0 0 20px rgba(217,164,65,0.5)',
                   flexShrink: 0,
                   animation: 'superOrbPulse 1.0s ease-in-out infinite',
                 }} />
-                <span style={{ color: '#FF8C40', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
-                  {condensedDamage > 0
-                    ? `대응축 +${Math.round(condensedDamage * 2.0)} 대기`
-                    : '대응축 대기 중'}
+                <span style={{ color: '#FFD98A', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
+                  응축 +{Math.round((condensedMultiplier ?? 0) * 100)}% 대기
                 </span>
               </div>
-            )}
-            {/* 응축 발동 시 연출 구슬 (일회성) */}
-            {condenseOrb === 'basic' && (
-              <div style={{
-                position: 'absolute', top: '0', left: '50%',
-                width: '12px', height: '12px', borderRadius: '50%',
-                background: 'radial-gradient(circle at 30% 30%, #FFE8A8, #D9A441)',
-                boxShadow: '0 0 6px rgba(217,164,65,0.8)',
-                animation: 'orbPulse 1.5s ease-in-out 2',
-                pointerEvents: 'none',
-              }} />
-            )}
-            {condenseOrb === 'great' && (
-              <div style={{
-                position: 'absolute', top: '0', left: '50%',
-                width: '16px', height: '16px', borderRadius: '50%',
-                background: 'radial-gradient(circle at 30% 30%, #FFFA80, #FF8C00, #D4AF37)',
-                boxShadow: '0 0 10px rgba(255,140,0,0.9), 0 0 20px rgba(212,175,55,0.5)',
-                animation: 'superOrbPulse 1.0s ease-in-out 2',
-                pointerEvents: 'none',
-              }} />
             )}
 
             {/* 정령 구체 D11: 조합에 포함된 오행 차례 소환 */}
@@ -3605,9 +3443,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                   lineHeight: 1,
                   filter: isGeukiJugeum ? 'saturate(0.6)' : 'none',
                 }}>
-                  {card.element === 'hwa' && sootCount[card.id]
-                    ? Math.max(0, card.value - (sootCount[card.id] ?? 0))
-                    : card.value}
+                  {card.value}
                 </span>
                 {/* A-1: 속성(한자) 중앙 32px */}
                 <span style={{
@@ -3657,20 +3493,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                     오늘은 이 기운이 힘을 못 쓰는 날
                   </div>
                 )}
-                {/* Phase 1.9.2: 그을음 라벨 */}
-                {card.element === 'hwa' && sootCount[card.id] > 0 && (
-                  <div style={{
-                    position: 'absolute',
-                    bottom: '4px',
-                    right: '4px',
-                    fontSize: '9px',
-                    color: '#8B8070',
-                    letterSpacing: '0.02em',
-                    pointerEvents: 'none',
-                  }}>
-                    {sootCount[card.id] === 1 ? '그을음' : `그을음×${sootCount[card.id]}`}
-                  </div>
-                )}
+                {/* Phase 1.9.5: 그을음 폐지 (단일 특성 전면 폐지) */}
                 {/* Phase 1.8: 역극 툴팁 팝업 */}
                 {isYeokgeukInHand && yeokgeukTooltip?.cardId === card.id && (
                   <div style={{
@@ -3810,7 +3633,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
               pointerEvents: isInputLocked ? 'none' : undefined,
             }}
           >
-            버리기 {discardsLeft}회 남음
+            버리기 (공격과 별개 · 남은 {discardsLeft}회)
           </button>
           {/* Phase 1.9.2: 토 타격 조합 선택 시 2분할, 아니면 단일 공격 버튼 */}
           {(() => {
@@ -3821,16 +3644,19 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
               ? getCondenseAvailability(selectedComboResult.name ?? '', selectedComboResult.finishingElement)
               : null
             const canAttack = selectedCards.length > 0 && playsLeft > 0 && !isInputLocked
-            const isGreat = condenseAvail === 'great'
-            // Phase 1.9.3: 버튼 라벨에 조합명 포함
-            // great(옹기가마): "대응축 — 옹기가마에 굽는다"
-            // basic(토 모으기/일군 밭): "응축 — 힘을 담는다"
-            const condenseBtnLabel = isGreat
-              ? `대응축 — ${selectedComboResult?.name ?? '옹기가마'}에 굽는다`
-              : CONDENSE_LABELS.condense
+            // Phase 1.9.5: 응축 배율 계산 (선택 카드 수 기반)
+            const condensePercent = condenseAvail === 'great' && selectedCards.length >= 2
+              ? Math.round(selectedCards.length >= 5 ? 240 : [0, 0, 120, 160, 200, 240][selectedCards.length] ?? 240)
+              : 0
+            // 응축 버튼 비활성 조건
+            const condenseAlreadyActive = (condensedMultiplier ?? 0) > 0
+            const condenseBtnDisabled = isLastAttack || !canAttack || condenseAlreadyActive
+            const condenseBtnLabel = condenseAlreadyActive
+              ? '응축 대기 중'
+              : condensePercent > 0 ? `대응축(${selectedCards.length}장) +${condensePercent}%` : `대응축 — 옹기가마에 굽는다`
 
             if (condenseAvail !== null) {
-              // 2분할 버튼
+              // 2분할 버튼 (옹기가마 감지 시)
               return (
                 <div style={{ flex: 1, display: 'flex', gap: '0', height: '48px' }}>
                   {/* 공격 */}
@@ -3853,31 +3679,42 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                   >
                     공격
                   </button>
-                  {/* 응축/대응축 */}
+                  {/* 대응축 */}
                   <button
-                    onClick={isLastAttack ? undefined : () => handleApplyCondense(condenseAvail)}
-                    disabled={isLastAttack || !canAttack}
+                    onClick={condenseBtnDisabled ? undefined : handleApplyCondense}
+                    disabled={condenseBtnDisabled}
+                    title={isLastAttack ? '마지막 공격엔 응축 불가' : undefined}
                     style={{
                       flex: 1.1,
                       height: '48px',
-                      background: isLastAttack
+                      background: condenseBtnDisabled
                         ? '#2A2620'
-                        : isGreat
-                        ? 'linear-gradient(90deg, #FF8C00, #D4AF37)'
-                        : '#D9A441',
+                        : 'linear-gradient(90deg, #FF8C00, #D4AF37)',
                       border: 'none',
-                      color: isGreat ? '#FFFDF7' : '#3B2A0A',
-                      fontSize: '13px',
+                      color: condenseBtnDisabled ? '#6A6560' : '#FFFDF7',
+                      fontSize: condenseBtnDisabled ? '12px' : '13px',
                       fontWeight: 700,
                       letterSpacing: '0.04em',
-                      cursor: (isLastAttack || !canAttack) ? 'not-allowed' : 'pointer',
-                      opacity: isLastAttack ? 0.3 : canAttack ? 1 : 0.4,
+                      cursor: condenseBtnDisabled ? 'not-allowed' : 'pointer',
+                      opacity: condenseBtnDisabled ? 0.3 : 1,
                       borderRadius: '0 4px 4px 0',
-                      boxShadow: (!isLastAttack && isGreat) ? '0 0 8px rgba(255,140,0,0.4), 0 0 4px rgba(212,175,55,0.3)' : 'none',
-                      pointerEvents: isLastAttack ? 'none' : undefined,
+                      boxShadow: !condenseBtnDisabled ? '0 0 8px rgba(255,140,0,0.4), 0 0 4px rgba(212,175,55,0.3)' : 'none',
+                      pointerEvents: condenseBtnDisabled ? 'none' : undefined,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      lineHeight: 1.2,
                     }}
                   >
-                    {condenseBtnLabel}
+                    {isLastAttack ? (
+                      <>
+                        <span style={{ fontSize: '12px' }}>대응축</span>
+                        <span style={{ fontSize: '11px' }}>사용 불가</span>
+                      </>
+                    ) : (
+                      condenseBtnLabel
+                    )}
                   </button>
                 </div>
               )
@@ -3907,7 +3744,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
               </button>
             )
           })()}
-          {/* Phase 1.9.2: 마지막 패 경고 */}
+          {/* Phase 1.9.5: 마지막 공격 시 응축 불가 안내 */}
           {isLastAttack && (() => {
             const selectedComboResult = selectedCardObjs.length >= 2
               ? judgeCombo(selectedCardObjs as any)
@@ -3924,7 +3761,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                   whiteSpace: 'nowrap', letterSpacing: '0.04em',
                   pointerEvents: 'none',
                 }}>
-                  {CONDENSE_LABELS.lastHandWarning}
+                  마지막 공격엔 응축 불가
                 </div>
               )
             }

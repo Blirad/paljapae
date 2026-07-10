@@ -160,14 +160,161 @@ export function findFusionCombo(el1: Element, el2: Element): FusionCombo | null 
 // --- 음양 조화 보너스
 export const EUMYANG_HARMONY_BONUS = 0.2  // +20%
 
-// --- 응축 (토 응축) 배율 — Phase 1.8 구형 (deprecated, 하위 호환용)
-export const CONDENSE_MULTIPLIER = 1.6  // 하위 호환 상수 (v2에서는 아래 상수 사용)
+// --- 응축 (Phase 1.9.5 확정판 — 옹기가마 전용, % 방식)
+// 태운 장수 → 다음 공격에 (damage * condensedMultiplier) 추가
+export const CONDENSE_BY_CARD_COUNT: Record<number, number> = {
+  2: 1.2,   // +120%
+  3: 1.6,   // +160%
+  4: 2.0,   // +200%
+  5: 2.4,   // +240%
+}
 
-// --- 응축 v2 배율 (Phase 1.9.4 — 저장형 전환)
-// 기본 응축: 태운 조합의 예상 피해 저장 → 다음 공격에 저장량 × 1.5 가산
-export const CONDENSE_V2_MULTIPLIER = 1.5       // Phase 1.9.4 신규: 저장형 응축 배율 (×1.5)
-// 대응축: 태운 조합의 예상 피해 저장 → 다음 공격에 저장량 × 2.0 가산
-export const GREAT_CONDENSE_MULTIPLIER = 2.0    // Phase 1.9.4 신규: 저장형 대응축 배율 (×2.0)
+/** 장수 기반 응축 배율 계산 (2장 미만 → 0, 5장 초과 → 5장 배율 고정) */
+export function getCondenseMultiplier(cardCount: number): number {
+  if (cardCount < 2) return 0
+  const clampedCount = Math.min(cardCount, 5)
+  return CONDENSE_BY_CARD_COUNT[clampedCount] ?? 0
+}
+
+// --- Phase 1.9.5: 10종 융합 특성 설정
+export interface TraitConfig {
+  name: string
+  bannerText: string
+  tooltipTitle: string
+  tooltipBody: string
+  element: 'mok' | 'hwa' | 'to' | 'geum' | 'su'
+  fusionType: 'birth' | 'hone'
+  keyframe: string
+  textColor: string
+  textShadow: string
+}
+
+export const TRAIT_CONFIGS: Record<string, TraitConfig> = {
+  wildfire: {
+    name: '번짐',
+    bannerText: '번짐 — 피해의 30%가 다음 공격에 이월된다',
+    tooltipTitle: '번짐 (들불)',
+    tooltipBody: '들불이 번진다. 이번 공격 피해의 30%가 잔불이 되어 다음 공격에 더해진다. 연속으로 불을 지르면 더 강해진다.',
+    element: 'hwa',
+    fusionType: 'birth',
+    keyframe: 'fireRise',
+    textColor: '#FF7A5C',
+    textShadow: '0 0 8px rgba(255,122,92,0.8), 0 0 16px rgba(198,61,47,0.4)',
+  },
+  mining: {
+    name: '채굴',
+    bannerText: '채굴 — 덱에서 1장을 더 가져간다',
+    tooltipTitle: '채굴 (광맥)',
+    tooltipBody: '광맥을 캔다. 덱에서 카드 1장을 즉시 손으로 가져온다. 손패가 풍성해질수록 선택지가 늘어난다.',
+    element: 'geum',
+    fusionType: 'birth',
+    keyframe: 'metalSlash',
+    textColor: '#E8E3D5',
+    textShadow: '0 0 8px rgba(232,227,213,0.8), 0 0 12px rgba(200,192,176,0.4)',
+  },
+  purification: {
+    name: '정화',
+    bannerText: '정화 — 기세 죽음 1종이 해제되었다',
+    tooltipTitle: '정화 (샘)',
+    tooltipBody: '샘이 솟아 기운을 씻는다. 죽은 기운 중 1종이 되살아난다. 기세 죽음 상태가 해제된다.',
+    element: 'su',
+    fusionType: 'birth',
+    keyframe: 'waterFade',
+    textColor: '#8FB8DE',
+    textShadow: '0 0 8px rgba(143,184,222,0.8), 0 0 16px rgba(61,90,128,0.5)',
+  },
+  nourish: {
+    name: '자양',
+    bannerText: '자양 — 체력이 8 회복되었다',
+    tooltipTitle: '자양 (숲)',
+    tooltipBody: '숲이 품는다. 공격 후 체력을 8 회복한다. 꾸준히 싸울수록 오래 버틸 수 있다.',
+    element: 'mok',
+    fusionType: 'birth',
+    keyframe: 'leafRise',
+    textColor: '#7BD4A3',
+    textShadow: '0 0 8px rgba(123,212,163,0.8), 0 0 16px rgba(74,155,110,0.4)',
+  },
+  yonggigama: {
+    name: '응축',
+    bannerText: '응축 — 힘이 그릇에 담겼다',
+    tooltipTitle: '응축 (옹기가마)',
+    tooltipBody: '흙이 힘을 담는다. 불로 구운 그릇은 더 큰 힘을 담는다. 다음 공격에 보너스를 더한다.',
+    element: 'to',
+    fusionType: 'birth',
+    keyframe: 'condenseFlare',
+    textColor: '#FFD98A',
+    textShadow: '0 0 8px rgba(255,217,138,0.8), 0 0 16px rgba(217,164,65,0.5)',
+  },
+  keen: {
+    name: '예리',
+    bannerText: '예리 — 극 보너스가 1.5배로 강해진다',
+    tooltipTitle: '예리 (벼린 검)',
+    tooltipBody: '검이 예리해진다. 이번 공격의 극 보너스가 1.5배로 상승한다. 상성이 유리할 때 더욱 강력하다.',
+    element: 'geum',
+    fusionType: 'hone',
+    keyframe: 'metalSlash',
+    textColor: '#E8E3D5',
+    textShadow: '0 0 4px rgba(232,227,213,1.0), 0 0 12px rgba(200,192,176,0.7), 0 2px 0 #000',
+  },
+  snipe: {
+    name: '저격',
+    bannerText: '저격 — 적의 가호 1개를 꿰뚫었다',
+    tooltipTitle: '저격 (깎은 화살)',
+    tooltipBody: '화살이 꿰뚫는다. 적이 지닌 가호(보호 효과) 1개를 무효화한다. 단단한 적을 상대할 때 유용하다.',
+    element: 'mok',
+    fusionType: 'hone',
+    keyframe: 'leafRise',
+    textColor: '#7BD4A3',
+    textShadow: '0 0 4px rgba(123,212,163,1.0), 0 0 12px rgba(74,155,110,0.7), 0 2px 0 #000',
+  },
+  harvest: {
+    name: '수확',
+    bannerText: '수확 — 손의 목·토 카드가 1씩 올랐다',
+    tooltipTitle: '수확 (일군 밭)',
+    tooltipBody: '밭을 일군다. 현재 손에 있는 목(木)·토(土) 카드의 값이 1씩 오른다. 해당 기운 카드가 많을수록 효과가 커진다.',
+    element: 'to',
+    fusionType: 'hone',
+    keyframe: 'condenseFlare',
+    textColor: '#FFD98A',
+    textShadow: '0 0 4px rgba(255,217,138,1.0), 0 0 12px rgba(217,164,65,0.7), 0 2px 0 #000',
+  },
+  mirror: {
+    name: '비침',
+    bannerText: '비침 — 적의 다음 강공이 절반으로 약해진다',
+    tooltipTitle: '비침 (맑은 못)',
+    tooltipBody: '못이 비친다. 적의 다음 강공 피해가 50% 줄어든다. 강한 공격을 예감할 때 미리 쓰면 좋다.',
+    element: 'su',
+    fusionType: 'hone',
+    keyframe: 'waterFade',
+    textColor: '#8FB8DE',
+    textShadow: '0 0 4px rgba(143,184,222,1.0), 0 0 12px rgba(61,90,128,0.7), 0 2px 0 #000',
+  },
+  quench: {
+    name: '담금질',
+    bannerText: '담금질 — 카드 값이 1 영구히 올랐다',
+    tooltipTitle: '담금질 (담금불)',
+    tooltipBody: '불로 달군다. 현재 손의 카드 값이 1 영구히 오른다. 이번 출정이 끝날 때까지 유지된다.',
+    element: 'hwa',
+    fusionType: 'hone',
+    keyframe: 'fireRise',
+    textColor: '#FF7A5C',
+    textShadow: '0 0 4px rgba(255,122,92,1.0), 0 0 12px rgba(198,61,47,0.7), 0 2px 0 #000',
+  },
+}
+
+/** 융합 조합명 → 특성 ID 맵핑 */
+export const FUSION_TRAIT_MAP: Record<string, string> = {
+  '들불': 'wildfire',
+  '광맥': 'mining',
+  '샘': 'purification',
+  '숲': 'nourish',
+  '옹기가마': 'yonggigama',
+  '벼린 검': 'keen',
+  '깎은 화살': 'snipe',
+  '일군 밭': 'harvest',
+  '맑은 못': 'mirror',
+  '담금불': 'quench',
+}
 
 // --- 오행 연환 배율 (Phase 1.9.2 — E-1: ×10 → ×8 희소화)
 export const OHANG_YEONHWAN_MULTIPLIER = 8

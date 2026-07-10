@@ -94,15 +94,10 @@ function createDeterministicState(floorIndex: number, rng: () => number): GameSt
     condenseActive: false,
     // Phase 1.9.2 신규 필드
     yeonhwanUsed: false,
-    condenseType: null,
-    condenseMultiplier: 0,
-    condensedDamage: 0,
+    condensedMultiplier: 0,
     isLastAttack: floorConfig.maxPlays === 1,
-    sootCount: {},
-    combustionTriggered: false,
-    combustionBonus: 0,
-    penetrationTriggered: false,
-    penetrationIgnored: 0,
+    lastTraitTriggered: undefined,
+    carryoverBurn: 0,
     reshuffled: false,
   }
 }

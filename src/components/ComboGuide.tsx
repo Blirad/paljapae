@@ -375,49 +375,49 @@ function TabYeonhwan() {
   )
 }
 
-// ─── 탭 4: 응축 v2 ───────────────────────────────────────────────────────────
+// ─── 탭 4: 응축 확정판 (Phase 1.9.5 — 옹기가마 전용 장수 비례표) ────────────
 function TabCondense() {
   return (
     <div>
-      {/* Phase 1.9.2: 응축 소개 문구 갱신 */}
-      <div style={{ color: '#D8CCB4', fontSize: '13px', lineHeight: '1.7', letterSpacing: '0.05em', marginBottom: '16px' }}>
+      <div style={{ color: '#D8CCB4', fontSize: '13px', lineHeight: '1.7', letterSpacing: '0.05em', marginBottom: '16px', fontStyle: 'italic' }}>
         흙은 힘을 담는다. 불로 구운 그릇은, 더 큰 힘을 담는다.
       </div>
-      <div style={{ color: '#D8CCB4', fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>응축 발동표</div>
+      <div style={{ color: '#FFD98A', fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>옹기가마 (火+土→土) 장수 비례표</div>
       <div style={{ marginBottom: '4px', display: 'flex', borderBottom: '1px solid rgba(216,204,180,0.2)' }}>
-        {['조합', '응축 유형', '다음 공격 보너스'].map((h, i) => (
+        {['태운 장수', '배율', '다음 공격 보너스'].map((h, i) => (
           <div key={h} style={{
-            flex: [1.5, 1.5, 2][i],
+            flex: [1, 1, 2][i],
             color: '#B33A2B', fontSize: '11px', fontWeight: 700,
             padding: '4px 6px',
           }}>{h}</div>
         ))}
       </div>
       {[
-        { name: '토 모으기', label: '응축', pct: '+120%', bg: 'rgba(217,164,65,0.1)', color: '#D9A441', fw: 600 },
-        { name: '일군 밭',  label: '응축', pct: '+120%', bg: 'rgba(217,164,65,0.1)', color: '#D9A441', fw: 600 },
-        { name: '옹기가마', label: '대응축', pct: '+180%', bg: 'rgba(255,140,0,0.12)', color: '#FF8C40', fw: 700 },
+        { count: '2장', mult: '×2.2', pct: '+120%' },
+        { count: '3장', mult: '×2.6', pct: '+160%' },
+        { count: '4장', mult: '×3.0', pct: '+200%' },
+        { count: '5장', mult: '×3.4', pct: '+240%' },
       ].map(row => (
         <div
-          key={row.name}
+          key={row.count}
           style={{
             display: 'flex',
             borderBottom: '1px solid rgba(216,204,180,0.08)',
             alignItems: 'center',
-            backgroundColor: row.bg,
           }}
         >
-          <div style={{ flex: 1.5, padding: '8px 6px', color: '#D8CCB4', fontSize: '12px', fontWeight: 600 }}>{row.name}</div>
-          <div style={{ flex: 1.5, padding: '8px 6px', color: '#D8CCB4', fontSize: '12px' }}>{row.label}</div>
-          <div style={{ flex: 2, padding: '8px 6px', color: row.color, fontSize: '13px', fontWeight: row.fw }}>{row.pct}</div>
+          <div style={{ flex: 1, padding: '8px 6px', color: '#D8CCB4', fontSize: '12px' }}>{row.count}</div>
+          <div style={{ flex: 1, padding: '8px 6px', color: '#FFD98A', fontSize: '13px', fontWeight: 700 }}>{row.mult}</div>
+          <div style={{ flex: 2, padding: '8px 6px', color: '#FFD98A', fontSize: '13px', fontWeight: 700 }}>{row.pct}</div>
         </div>
       ))}
       <div style={{ marginTop: '16px' }}>
         <div style={{ color: '#D8CCB4', fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>사용법</div>
         <div style={{ color: '#D8CCB4', fontSize: '12px', lineHeight: '1.8' }}>
-          <div>· 토 타격 조합 선택 → 공격 버튼이 2분할로 전환</div>
-          <div>· [응축] 또는 [대응축] 선택 시 공격 횟수 1회 소모</div>
+          <div>· 옹기가마 조합 선택 → 공격 버튼이 2분할로 전환</div>
+          <div>· [대응축] 선택 시 공격 횟수 1회 소모</div>
           <div>· 피해 없이 다음 공격에 보너스를 담는다</div>
+          <div>· 태우는 장수가 많을수록 위력이 강해진다 (2~5장)</div>
           <div>· 중첩 불가, 마지막 공격 기회에 사용 불가</div>
           <div>· 영웅 옆 구슬로 상태 표시</div>
         </div>
@@ -426,80 +426,81 @@ function TabCondense() {
   )
 }
 
-// ─── 탭 5: 특성 ──────────────────────────────────────────────────────────────
+// ─── 탭 5: 특성 (Phase 1.9.5 — 10종 융합 특성) ─────────────────────────────
 function TabTraits() {
-  const TRAIT_ROWS = [
-    {
-      el: 'hwa', name: '연소', effect: '화 주 기운 조합 +30%, 사용 카드 값 −1 ("그을음" 표기)',
-      active: true, borderColor: '#C63D2F',
-    },
-    {
-      el: 'geum', name: '관통', effect: '적 보호·피해감소 무시',
-      active: true, borderColor: '#C8C0B0',
-    },
-    {
-      el: 'to', name: '응축', effect: '힘을 담아 다음 공격 강화 (v2)\n토 모으기/일군 밭: +120% / 옹기가마: +180% (대응축)',
-      active: true, borderColor: '#D9A441',
-    },
-    {
-      el: 'mok', name: '성장', effect: '(백로그 — 추후 추가)',
-      active: false, borderColor: '#4A9B6E',
-    },
-    {
-      el: 'su', name: '순환', effect: '(백로그 — 추후 추가)',
-      active: false, borderColor: '#3D5A80',
-    },
+  // 낟는 5종
+  const BIRTH_TRAIT_ROWS = [
+    { fusion: '들불', combo: '木+火', result: 'hwa', mult: '×3.0', trait: '번짐', effect: '피해의 30%가 다음 공격에 잔불로 이월', borderW: 3 },
+    { fusion: '광맥', combo: '土+金', result: 'geum', mult: '×3.0', trait: '채굴', effect: '공격 후 덱에서 1장 추가 드로우', borderW: 3 },
+    { fusion: '샘',   combo: '金+水', result: 'su',   mult: '×3.0', trait: '정화', effect: '공격 후 기세 죽음 1종 해제', borderW: 3 },
+    { fusion: '숲',   combo: '水+木', result: 'mok',  mult: '×3.0', trait: '자양', effect: '공격 후 체력 8 회복', borderW: 3 },
+    { fusion: '옹기가마', combo: '火+土', result: 'to', mult: '×3.0', trait: '응축', effect: '다음 공격 +120~+240% (장수 비례)', borderW: 3 },
   ] as const
 
-  const EL_EMOJI: Record<string, string> = {
-    hwa: '🔥', geum: '⚔️', to: '🪨', mok: '🌿', su: '💧',
+  // 벼리는 5종
+  const HONE_TRAIT_ROWS = [
+    { fusion: '벼린 검',  combo: '火+金', result: 'geum', mult: '×3.5', trait: '예리',   effect: '극 보너스 ×1.5배 적용', borderW: 5 },
+    { fusion: '깎은 화살', combo: '金+木', result: 'mok', mult: '×3.5', trait: '저격',   effect: '적의 가호(보호 효과) 1개 무효화', borderW: 5 },
+    { fusion: '일군 밭',  combo: '木+土', result: 'to',   mult: '×3.5', trait: '수확',   effect: '손의 목·토 카드 값 +1', borderW: 5 },
+    { fusion: '맑은 못',  combo: '土+水', result: 'su',   mult: '×3.5', trait: '비침',   effect: '적의 다음 강공 피해 −50%', borderW: 5 },
+    { fusion: '담금불',   combo: '水+火', result: 'hwa',  mult: '×3.5', trait: '담금질', effect: '카드 값 +1 영구 (출정 내)', borderW: 5 },
+  ] as const
+
+  const borderColors: Record<string, string> = {
+    hwa: '#C63D2F', geum: '#C8C0B0', su: '#3D5A80', mok: '#4A9B6E', to: '#D9A441',
   }
+
+  const renderRow = (row: { fusion: string; combo: string; result: string; mult: string; trait: string; effect: string; borderW: number }) => (
+    <div
+      key={row.fusion}
+      style={{
+        display: 'flex',
+        borderBottom: '1px solid rgba(216,204,180,0.08)',
+        borderLeft: `${row.borderW}px solid ${borderColors[row.result]}`,
+        alignItems: 'flex-start',
+        paddingLeft: '4px',
+      }}
+    >
+      <div style={{ flex: 1.2, padding: '7px 4px', color: '#D8CCB4', fontSize: '11px', fontWeight: 600 }}>{row.fusion}</div>
+      <div style={{ flex: 1, padding: '7px 4px', color: '#6A6560', fontSize: '10px' }}>{row.combo}</div>
+      <div style={{ flex: 0.6, padding: '7px 4px', color: '#FFD98A', fontSize: '11px', fontWeight: 700 }}>{row.mult}</div>
+      <div style={{ flex: 0.8, padding: '7px 4px', color: ELEMENT_GLOW[row.result], fontSize: '11px', fontWeight: 700 }}>{row.trait}</div>
+      <div style={{ flex: 3, padding: '7px 4px', color: '#D8CCB4', fontSize: '10px', lineHeight: '1.5' }}>{row.effect}</div>
+    </div>
+  )
 
   return (
     <div>
-      <div style={{
-        fontSize: '13px', color: '#D8CCB4', letterSpacing: '0.05em',
-        fontStyle: 'italic', marginBottom: '12px',
-      }}>
-        각 기운은 서로 다른 힘의 결을 지닌다.
+      {/* 낟는 특성 */}
+      <div style={{ color: '#4A9B6E', fontSize: '13px', fontWeight: 700, letterSpacing: '0.1em', marginBottom: '6px' }}>
+        낟는 특성 (5종) — ×3.0
       </div>
-      <div style={{ marginBottom: '4px', display: 'flex', borderBottom: '1px solid rgba(216,204,180,0.2)' }}>
-        {['기운', '특성명', '효과'].map((h, i) => (
+      <div style={{ marginBottom: '4px', display: 'flex', borderBottom: '1px solid rgba(216,204,180,0.2)', paddingLeft: '4px' }}>
+        {['융합명', '기운', '배율', '특성', '효과'].map((h, i) => (
           <div key={h} style={{
-            flex: [0.8, 1, 4][i],
-            color: '#B33A2B', fontSize: '11px', fontWeight: 700, padding: '4px 6px',
+            flex: [1.2, 1, 0.6, 0.8, 3][i],
+            color: '#B33A2B', fontSize: '10px', fontWeight: 700, padding: '4px 4px',
           }}>{h}</div>
         ))}
       </div>
-      {TRAIT_ROWS.map(row => (
-        <div
-          key={row.el}
-          style={{
-            display: 'flex',
-            borderBottom: '1px solid rgba(216,204,180,0.08)',
-            borderLeft: `3px solid ${row.borderColor}`,
-            alignItems: 'flex-start',
-            paddingLeft: '4px',
-            opacity: row.active ? 1 : 0.45,
-          }}
-        >
-          <div style={{ flex: 0.8, padding: '8px 4px', fontSize: '13px', color: ELEMENT_COLORS[row.el], fontWeight: 700 }}>
-            {EL_EMOJI[row.el]} {ELEMENT_HANJA[row.el]}
-          </div>
-          <div style={{ flex: 1, padding: '8px 4px', color: row.active ? '#D8CCB4' : '#4A4540', fontSize: '12px', fontWeight: row.active ? 600 : 400 }}>
-            {row.name}
-          </div>
-          <div style={{
-            flex: 4, padding: '8px 4px',
-            color: row.active ? '#D8CCB4' : '#4A4540',
-            fontSize: '11px', lineHeight: '1.6',
-            fontStyle: row.active ? 'normal' : 'italic',
-            whiteSpace: 'pre-line',
-          }}>
-            {row.effect}
-          </div>
-        </div>
-      ))}
+      {BIRTH_TRAIT_ROWS.map(renderRow)}
+
+      {/* 구분선 */}
+      <div style={{ borderTop: '1px solid rgba(216,204,180,0.15)', margin: '12px 0 8px' }} />
+
+      {/* 벼리는 특성 */}
+      <div style={{ color: '#FF7A5C', fontSize: '13px', fontWeight: 700, letterSpacing: '0.1em', marginBottom: '6px' }}>
+        벼리는 특성 (5종) — ×3.5
+      </div>
+      <div style={{ marginBottom: '4px', display: 'flex', borderBottom: '1px solid rgba(216,204,180,0.2)', paddingLeft: '4px' }}>
+        {['융합명', '기운', '배율', '특성', '효과'].map((h, i) => (
+          <div key={h} style={{
+            flex: [1.2, 1, 0.6, 0.8, 3][i],
+            color: '#B33A2B', fontSize: '10px', fontWeight: 700, padding: '4px 4px',
+          }}>{h}</div>
+        ))}
+      </div>
+      {HONE_TRAIT_ROWS.map(renderRow)}
     </div>
   )
 }

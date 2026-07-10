@@ -1,9 +1,6 @@
 /**
  * 팔자전 — 탐욕 봇 (Greedy Bot)
- * Phase 1.7 업데이트: 신규 로직 3종 반영
- *  - 적 사주(주/부 기운) 반영한 극 보너스(+25%)
- *  - 강공(heavyAttack) 피해 누적
- *  - 가호 봉인(seal-passives) 효과 시뮬
+ * Phase 1.9.5 업데이트: 10종 융합 특성 + 응축 확정판 (% 방식) 반영
  *
  * 목표:
  *  - 1층 평균 격파 공격 횟수: 2회 (±0.5)
@@ -24,7 +21,15 @@ import {
   applyCondense,
   getCondenseAvailability,
 } from './paljajeonEngine'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, GEUK_BONUS_MULTIPLIER, ANTI_GEUK_PENALTY, CONDENSE_V2_MULTIPLIER, GREAT_CONDENSE_MULTIPLIER } from './balance'
+import {
+  FLOOR_CONFIGS,
+  PLAYER_BASE_HP,
+  HAND_SIZE,
+  BASE_DISCARDS,
+  GEUK_BONUS_MULTIPLIER,
+  ANTI_GEUK_PENALTY,
+  getCondenseMultiplier,
+} from './balance'
 
 /**
  * 조합(combination) 유틸: n장 중 k장 뽑기
@@ -39,7 +44,7 @@ function combinations<T>(arr: T[], k: number): T[][] {
 }
 
 /**
- * Phase 1.9.4 — 예상 데미지 계산 (저장형 응축 반영)
+ * Phase 1.9.5 — 예상 데미지 계산
  *
  * 로직:
  *  1. judgeCombo()로 조합 판정 (type + finishingElement + multiplier)
@@ -47,9 +52,9 @@ function combinations<T>(arr: T[], k: number): T[][] {
  *  3. 극 보너스: +70% (GEUK_BONUS_MULTIPLIER = 1.7)
  *  4. 반극 페널티: −40% (ANTI_GEUK_PENALTY = 0.6)
  *  5. E-1: 연환 yeonhwanUsed 체크 → 사용됐으면 0점
- *  6. E-2: 응축 저장형: condenseType 있으면 저장량×배율 가산
- *  7. E-3: 화 연소 +30% (finishEl === 'hwa')
- *  8. E-3: 금 관통 — 적 방어 있을 때 가중치 증가 (finishEl === 'geum')
+ *  6. E-2: 응축 % 방식 소모 — condensedMultiplier > 0이면 damage × (1 + multiplier)
+ *  7. 저격(snipe, 깎은 화살) — 피해감소 건너뜀 가중치
+ *  8. 번짐(wildfire, 들불) — carryoverBurn 이월 피해 가산
  *
  * 음양 조화 보너스는 이미 judgeCombo()에서 totalScore에 포함됨
  */
@@ -57,11 +62,11 @@ export function calcExpectedDamage(
   combo: Card[],
   enemyPrimaryElement: Element,
   _enemySubElement?: Element,
-  condenseType?: 'basic' | 'great' | null,
+  condensedMultiplier?: number,
   yeonhwanUsed?: boolean,
   isLastAttack?: boolean,
   enemyHasDamageReduction?: boolean,
-  condensedDamage?: number,  // Phase 1.9.4: 저장된 예상 피해
+  carryoverBurn?: number,
 ): number {
   const result = judgeCombo(combo)
   let damage = result.totalScore
@@ -82,50 +87,48 @@ export function calcExpectedDamage(
     damage = Math.round(damage * ANTI_GEUK_PENALTY)
   }
 
-  // E-2: 응축 저장형 소모 — condenseType 있으면 저장량 × 배율 가산
-  if (condenseType && condensedDamage != null && condensedDamage > 0) {
-    const mult = condenseType === 'basic' ? CONDENSE_V2_MULTIPLIER : GREAT_CONDENSE_MULTIPLIER
-    damage = damage + Math.round(condensedDamage * mult)
-  } else if (!condenseType) {
-    // 2턴 시야: 응축 기대값 평가 (마지막 공격이 아닌 경우만)
+  // 번짐 이월 피해 가산
+  if (carryoverBurn && carryoverBurn > 0) {
+    damage = damage + carryoverBurn
+  }
+
+  // E-2: 응축 % 방식 소모 — condensedMultiplier > 0이면 damage * (1 + multiplier)
+  if (condensedMultiplier && condensedMultiplier > 0) {
+    damage = Math.round(damage * (1 + condensedMultiplier))
+  } else if (!condensedMultiplier || condensedMultiplier === 0) {
+    // 2턴 시야: 응축 기대값 평가 (마지막 공격이 아닌 경우만, 옹기가마 조합 한정)
     const condenseKind = getCondenseAvailability(result.name, finishEl)
-    if (condenseKind && !isLastAttack) {
-      // 저장형: 이번 피해 저장 → 다음 공격 = nextDamage + damage × mult
-      // 기대값 = (0 + damage + damage × mult) / 2
-      const mult = condenseKind === 'basic' ? CONDENSE_V2_MULTIPLIER : GREAT_CONDENSE_MULTIPLIER
-      const condenseExpected = Math.round(damage * (1 + mult) / 2)
-      // 즉시 공격 vs 응축 기대값 비교: 높은 쪽 반영
+    if (condenseKind === 'great' && !isLastAttack) {
+      // % 방식: 이번 응축 → 다음 공격 damage × (1 + mult)
+      // 기대값 = (0 + damage × (1 + mult)) / 2
+      const mult = getCondenseMultiplier(combo.length)
+      const condenseExpected = mult > 0 ? Math.round(damage * (1 + mult) / 2) : 0
       damage = Math.max(damage, condenseExpected)
     }
   }
 
-  // E-3: 화 연소 +30%
-  if (finishEl === 'hwa') {
-    damage = Math.round(damage * 1.3)
-  }
-
-  // E-3: 금 관통 — 적 방어가 있을 때 실제 가중치 상승
-  if (finishEl === 'geum' && enemyHasDamageReduction) {
-    // 관통 시 피해감소 무시 효과: 방어 30% 기준으로 가중치 반영
-    damage = Math.round(damage / 0.7)  // 방어 30% 무시 (1/0.7 ≈ 1.43)
+  // 저격(snipe, 깎은 화살 金+木) — 피해감소 무시 가중치
+  if (result.name === '깎은 화살' && enemyHasDamageReduction) {
+    // 저격 시 피해감소 무시: 방어 30% 기준 가중치 반영
+    damage = Math.round(damage / 0.7)
   }
 
   return damage
 }
 
 /**
- * 탐욕 봇 핸드 선택 (Phase 1.9.2 — E-1~E-4 갱신)
+ * 탐욕 봇 핸드 선택 (Phase 1.9.5 — 10종 융합 특성 + 응축 % 방식 갱신)
  * 유효한 조합만 선택하고, 그 중 최고 예상 데미지를 고르기
  */
 export function greedySelectCards(
   hand: Card[],
   enemyPrimaryElement?: Element,
   enemySubElement?: Element,
-  condenseType?: 'basic' | 'great' | null,
+  condensedMultiplier?: number,
   yeonhwanUsed?: boolean,
   isLastAttack?: boolean,
   enemyHasDamageReduction?: boolean,
-  condensedDamage?: number,  // Phase 1.9.4: 저장된 예상 피해
+  carryoverBurn?: number,
 ): string[] {
   if (hand.length === 0) return []
 
@@ -149,11 +152,11 @@ export function greedySelectCards(
             combo,
             enemyPrimaryElement,
             enemySubElement,
-            condenseType,
+            condensedMultiplier,
             yeonhwanUsed,
             isLastAttack,
             enemyHasDamageReduction,
-            condensedDamage,
+            carryoverBurn,
           )
         : result.totalScore
 
@@ -197,10 +200,10 @@ export interface RunResult {
   floorsCleared: number
   deathFloor: number | null
   floorStats: FloorStats[]
-  // Phase 1.9.2 지시 4(g)/5(a) 추가 통계
-  condenseCount: number       // 기본 응축 선택 횟수
-  greatCondenseCount: number  // 대응축 선택 횟수
-  combustionCount: number     // 화 연소 발동 횟수
+  // Phase 1.9.5 통계
+  condenseCount: number       // 응축 선택 횟수 (옹기가마 전용)
+  wildfireCount: number       // 번짐(들불) 특성 발동 횟수
+  snipeCount: number          // 저격(깎은 화살) 특성 발동 횟수
 }
 
 function createDeterministicState(floorIndex: number, rng: () => number): GameState {
@@ -230,17 +233,15 @@ function createDeterministicState(floorIndex: number, rng: () => number): GameSt
     attackCount: 0,
     enemyPhaseSwitch: false,
     condenseActive: false,
-    // Phase 1.9.2 신규 필드
+    // Phase 1.9.2: 연환 희소화
     yeonhwanUsed: false,
-    condenseType: null,
-    condenseMultiplier: 0,
-    condensedDamage: 0,
+    // Phase 1.9.5: 응축 확정판 (% 방식)
+    condensedMultiplier: 0,
     isLastAttack: floorConfig.maxPlays === 1,
-    sootCount: {},
-    combustionTriggered: false,
-    combustionBonus: 0,
-    penetrationTriggered: false,
-    penetrationIgnored: 0,
+    // Phase 1.9.5: 10종 융합 특성
+    lastTraitTriggered: undefined,
+    carryoverBurn: 0,
+    // Phase 1.9.4: 덱 재순환
     reshuffled: false,
   }
 }
@@ -252,10 +253,10 @@ export function simulateGreedyRun(seed: number): RunResult {
   let deathFloor: number | null = null
   let floorsCleared = 0
   const floorStats: FloorStats[] = []
-  // Phase 1.9.2 통계 카운터
+  // Phase 1.9.5 통계 카운터
   let condenseCount = 0
-  let greatCondenseCount = 0
-  let combustionCount = 0
+  let wildfireCount = 0
+  let snipeCount = 0
 
   let state = createDeterministicState(0, rng)
   let playerHp = PLAYER_BASE_HP
@@ -286,15 +287,11 @@ export function simulateGreedyRun(seed: number): RunResult {
         condenseActive: false,
         // Phase 1.9.2: 층 전환 시 연환 리셋
         yeonhwanUsed: false,
-        condenseType: null,
-        condenseMultiplier: 0,
-        condensedDamage: 0,
+        // Phase 1.9.5: 응축 확정판 리셋
+        condensedMultiplier: 0,
         isLastAttack: floorConfig.maxPlays === 1,
-        sootCount: {},
-        combustionTriggered: false,
-        combustionBonus: 0,
-        penetrationTriggered: false,
-        penetrationIgnored: 0,
+        lastTraitTriggered: undefined,
+        carryoverBurn: 0,
         reshuffled: false,
       }
     } else {
@@ -322,19 +319,19 @@ export function simulateGreedyRun(seed: number): RunResult {
           deathFloor = floor
           floorStats.push({ floor, attackCount, cleared: false })
         }
-        return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats, condenseCount, greatCondenseCount, combustionCount }
+        return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats, condenseCount, wildfireCount, snipeCount }
       }
 
       if (state.playsLeft <= 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, condenseCount, greatCondenseCount, combustionCount }
+        return { victory: false, floorsCleared, deathFloor, floorStats, condenseCount, wildfireCount, snipeCount }
       }
 
       if (state.playerHp <= 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, condenseCount, greatCondenseCount, combustionCount }
+        return { victory: false, floorsCleared, deathFloor, floorStats, condenseCount, wildfireCount, snipeCount }
       }
 
       // 층별 적 주/부 기운을 봇에 전달 (기운 전환 반영)
@@ -345,58 +342,56 @@ export function simulateGreedyRun(seed: number): RunResult {
       const currentSubEl = state.enemyPhaseSwitch
         ? floorConf.enemyPrimaryElement
         : floorConf.enemySubElement
-      // 적 피해감소 여부 (금 관통 가중치용)
+      // 적 피해감소 여부 (저격 가중치용)
       const hasDmgReduction = floorConf.eliteGimmickEffect?.type === 'damage-reduction'
-      // Phase 1.9.4: 연환 1회 제한 + 응축 저장형 + 마지막 공격 기회 봇에 전달
+
+      // Phase 1.9.5: 응축 % 방식 + 번짐 이월 피해 봇에 전달
       const selectedIds = greedySelectCards(
         state.hand,
         currentPrimaryEl,
         currentSubEl,
-        state.condenseType,
+        state.condensedMultiplier,
         state.yeonhwanUsed,
         state.isLastAttack,
         hasDmgReduction,
-        state.condensedDamage,
+        state.carryoverBurn,
       )
       if (selectedIds.length === 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, condenseCount, greatCondenseCount, combustionCount }
+        return { victory: false, floorsCleared, deathFloor, floorStats, condenseCount, wildfireCount, snipeCount }
       }
 
-      // Phase 1.9.4: 봇 응축 학습 — 저장형 전환
+      // Phase 1.9.5: 봇 응축 학습 — % 방식 (옹기가마 전용)
       // 조건: 응축 미활성 AND 마지막 공격 기회 아님 AND 공격 횟수 2회 이상 남음
       if (
-        state.condenseType === null &&
+        state.condensedMultiplier === 0 &&
         !state.isLastAttack &&
         state.playsLeft >= 2
       ) {
         const selectedCards = state.hand.filter(c => selectedIds.includes(c.id))
         const comboResult = judgeCombo(selectedCards)
         const condenseKind = getCondenseAvailability(comboResult.name, comboResult.finishingElement)
-        if (condenseKind !== null) {
-          // 저장형: 이번 피해 저장 → 다음 공격에 저장량×배율 가산
-          const currentDamage = calcExpectedDamage(
-            selectedCards,
-            currentPrimaryEl,
-            currentSubEl,
-            null,
-            state.yeonhwanUsed,
-            state.isLastAttack,
-            hasDmgReduction,
-          )
-          const condenseMult = condenseKind === 'basic' ? CONDENSE_V2_MULTIPLIER : GREAT_CONDENSE_MULTIPLIER
-          // 저장형 기대값: (0 + nextDamage + currentDamage × condenseMult) / 2
-          // nextDamage ≈ currentDamage (같은 조합 가정)
-          const condenseNextExpected = Math.round((currentDamage + currentDamage + Math.round(currentDamage * condenseMult)) / 2)
-          // 응축이 즉시 공격보다 유리하면 응축 선택
-          if (condenseNextExpected > currentDamage) {
-            if (condenseKind === 'basic') condenseCount++
-            else greatCondenseCount++
-            // Phase 1.9.4: 예상 피해 저장 (저장형 응축)
-            state = applyCondense(state, condenseKind, selectedIds, currentDamage)
-            // 응축 선택 후 다음 루프에서 실제 공격 수행 (이번 턴 건너뜀)
-            continue
+        if (condenseKind === 'great') {
+          // % 방식: 이번 피해를 포기하고 다음 공격에 (1 + mult) 배율 적용
+          const mult = getCondenseMultiplier(selectedCards.length)
+          if (mult > 0) {
+            const currentDamage = calcExpectedDamage(
+              selectedCards,
+              currentPrimaryEl,
+              currentSubEl,
+              0,
+              state.yeonhwanUsed,
+              state.isLastAttack,
+              hasDmgReduction,
+            )
+            // 응축 기대값: damage × (1 + mult) vs 즉시 공격 damage
+            // 1.2배 이상이면 항상 응축 선택 (기대값이 20% 이상 높음)
+            if (mult >= 1.2 && currentDamage > 0) {
+              condenseCount++
+              state = applyCondense(state, selectedIds)
+              continue
+            }
           }
         }
       }
@@ -404,12 +399,14 @@ export function simulateGreedyRun(seed: number): RunResult {
       state = playCards(state, selectedIds)
       attackCount++
       playerHp = state.playerHp
-      // 화 연소 발동 카운트
-      if (state.combustionTriggered) combustionCount++
+
+      // 특성 발동 통계
+      if (state.lastTraitTriggered === 'wildfire') wildfireCount++
+      if (state.lastTraitTriggered === 'snipe') snipeCount++
     }
   }
 
-  return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats, condenseCount, greatCondenseCount, combustionCount }
+  return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats, condenseCount, wildfireCount, snipeCount }
 }
 
 /**
@@ -443,14 +440,14 @@ export interface SimulationReport {
   floorAttacks: Record<number, DistStats>
   deathsByFloor: Record<number, number>
   csvLines: string[]
-  // Phase 1.9.2 추가 통계
+  // Phase 1.9.5 통계
   totalAttacks: number          // 전체 공격 횟수 (선택률 분모)
-  condenseTotal: number         // 기본 응축 선택 총 횟수
-  greatCondenseTotal: number    // 대응축 선택 총 횟수
-  combustionTotal: number       // 화 연소 발동 총 횟수
-  condenseRate: number          // 기본 응축 선택률 (%)
-  greatCondenseRate: number     // 대응축 선택률 (%)
-  combustionRate: number        // 연소 발동률 (%)
+  condenseTotal: number         // 응축 선택 총 횟수 (옹기가마 전용)
+  wildfireTotal: number         // 번짐 발동 총 횟수
+  snipeTotal: number            // 저격 발동 총 횟수
+  condenseRate: number          // 응축 선택률 (%)
+  wildfireRate: number          // 번짐 발동률 (%)
+  snipeRate: number             // 저격 발동률 (%)
 }
 
 export function runGreedySimulation(runs = 1000): SimulationReport {
@@ -458,19 +455,19 @@ export function runGreedySimulation(runs = 1000): SimulationReport {
   let oneShotClears = 0
   const floorAttackData: Record<number, number[]> = { 1: [], 2: [], 3: [], 4: [] }
   const deathsByFloor: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 }
-  // Phase 1.9.2 통계 집계
+  // Phase 1.9.5 통계 집계
   let totalAttacks = 0
   let condenseTotal = 0
-  let greatCondenseTotal = 0
-  let combustionTotal = 0
+  let wildfireTotal = 0
+  let snipeTotal = 0
 
   for (let i = 0; i < runs; i++) {
     const result = simulateGreedyRun(i * 12345 + 7777)
     if (result.victory) victories++
 
     condenseTotal += result.condenseCount
-    greatCondenseTotal += result.greatCondenseCount
-    combustionTotal += result.combustionCount
+    wildfireTotal += result.wildfireCount
+    snipeTotal += result.snipeCount
 
     for (const fs of result.floorStats) {
       if (fs.cleared) {
@@ -491,11 +488,11 @@ export function runGreedySimulation(runs = 1000): SimulationReport {
     floorAttacks[f] = calcStats(floorAttackData[f])
   }
 
-  // 선택률: 응축/연소는 전체 공격 기회 대비 (응축 선택도 1회 기회 소모)
-  const totalOpportunities = totalAttacks + condenseTotal + greatCondenseTotal
+  // 선택률: 응축은 공격 기회 소모 포함
+  const totalOpportunities = totalAttacks + condenseTotal
   const condenseRate = totalOpportunities > 0 ? (condenseTotal / totalOpportunities) * 100 : 0
-  const greatCondenseRate = totalOpportunities > 0 ? (greatCondenseTotal / totalOpportunities) * 100 : 0
-  const combustionRate = totalOpportunities > 0 ? (combustionTotal / totalOpportunities) * 100 : 0
+  const wildfireRate = totalOpportunities > 0 ? (wildfireTotal / totalOpportunities) * 100 : 0
+  const snipeRate = totalOpportunities > 0 ? (snipeTotal / totalOpportunities) * 100 : 0
 
   const csvLines = [
     'floor,mean_attacks,min_attacks,max_attacks,stddev_attacks,cleared_runs',
@@ -515,10 +512,10 @@ export function runGreedySimulation(runs = 1000): SimulationReport {
     csvLines,
     totalAttacks,
     condenseTotal,
-    greatCondenseTotal,
-    combustionTotal,
+    wildfireTotal,
+    snipeTotal,
     condenseRate,
-    greatCondenseRate,
-    combustionRate,
+    wildfireRate,
+    snipeRate,
   }
 }
