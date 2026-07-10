@@ -43,12 +43,27 @@ export interface HandJudgeResult {
   description: string
 }
 
+export type EnemyGimmickEffect =
+  | { type: 'seal-passives'; count: number }
+  | { type: 'counter-boost'; pct: number }
+  | { type: 'discard-punish'; damage: number }
+  | { type: 'damage-reduction'; pct: number }
+  | { type: 'rage'; counterMult: number }
+
 export interface FloorConfig {
   floor: number
   enemyName: string
   enemyHp: number
   counterDamage: number
   maxPlays: number
+  // Phase 1.7 신규
+  enemyPrimaryElement: Element
+  enemySubElement: Element
+  enemyGimmick?: string
+  eliteGimmickEffect?: EnemyGimmickEffect
+  bossExtraGimmick?: EnemyGimmickEffect
+  forcePhaseSwitch?: { hpPct: number }
+  heavyAttack?: { everyN: number; damage: number }
 }
 
 export interface GameState {
@@ -69,6 +84,9 @@ export interface GameState {
   // Phase 1.6 B — 부적술
   talismans: string[]       // 보유 부적 id 목록 (TalismanId[])
   amplifyActive: boolean    // 증폭부 발동 중 (다음 공격 ×2)
+  // Phase 1.7 신규
+  attackCount: number       // 내가 공격한 총 횟수 (강공 카운터)
+  enemyPhaseSwitch: boolean // 기운 전환 발동 여부 (1회만)
 }
 
 export type FortuneLevel = 'daegil' | 'gil' | 'pyeong' | 'hyung' | 'daehyung'

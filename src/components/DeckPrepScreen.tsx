@@ -77,7 +77,7 @@ export default function DeckPrepScreen({ hand, onStartBattle }: DeckPrepScreenPr
             버리기 {discardCount}/{maxDiscards}
           </span>
           <span style={{ color: '#D8CCB4', fontSize: '14px' }}>
-            출수 0/{maxPlays}
+            공격 0/{maxPlays}
           </span>
         </div>
       </div>
@@ -105,7 +105,7 @@ export default function DeckPrepScreen({ hand, onStartBattle }: DeckPrepScreenPr
             </span>
           </>
         ) : (
-          <span style={{ color: '#4A4540', fontSize: '13px' }}>카드를 선택하면 족보가 표시됩니다</span>
+          <span style={{ color: '#4A4540', fontSize: '13px' }}>카드를 선택하면 조합이 표시됩니다</span>
         )}
       </div>
 

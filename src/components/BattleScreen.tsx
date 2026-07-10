@@ -38,6 +38,7 @@ import { useDragAndDrop, checkFusionCompatibility } from '../hooks/useDragAndDro
 import PassiveSlot, { PassiveActivationBanner } from './PassiveSlot'
 import { usePassiveAnimation } from '../hooks/usePassiveAnimation'
 import type { Passive } from '../types/passive'
+import ComboGuide from './ComboGuide'
 
 const ELEMENT_LABELS: Record<string, string> = {
   mok: '木', hwa: '火', to: '土', geum: '金', su: '水',
@@ -792,32 +793,42 @@ const FLOOR_ENEMY_INFO: Record<number, {
   gimmickHint: string
   dialogue: string
   eliteBanner?: string
+  // Phase 1.7 신규
+  gimmickDialogue?: string  // 기믹 발동 시 대사
+  subElement?: Element
 }> = {
   1: {
     name: '고목령(枯木靈)',
     element: 'mok',
+    subElement: 'hwa',
     gimmickHint: '매 공격마다 체력을 15 회복한다',
     dialogue: '뿌리가... 어디였더라...',
   },
   2: {
     name: '잔화령(殘火靈)',
     element: 'hwa',
+    subElement: 'geum',
     gimmickHint: '반격이 더 강하지만 체력이 낮다',
-    dialogue: '꺼지기 전이... 가장 뜨겁다...',
+    dialogue: '이 불길, 그대도 함께 태워주마.',
+    gimmickDialogue: '이 불길, 그대도 함께 태워주마.',
   },
   3: {
     name: '정예: 고신',
     element: 'to',
-    gimmickHint: '패시브 슬롯 2칸을 봉인한다',
-    dialogue: '곁이라는 것을, 나는 모른다.',
-    eliteBanner: '고신 — 그대의 패시브 두 칸을 봉인한다',
+    subElement: 'su',
+    gimmickHint: '가호 슬롯 2칸을 봉인한다 | 체력 50% 시 기운 전환',
+    dialogue: '외로운 힘이 그대를 짓누른다.',
+    eliteBanner: '고신 — 그대의 가호 두 칸을 봉인한다',
+    gimmickDialogue: '외로운 힘이 그대를 짓누른다.',
   },
   4: {
     name: '보스: 명외자 대장',
     element: 'geum',
-    gimmickHint: '세 번째 공격 턴에 배율이 1로 고정된다',
-    dialogue: '왕께서 오신다. 너희의 팔자를 지우러.',
-    eliteBanner: '빈 시간 — 세 번째 공격은 배율이 1로 고정된다',
+    subElement: 'mok',
+    gimmickHint: '금강불괴: 피해 -30% | 폭풍격: 기운 전환 후 반격 강화',
+    dialogue: '이제부터 진짜 전투다.',
+    eliteBanner: '명외자 — 금강불괴, 피해를 30% 막아낸다',
+    gimmickDialogue: '이제부터 진짜 전투다.',
   },
 }
 
@@ -843,6 +854,8 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     isVictory,
     talismans,
     amplifyActive,
+    attackCount,
+    enemyPhaseSwitch,
     toggleCardSelect,
     playSelectedCards,
     discardSelectedCards,
@@ -861,7 +874,14 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
   const { getCssDuration, getDuration, playbackSpeed, togglePlaybackSpeed } = useGameContext()
 
   const floorConfig = FLOOR_CONFIGS[currentFloor - 1]
-  const enemyElement: Element = FLOOR_ENEMY_ELEMENTS[currentFloor] ?? 'mok'
+  // Phase 1.7: 기운 전환 반영한 현재 주/부 기운
+  const currentPrimaryElement: Element = enemyPhaseSwitch
+    ? floorConfig.enemySubElement
+    : floorConfig.enemyPrimaryElement
+  const currentSubElement: Element = enemyPhaseSwitch
+    ? floorConfig.enemyPrimaryElement
+    : floorConfig.enemySubElement
+  const enemyElement: Element = currentPrimaryElement
 
   // ---------- VFX 상태 ----------
   const [shakeActive, setShakeActive] = useState(false)
@@ -931,6 +951,22 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
   // D11: 영웅 전방 모션 상태
   const [heroCharge, setHeroCharge] = useState(false)
   const [spiritOrbs, setSpiritOrbs] = useState<string[]>([]) // 정령 구체 속성 목록
+
+  // Phase 1.7: 조합 도감 오버레이
+  const [showComboGuide, setShowComboGuide] = useState(false)
+
+  // Phase 1.7: 기운 전환 배너 표시
+  const [phaseSwitchBanner, setPhaseSwitchBanner] = useState(false)
+  const prevEnemyPhaseSwitch = useRef(false)
+
+  // Phase 1.7: 강공 배너
+  const [heavyAttackBanner, setHeavyAttackBanner] = useState(false)
+  const prevAttackCount = useRef(0)
+
+  // Phase 1.7: 반격 피해 팝업 (독립 비트)
+  const [counterPopup, setCounterPopup] = useState<{ value: number; id: number } | null>(null)
+  // Phase 1.7: 적 대사 (기믹 발동 시)
+  const [gimmickDialogue, setGimmickDialogue] = useState<string | null>(null)
 
   // 2번: 드래그 앤 드롭 훅 (합성 소환 인터랙션)
   const { dragState, handleDragStart, handleDragOver, handleDragEnd, handleDragCancel, rejectAnimCardId } = useDragAndDrop()
@@ -1202,16 +1238,28 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     prevEnemyHp.current = enemyHp
   }, [enemyHp])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 플레이어 HP 변화 → B8: 피격 플래시 + 사운드 / 회복음
+  // 플레이어 HP 변화 → B8: 피격 플래시 + 사운드 / 회복음 + Phase 1.7 반격 팝업
   useEffect(() => {
     if (playerHp < prevPlayerHp.current) {
+      const dmg = prevPlayerHp.current - playerHp
       audioManager.playerHit()
       // B8: 붉은 플래시 + 체력바 흔들림
       setHitFlash(true)
       setHpBarShake(true)
       setTimeout(() => setHitFlash(false), getDuration(300))
       setTimeout(() => setHpBarShake(false), getDuration(200))
-      console.log('[SFX] 플레이어 피격음', { damage: prevPlayerHp.current - playerHp, timestamp: Date.now() })
+      // Phase 1.7 CRIT-1 fix: 반격 피해 팝업 (동일 useEffect 내 통합)
+      setTimeout(() => {
+        setCounterPopup({ value: dmg, id: Date.now() })
+        setTimeout(() => setCounterPopup(null), getDuration(1000))
+      }, getDuration(200))
+      // 5-D: 반격 시 기믹 대사 (잔화령 등)
+      const floorInfo = FLOOR_ENEMY_INFO[currentFloor]
+      if (floorInfo?.gimmickDialogue && currentFloor <= 2) {
+        setGimmickDialogue(floorInfo.gimmickDialogue ?? floorInfo.dialogue)
+        setTimeout(() => setGimmickDialogue(null), getDuration(1500))
+      }
+      console.log('[SFX] 플레이어 피격음', { damage: dmg, timestamp: Date.now() })
     } else if (playerHp > prevPlayerHp.current) {
       audioManager.playHealSFX()
       console.log('[SFX] 회복음', { heal: playerHp - prevPlayerHp.current, timestamp: Date.now() })
@@ -1227,6 +1275,38 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     }
     prevPlaysLeft.current = playsLeft
   }, [playsLeft]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Phase 1.7: 기운 전환 감지 → 배너 표시
+  useEffect(() => {
+    if (enemyPhaseSwitch && !prevEnemyPhaseSwitch.current) {
+      setPhaseSwitchBanner(true)
+      // 5-D: 기믹 대사
+      const floorInfo = FLOOR_ENEMY_INFO[currentFloor]
+      if (floorInfo?.dialogue) {
+        setGimmickDialogue(floorInfo.dialogue)
+        setTimeout(() => setGimmickDialogue(null), getDuration(1500))
+      }
+      setTimeout(() => setPhaseSwitchBanner(false), getDuration(2000))
+    }
+    prevEnemyPhaseSwitch.current = enemyPhaseSwitch
+  }, [enemyPhaseSwitch]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Phase 1.7: 강공 감지 → 배너 표시
+  useEffect(() => {
+    const heavyConf = floorConfig.heavyAttack
+    if (heavyConf && attackCount > 0 && attackCount > prevAttackCount.current) {
+      if (attackCount % heavyConf.everyN === 0) {
+        setHeavyAttackBanner(true)
+        setShakeAmplitude(16)
+        setShakeActive(true)
+        setTimeout(() => setShakeActive(false), getDuration(300))
+        setTimeout(() => setHeavyAttackBanner(false), getDuration(2000))
+      }
+    }
+    prevAttackCount.current = attackCount
+  }, [attackCount]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Phase 1.7: counterPopup 로직은 위 playerHp useEffect에 통합됨 (CRIT-1 fix)
 
   // C10(b)(c): 층 입장 연출 + 정예/보스 기믹 선언 배너
   useEffect(() => {
@@ -1394,8 +1474,14 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     if (selectedCards.length === 0 || discardsLeft <= 0) return
     audioManager.cardDiscardSwish()
     console.log('[SFX] 카드 버리기 스윽', { count: selectedCards.length, timestamp: Date.now() })
+    // 5-D CRIT-2 fix: 탁수령(水) 버리기 징벌 대사 — 적 주 기운이 su인 층에서 발동
+    const fc = FLOOR_CONFIGS[currentFloor - 1]
+    if (fc?.enemyPrimaryElement === 'su' || (enemyPhaseSwitch && fc?.enemySubElement === 'su')) {
+      setGimmickDialogue('버린 패가 독이 되어 돌아온다.')
+      setTimeout(() => setGimmickDialogue(null), getDuration(1500))
+    }
     discardSelectedCards()
-  }, [selectedCards, discardsLeft, discardSelectedCards])
+  }, [selectedCards, discardsLeft, discardSelectedCards, currentFloor, enemyPhaseSwitch])
 
   const enemyHpPercent = Math.max(0, (enemyHp / enemyMaxHp) * 100)
   const playerHpPercent = Math.max(0, (playerHp / playerMaxHp) * 100)
@@ -1610,6 +1696,16 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           80%  { transform: translateX(2px); }
           100% { transform: translateX(0); }
         }
+        @keyframes counterPopup {
+          0%   { opacity: 1; transform: translateY(0); }
+          60%  { opacity: 1; transform: translateY(-20px); }
+          100% { opacity: 0; transform: translateY(-35px); }
+        }
+        @keyframes hpBarDanger {
+          0%   { opacity: 0.6; }
+          50%  { opacity: 1; }
+          100% { opacity: 0.6; }
+        }
       `}</style>
 
       {/* 오행연환 오버레이 */}
@@ -1619,6 +1715,9 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
       {showCycleChart && (
         <CycleChartOverlay onClose={() => setShowCycleChart(false)} enemyElement={enemyElement} />
       )}
+
+      {/* 3-B: 조합 도감 오버레이 */}
+      {showComboGuide && <ComboGuide onClose={() => setShowComboGuide(false)} />}
 
       {/* C10(b): 기믹 선언 배너 */}
       {gimmickBanner && (
@@ -1825,26 +1924,48 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
               </span>
             ))}
           </button>
-          {/* A4: 훈수 버튼 */}
-          <button
-            onClick={handleHint}
-            style={{
-              backgroundColor: 'transparent',
-              border: '1px solid #4A4540',
-              color: '#8A8580',
-              fontSize: '12px',
-              cursor: 'pointer',
-              letterSpacing: '0.08em',
-              width: '48px',
-              height: '48px',
-              padding: '0',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            훈수
-          </button>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            {/* A4: 훈수 버튼 */}
+            <button
+              onClick={handleHint}
+              style={{
+                backgroundColor: 'transparent',
+                border: '1px solid #4A4540',
+                color: '#8A8580',
+                fontSize: '12px',
+                cursor: 'pointer',
+                letterSpacing: '0.08em',
+                width: '40px',
+                height: '32px',
+                padding: '0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              훈수
+            </button>
+            {/* 3-B: 조합 도감 버튼 */}
+            <button
+              onClick={() => setShowComboGuide(true)}
+              style={{
+                backgroundColor: 'transparent',
+                border: '1px solid #4A4540',
+                color: '#6A6560',
+                fontSize: '14px',
+                cursor: 'pointer',
+                width: '32px',
+                height: '32px',
+                padding: '0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              title="조합 도감"
+            >
+              册
+            </button>
+          </div>
         </div>
 
         {/* 적 영역 (24vh) */}
@@ -1901,36 +2022,145 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
             </div>
           )}
 
-          {/* 적 이름 + 속성 뱃지 (C10 돌진 모션 적용) */}
+          {/* Phase 1.7: 기운 전환 배너 */}
+          {phaseSwitchBanner && (
+            <div style={{
+              position: 'absolute',
+              top: '4px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              backgroundColor: 'rgba(198,61,47,0.9)',
+              color: '#E8DCC4',
+              fontSize: '14px',
+              fontWeight: 'bold',
+              letterSpacing: '0.1em',
+              padding: '6px 16px',
+              borderRadius: '2px',
+              zIndex: 20,
+              whiteSpace: 'nowrap',
+              animation: `gimmickBannerIn ${getCssDuration(2000)} ease-out forwards`,
+              pointerEvents: 'none',
+            }}>
+              기운이 뒤집힌다!
+            </div>
+          )}
+
+          {/* Phase 1.7: 강공 배너 */}
+          {heavyAttackBanner && (
+            <div style={{
+              position: 'absolute',
+              top: phaseSwitchBanner ? '40px' : '4px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              backgroundColor: 'rgba(180,80,0,0.9)',
+              color: '#FFD98A',
+              fontSize: '14px',
+              fontWeight: 'bold',
+              letterSpacing: '0.1em',
+              padding: '6px 16px',
+              borderRadius: '2px',
+              zIndex: 20,
+              whiteSpace: 'nowrap',
+              animation: `gimmickBannerIn ${getCssDuration(2000)} ease-out forwards`,
+              pointerEvents: 'none',
+            }}>
+              격랑(激浪) — 강공!
+            </div>
+          )}
+
+          {/* 기믹 대사 (5-D) */}
+          {gimmickDialogue && (
+            <div style={{
+              position: 'absolute',
+              bottom: '4px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              color: '#C63D2F',
+              fontSize: '11px',
+              fontStyle: 'italic',
+              letterSpacing: '0.04em',
+              zIndex: 15,
+              whiteSpace: 'nowrap',
+              pointerEvents: 'none',
+            }}>
+              "{gimmickDialogue}"
+            </div>
+          )}
+
+          {/* 적 이름 + 주/부 기운 뱃지 (C10 돌진 모션 적용) */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
+            gap: '6px',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
             animation: enemyCharge ? `enemyCharge ${getCssDuration(500)} ease-out` : undefined,
           }}>
             <span style={{ color: '#D8CCB4', fontSize: '15px', letterSpacing: '0.1em' }}>
               {floorConfig.enemyName}
             </span>
-            {/* A1: 속성 한자 크게 + 한글 병기 */}
+            {/* 4-C: 주 기운 뱃지 */}
             <div
               style={{
-                backgroundColor: ELEMENT_BG_COLORS[enemyElement],
-                border: `1px solid ${ELEMENT_COLORS[enemyElement]}`,
-                color: ELEMENT_COLORS[enemyElement],
-                padding: '4px 10px',
+                backgroundColor: ELEMENT_BG_COLORS[currentPrimaryElement],
+                border: `1px solid ${ELEMENT_COLORS[currentPrimaryElement]}`,
+                color: ELEMENT_COLORS[currentPrimaryElement],
+                padding: '3px 8px',
                 letterSpacing: '0.05em',
                 borderRadius: '2px',
-                boxShadow: `0 0 8px ${ELEMENT_GLOW_COLORS[enemyElement]}, inset 0 0 4px ${ELEMENT_BG_COLORS[enemyElement]}`,
+                boxShadow: `0 0 6px ${ELEMENT_GLOW_COLORS[currentPrimaryElement]}`,
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 lineHeight: 1.1,
               }}
             >
-              <span style={{ fontSize: '18px', fontWeight: 'bold' }}>{ELEMENT_LABELS[enemyElement]}</span>
-              <span style={{ fontSize: '10px', opacity: 0.85 }}>{ELEMENT_KO[enemyElement]}</span>
+              <span style={{ fontSize: '15px', fontWeight: 'bold' }}>{ELEMENT_LABELS[currentPrimaryElement]}</span>
+              <span style={{ fontSize: '9px', opacity: 0.85 }}>{ELEMENT_KO[currentPrimaryElement]}</span>
+            </div>
+            {/* 4-C: 부 기운 뱃지 (작게) */}
+            <div
+              style={{
+                backgroundColor: 'rgba(42,38,32,0.7)',
+                border: `1px solid ${ELEMENT_COLORS[currentSubElement]}`,
+                color: ELEMENT_COLORS[currentSubElement],
+                padding: '2px 6px',
+                letterSpacing: '0.03em',
+                borderRadius: '2px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                lineHeight: 1.1,
+                opacity: 0.75,
+              }}
+            >
+              <span style={{ fontSize: '12px', fontWeight: 'bold' }}>{ELEMENT_LABELS[currentSubElement]}</span>
+              <span style={{ fontSize: '8px', opacity: 0.85 }}>{ELEMENT_KO[currentSubElement]}</span>
             </div>
           </div>
+
+          {/* 4-C: 3층+ 가호 1줄 텍스트 */}
+          {currentFloor >= 3 && floorConfig.enemyGimmick && (
+            <div style={{ fontSize: '10px', color: '#C63D2F', letterSpacing: '0.06em', textAlign: 'center' }}>
+              {currentFloor === 3
+                ? `${floorConfig.enemyGimmick}: 가호 2칸 봉인`
+                : `${floorConfig.enemyGimmick}: 피해 -30%`
+              }
+              {currentFloor === 4 && ' | 폭풍격: 기운 전환 후 반격 강화'}
+            </div>
+          )}
+
+          {/* 4-C: 강공 예고 */}
+          {floorConfig.heavyAttack && (
+            <div style={{ fontSize: '10px', color: '#D9A441', letterSpacing: '0.04em' }}>
+              {(() => {
+                const everyN = floorConfig.heavyAttack!.everyN
+                const dmg = floorConfig.heavyAttack!.damage
+                const remaining = everyN - (attackCount % everyN)
+                return `${remaining}번째 공격 후 — 강공 ${dmg}`
+              })()}
+            </div>
+          )}
 
           {/* 적 HP바 */}
           <div style={{ width: '100%', maxWidth: '240px' }}>
@@ -2355,7 +2585,54 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
         {/* 핸드+부적슬롯 외부 flex 컨테이너 닫기 */}
         </div>
 
-        {/* 버리기·출수 버튼 */}
+        {/* 5-B: 내 체력 하단 상시 노출 */}
+        <div style={{
+          padding: '4px 16px 2px',
+          backgroundColor: '#1C1710',
+          borderTop: '1px solid #2A2620',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+        }}>
+          <span style={{ color: '#6A6560', fontSize: '11px', letterSpacing: '0.06em', minWidth: '36px' }}>
+            체력 HP
+          </span>
+          <div style={{ flex: 1, position: 'relative', height: '12px', backgroundColor: '#2A2620', borderRadius: '2px', overflow: 'hidden' }}>
+            <div
+              style={{
+                width: `${playerHpPercent}%`,
+                height: '100%',
+                backgroundColor: '#C63D2F',
+                transition: `width 300ms`,
+                animation: playerHp <= 30 ? 'hpBarDanger 1.2s ease-in-out infinite' : undefined,
+              }}
+            />
+          </div>
+          <span style={{ color: '#D8CCB4', fontSize: '11px', minWidth: '40px', textAlign: 'right', letterSpacing: '0.04em' }}>
+            {playerHp}/{playerMaxHp}
+          </span>
+          {/* 5-A: 반격 피해 팝업 */}
+          {counterPopup && (
+            <span
+              key={counterPopup.id}
+              style={{
+                position: 'absolute',
+                right: '16px',
+                bottom: '20px',
+                color: '#FF7A5C',
+                fontSize: '16px',
+                fontWeight: 'bold',
+                pointerEvents: 'none',
+                animation: `counterPopup ${600}ms ease-out forwards`,
+                letterSpacing: '0.05em',
+              }}
+            >
+              -{counterPopup.value}
+            </span>
+          )}
+        </div>
+
+        {/* 버리기·공격 버튼 */}
         <div
           style={{
             height: '12vh',

@@ -11,7 +11,7 @@ import {
   calcGeukBonusMultiplier,
   detectYeokgeukPenalty,
 } from './pokerHandJudge'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS } from './balance'
+import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, SUB_GEUK_BONUS } from './balance'
 
 /**
  * C10(d): 오행 속성별 기믹 정의 (balance.ts 수치 변경 없이 새로운 로직 추가)
@@ -118,6 +118,8 @@ export function createInitialGameState(floorIndex = 0): GameState {
     floorsCleared: 0,
     talismans: [],
     amplifyActive: false,
+    attackCount: 0,
+    enemyPhaseSwitch: false,
   }
 }
 
@@ -136,8 +138,16 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
   const result = judgeHand(playedCards)
   let damage = result.totalScore
 
-  // Phase 1.6 A — 전투 규칙 3종
-  const floorEnemyEl = FLOOR_ENEMY_ELEMENTS[state.currentFloor] as Element | undefined
+  // Phase 1.7 — 기운 전환 반영: 전환 시 주/부 기운 교대
+  const primaryEl = (!state.enemyPhaseSwitch)
+    ? floorConfig.enemyPrimaryElement
+    : floorConfig.enemySubElement
+  const subEl = (!state.enemyPhaseSwitch)
+    ? floorConfig.enemySubElement
+    : floorConfig.enemyPrimaryElement
+
+  // Phase 1.6 A — 전투 규칙 3종 (floorEnemyEl = 현재 주 기운)
+  const floorEnemyEl = primaryEl as Element | undefined
 
   // A-1: [기운 충돌] 조합 내 서로 극하는 기운 공존 시 -30%
   const clashes = detectElementClash(playedCards)
@@ -145,21 +155,36 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     damage = Math.round(damage * 0.7)
   }
 
-  // A-2: [주 기운 원칙] 내 카드가 적 기운을 극할 때:
+  // A-2: [주 기운 원칙] 내 카드가 적 주 기운을 극할 때:
   //      주 기운이 극하면 +50%, 아닌 기운이 극하면 +10%
+  let mainGeukApplied = false
   if (floorEnemyEl) {
     const geukCalc = calcGeukBonusMultiplier(playedCards, floorEnemyEl)
     if (geukCalc.multiplier !== 1.0) {
       damage = Math.round(damage * geukCalc.multiplier)
+      mainGeukApplied = true
     }
   }
 
-  // A-3: [적의 반극] 적 기운이 내 주 기운을 이기면 최종 피해 -30%
+  // Phase 1.7 신규: 부 기운 극 보너스 +25% (주 기운 극 적용 안 된 경우만)
+  if (!mainGeukApplied && subEl) {
+    const hasSubGeuk = playedCards.some(c => GEUK_MAP[c.element] === subEl)
+    if (hasSubGeuk) {
+      damage = Math.round(damage * SUB_GEUK_BONUS)
+    }
+  }
+
+  // A-3: [적의 반극] 적 주 기운이 내 주 기운을 이기면 최종 피해 -30%
   if (floorEnemyEl) {
     const yeokgeuk = detectYeokgeukPenalty(playedCards, [floorEnemyEl])
     if (yeokgeuk.hasPenalty) {
       damage = Math.round(damage * 0.7)
     }
+  }
+
+  // Phase 1.7: 4층 보스 금강불괴 — 받는 피해 -30%
+  if (floorConfig.eliteGimmickEffect?.type === 'damage-reduction' && state.currentFloor >= 3) {
+    damage = Math.round(damage * (1 - floorConfig.eliteGimmickEffect.pct))
   }
 
   // Phase 1.6 B — 증폭부: 다음 공격 ×2
@@ -188,12 +213,28 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     counterDamage = Math.round(counterDamage * counterBoostGimmick.pct)
   }
 
+  // Phase 1.7: 강공(heavyAttack) 시스템 — 3~4층
+  const newAttackCount = state.attackCount + 1
+  const heavyAttackConf = floorConfig.heavyAttack
+  let heavyAttackDamage = 0
+  if (heavyAttackConf && newAttackCount % heavyAttackConf.everyN === 0) {
+    heavyAttackDamage = heavyAttackConf.damage
+  }
+
+  // Phase 1.7: 격노(rage) 보스 효과 — 반격 배율 강화 (체력 전환 후)
+  const rageEffect = floorConfig.bossExtraGimmick?.type === 'rage'
+    ? floorConfig.bossExtraGimmick
+    : null
+  if (rageEffect && state.enemyPhaseSwitch) {
+    counterDamage = Math.round(counterDamage * rageEffect.counterMult)
+  }
+
   // lifesteal: 출수한 카드 중 lifesteal 카드가 있으면 데미지의 30%를 HP 회복
   const hasLifesteal = playedCards.some(c => c.lifesteal === true)
   const lifestealHeal = hasLifesteal ? Math.floor(damage * 0.3) : 0
   const newPlayerHp = Math.min(
     state.playerMaxHp,
-    Math.max(0, state.playerHp - counterDamage + lifestealHeal)
+    Math.max(0, state.playerHp - counterDamage - heavyAttackDamage + lifestealHeal)
   )
   const newPlaysLeft = state.playsLeft - 1
 
@@ -217,6 +258,12 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
   const floorCleared = newEnemyHp <= 0
   const playerDead = newPlayerHp <= 0
   const outOfPlays = newPlaysLeft <= 0 && newEnemyHp > 0
+
+  // Phase 1.7: 기운 전환 판정 (3~4층, 1회만)
+  const phaseSwitchThreshold = floorConfig.forcePhaseSwitch?.hpPct ?? null
+  const newEnemyPhaseSwitch =
+    state.enemyPhaseSwitch ||
+    (phaseSwitchThreshold !== null && !floorCleared && newEnemyHp <= state.enemyMaxHp * phaseSwitchThreshold)
 
   let phase = state.phase
   let isVictory = state.isVictory
@@ -248,6 +295,8 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     isVictory,
     floorsCleared,
     amplifyActive: false,  // 증폭부 1회 소모
+    attackCount: newAttackCount,
+    enemyPhaseSwitch: newEnemyPhaseSwitch,
   }
 }
 
@@ -378,5 +427,7 @@ export function advanceToNextFloor(state: GameState): GameState {
     discardsLeft: BASE_DISCARDS,
     playsLeft: floorConfig.maxPlays,
     phase: 'select',
+    attackCount: 0,
+    enemyPhaseSwitch: false,
   }
 }

@@ -85,7 +85,7 @@ export default function FloorRewardScreen({ currentFloor, onProceed }: FloorRewa
             {nextFloor}층 — {nextConfig.enemyName}
           </div>
           <div style={{ color: '#6A6560', fontSize: '12px', marginTop: '2px' }}>
-            체력 {nextConfig.enemyHp} · 반격 {nextConfig.counterDamage} · 출수 {nextConfig.maxPlays}회
+            체력 {nextConfig.enemyHp} · 반격 {nextConfig.counterDamage} · 공격 {nextConfig.maxPlays}회
           </div>
         </div>
       )}

@@ -5,6 +5,9 @@
 
 import type { FloorConfig } from '../types/game'
 
+// Phase 1.7 부 기운 극 보너스 배율
+export const SUB_GEUK_BONUS = 1.25
+
 /**
  * 밸런스 튜닝 v3.0 (2026-07-10) — Phase 1.6 새 규칙 3종 반영 재조정
  *
@@ -33,10 +36,58 @@ import type { FloorConfig } from '../types/game'
  *  - counterDamage는 유지 (플레이어 HP 압박용)
  */
 export const FLOOR_CONFIGS: FloorConfig[] = [
-  { floor: 1, enemyName: '변질 오행',          enemyHp: 2800,  counterDamage: 1,  maxPlays: 4 },
-  { floor: 2, enemyName: '변질 오행 혼성',      enemyHp: 3800,  counterDamage: 1,  maxPlays: 4 },
-  { floor: 3, enemyName: '정예: 고신',          enemyHp: 4800,  counterDamage: 2,  maxPlays: 5 },
-  { floor: 4, enemyName: '보스: 명외자 대장',   enemyHp: 5000,  counterDamage: 7,  maxPlays: 6 },
+  {
+    floor: 1,
+    enemyName: '변질 오행',
+    enemyHp: 2800,
+    counterDamage: 1,
+    maxPlays: 4,
+    enemyPrimaryElement: 'mok',
+    enemySubElement: 'hwa',
+    // 잡몹: 기운 전환/강공 없음
+  },
+  {
+    floor: 2,
+    enemyName: '변질 오행 혼성',
+    enemyHp: 3800,
+    counterDamage: 1,
+    maxPlays: 4,
+    enemyPrimaryElement: 'hwa',
+    enemySubElement: 'geum',
+    // 잡몹: 기운 전환/강공 없음
+  },
+  {
+    floor: 3,
+    enemyName: '정예: 고신',
+    // Phase 1.7 밸런스 조정: HP 4800→4500 (3층 공격 횟수 3~4회 커브 유지)
+    enemyHp: 4500,
+    counterDamage: 2,
+    maxPlays: 5,
+    enemyPrimaryElement: 'to',
+    enemySubElement: 'su',
+    enemyGimmick: '홀로 됨',
+    eliteGimmickEffect: { type: 'seal-passives', count: 2 },
+    forcePhaseSwitch: { hpPct: 0.5 },
+    // Phase 1.7 밸런스 조정: damage 15→8 (공격횟수 커브 유지, 과도한 순삭 방지)
+    heavyAttack: { everyN: 3, damage: 8 },
+  },
+  {
+    floor: 4,
+    enemyName: '보스: 명외자 대장',
+    // Phase 1.7 밸런스 조정: HP 5000→3800 (금강불괴 -30% → 실질 HP ~5400, counterDamage 7→4)
+    enemyHp: 3800,
+    counterDamage: 4,
+    maxPlays: 6,
+    enemyPrimaryElement: 'geum',
+    enemySubElement: 'mok',
+    enemyGimmick: '금강불괴',
+    eliteGimmickEffect: { type: 'damage-reduction', pct: 0.3 },
+    // Phase 1.7 밸런스 조정: counterMult 3→1.5 (격노 전환 후 반격 6, 긴장감 유지)
+    bossExtraGimmick: { type: 'rage', counterMult: 1.5 },
+    forcePhaseSwitch: { hpPct: 0.5 },
+    // Phase 1.7 밸런스 조정: damage 20→8 (총 강공 누적 억제)
+    heavyAttack: { everyN: 2, damage: 8 },
+  },
 ]
 
 export const PLAYER_BASE_HP = 100

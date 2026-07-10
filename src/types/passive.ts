@@ -19,6 +19,7 @@ export interface Passive {
   effect: string        // 1줄 효과 설명
   rarity: PassiveRarity
   element?: string      // 관련 오행 (있을 시)
+  sipsong: string       // 십성 코드: 'sikshin' | 'bigyeon' | 'geoptae' | 'sanggwan' | 'pyeonjae' | 'jeongjae' | 'pyeonin'
 }
 
 /**
@@ -31,19 +32,22 @@ export const PASSIVE_POOL: Passive[] = [
     name: '식신(食神)',
     effect: '기운 잇기 조합 시 피해 +20%',
     rarity: 'common',
+    sipsong: 'sikshin',
   },
   {
     id: 'bigyeon',
     name: '비견(比肩)',
     effect: '같은 기운 모으기 3 이상 시 적 반격 -1',
     rarity: 'common',
+    sipsong: 'bigyeon',
   },
   {
     id: 'geoptae',
     name: '겁재(劫財)',
-    effect: '나무 기운 카드 포함 시 첫 출수 피해 +30%',
+    effect: '나무 기운 카드 포함 시 첫 공격 피해 +30%',
     rarity: 'rare',
     element: 'mok',
+    sipsong: 'geoptae',
   },
   {
     id: 'sanggwan',
@@ -51,6 +55,7 @@ export const PASSIVE_POOL: Passive[] = [
     effect: '불 기운 카드 2장 이상 시 피해 ×1.5',
     rarity: 'rare',
     element: 'hwa',
+    sipsong: 'sanggwan',
   },
   {
     id: 'pyeonjae',
@@ -58,6 +63,7 @@ export const PASSIVE_POOL: Passive[] = [
     effect: '쇠 기운으로 이기는 기운 발동 시 체력 3 회복',
     rarity: 'rare',
     element: 'geum',
+    sipsong: 'pyeonjae',
   },
   {
     id: 'jeongjae',
@@ -65,13 +71,15 @@ export const PASSIVE_POOL: Passive[] = [
     effect: '물 기운 5장 이상 시 오행연환 배율 +2',
     rarity: 'hero',
     element: 'su',
+    sipsong: 'jeongjae',
   },
   {
     id: 'pyeonin',
     name: '편인(偏印)',
-    effect: '흙 기운 결집 시 마지막 출수 피해 +50%',
+    effect: '흙 기운 결집 시 마지막 공격 피해 +50%',
     rarity: 'hero',
     element: 'to',
+    sipsong: 'pyeonin',
   },
 ]
 

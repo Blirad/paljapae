@@ -1,9 +1,9 @@
 /**
  * 팔자전 — 탐욕 봇 (Greedy Bot)
- * Phase 1.6 D: 새 규칙 3종 반영
- *  - 기운 충돌 -30% (충돌 조합 회피)
- *  - 주 기운 원칙 +50%/+10% (주 기운 극 우선)
- *  - 적의 반극 -30% (반극 조합 회피)
+ * Phase 1.7 업데이트: 신규 로직 3종 반영
+ *  - 적 사주(주/부 기운) 반영한 극 보너스(+25%)
+ *  - 강공(heavyAttack) 피해 누적
+ *  - 가호 봉인(seal-passives) 효과 시뮬
  *
  * 목표:
  *  - 1층 평균 격파 공격 횟수: 2회 (±0.5)
@@ -17,6 +17,7 @@ import {
   detectElementClash,
   calcGeukBonusMultiplier,
   detectYeokgeukPenalty,
+  GEUK_MAP,
 } from './pokerHandJudge'
 import type { Card, Element, GameState } from '../types/game'
 import {
@@ -25,7 +26,7 @@ import {
   playCards,
   FLOOR_ENEMY_ELEMENTS,
 } from './paljajeonEngine'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS } from './balance'
+import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, SUB_GEUK_BONUS } from './balance'
 
 /**
  * 조합(combination) 유틸: n장 중 k장 뽑기
@@ -40,11 +41,13 @@ function combinations<T>(arr: T[], k: number): T[][] {
 }
 
 /**
- * Phase 1.6 D — 새 규칙 3종을 반영한 예상 데미지 계산
+ * Phase 1.7 — 새 규칙 반영 예상 데미지 계산
+ * (주 기운 극 +50%/+10%, 부 기운 극 +25%, 충돌 -30%, 반극 -30%)
  */
 export function calcExpectedDamage(
   combo: Card[],
-  enemyElement: Element,
+  enemyPrimaryElement: Element,
+  enemySubElement?: Element,
 ): number {
   const result = judgeHand(combo)
   let damage = result.totalScore
@@ -56,13 +59,23 @@ export function calcExpectedDamage(
   }
 
   // A-2: 주 기운 원칙 극 보너스 (+50% or +10%)
-  const geukCalc = calcGeukBonusMultiplier(combo, enemyElement)
+  const geukCalc = calcGeukBonusMultiplier(combo, enemyPrimaryElement)
+  let mainGeukApplied = false
   if (geukCalc.multiplier !== 1.0) {
     damage = Math.round(damage * geukCalc.multiplier)
+    mainGeukApplied = true
+  }
+
+  // Phase 1.7: 부 기운 극 보너스 +25% (주 기운 극 미적용 시만)
+  if (!mainGeukApplied && enemySubElement) {
+    const hasSubGeuk = combo.some(c => GEUK_MAP[c.element] === enemySubElement)
+    if (hasSubGeuk) {
+      damage = Math.round(damage * SUB_GEUK_BONUS)
+    }
   }
 
   // A-3: 적의 반극 -30%
-  const yeokgeuk = detectYeokgeukPenalty(combo, [enemyElement])
+  const yeokgeuk = detectYeokgeukPenalty(combo, [enemyPrimaryElement])
   if (yeokgeuk.hasPenalty) {
     damage = Math.round(damage * 0.7)
   }
@@ -71,10 +84,10 @@ export function calcExpectedDamage(
 }
 
 /**
- * 탐욕 봇 핸드 선택 (Phase 1.6 D — 새 규칙 반영)
+ * 탐욕 봇 핸드 선택 (Phase 1.7 — 주/부 기운 반영)
  * enemyElement 없으면 기존 judgeHand totalScore만 사용 (하위호환)
  */
-export function greedySelectCards(hand: Card[], enemyElement?: Element): string[] {
+export function greedySelectCards(hand: Card[], enemyPrimaryElement?: Element, enemySubElement?: Element): string[] {
   if (hand.length === 0) return []
 
   let bestIds: string[] = []
@@ -84,8 +97,8 @@ export function greedySelectCards(hand: Card[], enemyElement?: Element): string[
   for (let k = 1; k <= maxCards; k++) {
     const combos = combinations(hand, k)
     for (const combo of combos) {
-      const score = enemyElement
-        ? calcExpectedDamage(combo, enemyElement)
+      const score = enemyPrimaryElement
+        ? calcExpectedDamage(combo, enemyPrimaryElement, enemySubElement)
         : judgeHand(combo).totalScore
       if (
         score > bestScore ||
@@ -148,6 +161,8 @@ function createDeterministicState(floorIndex: number, rng: () => number): GameSt
     floorsCleared: 0,
     talismans: [],
     amplifyActive: false,
+    attackCount: 0,
+    enemyPhaseSwitch: false,
   }
 }
 
@@ -183,6 +198,8 @@ export function simulateGreedyRun(seed: number): RunResult {
         phase: 'select',
         talismans: [],
         amplifyActive: false,
+        attackCount: 0,
+        enemyPhaseSwitch: false,
       }
     } else {
       state = { ...state, playerHp }
@@ -224,9 +241,15 @@ export function simulateGreedyRun(seed: number): RunResult {
         return { victory: false, floorsCleared, deathFloor, floorStats }
       }
 
-      // Phase 1.6 D: 층별 적 기운을 봇에 전달
-      const enemyEl = (FLOOR_ENEMY_ELEMENTS[state.currentFloor] as Element | undefined) ?? 'mok'
-      const selectedIds = greedySelectCards(state.hand, enemyEl)
+      // Phase 1.7: 층별 적 주/부 기운을 봇에 전달 (기운 전환 반영)
+      const floorConf = FLOOR_CONFIGS[state.currentFloor - 1]
+      const currentPrimaryEl = state.enemyPhaseSwitch
+        ? floorConf.enemySubElement
+        : floorConf.enemyPrimaryElement
+      const currentSubEl = state.enemyPhaseSwitch
+        ? floorConf.enemyPrimaryElement
+        : floorConf.enemySubElement
+      const selectedIds = greedySelectCards(state.hand, currentPrimaryEl, currentSubEl)
       if (selectedIds.length === 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })

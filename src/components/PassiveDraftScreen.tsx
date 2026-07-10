@@ -172,7 +172,7 @@ export default function PassiveDraftScreen({ onComplete, seed }: PassiveDraftScr
           marginBottom: '8px',
         }}
       >
-        패시브 선택
+        가호 선택
       </h2>
       <p
         className="text-center"
