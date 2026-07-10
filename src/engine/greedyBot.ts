@@ -77,10 +77,11 @@ export function calcExpectedDamage(
   }
 
   // Phase 1.9 — 토 응축 적립: 봇이 응축을 기대값으로 평가
-  // 응축 발동 조건: 토 모으기 또는 일군 밭만
+  // 응축 발동 조건: 토 모으기, 일군 밭, 옹기가마 (3종)
   const isToCondenseTrigger = finishEl === 'to' && (
     (result.name?.includes('흙 모으기')) ||  // 토 모으기
-    result.name === '일군 밭'                 // 일군 밭 (벼리는)
+    result.name === '일군 밭' ||              // 일군 밭 (벼리는)
+    result.name === '옹기가마'                // 옹기가마 (낳는) — Phase 1.9 추가
   )
 
   // 토 조합의 즉시 피해 감소는 별도 로직 (상황별)
@@ -88,8 +89,9 @@ export function calcExpectedDamage(
   if (isToCondenseTrigger && !condenseActive) {
     // 토 마무리: 즉시 ×0.6
     damage = Math.round(damage * 0.6)
-    // 봇은 다음 턴 응축 보상을 보수적으로 기대값 +40% 반영
-    damage = Math.round(damage * 1.4)  // 0.6 × 1.4 = 0.84
+    // 2턴 시야 평가: 이번 턴 ×0.6 + 다음 턴 ×1.6 = 합산 2.2, 평균 1.1
+    // 보정 계수 = 1.1 / 0.6 ≈ 1.83 → 응축 가치 적정 반영
+    damage = Math.round(damage * 1.83)  // 0.6 × 1.83 ≈ 1.1
   }
 
   return damage

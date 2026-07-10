@@ -124,7 +124,7 @@ describe('Phase 1.9 조합 판정: 기운 모으기', () => {
 })
 
 describe('Phase 1.9 조합 판정: 융합', () => {
-  describe('낳는 조합 (배율 ×2.5)', () => {
+  describe('낳는 조합 (배율 ×3.0)', () => {
     it('목 + 화 → 들불(火)', () => {
       const cards = [
         makeCard('mok', 'yang', 5),
@@ -132,7 +132,7 @@ describe('Phase 1.9 조합 판정: 융합', () => {
       ]
       const result = judgeHand(cards)
       expect(result.rank).toBe('fusion-birth')
-      expect(result.multiplier).toBe(2.5)
+      expect(result.multiplier).toBe(3.0)
       expect(result.finishingElement).toBe('hwa')
       expect(isFusionCombo(cards)).toBe(true)
     })

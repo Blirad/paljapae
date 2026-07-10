@@ -68,20 +68,20 @@ describe('Phase 1.9 QA — 새 조합 체계 + 응축 + 극/반극', () => {
   })
 
   describe('3. 융합 낳는/벼리는 조합 10종 정의 + 타격 속성', () => {
-    it('낳는: 목+화 → 들불(火) ×2.5', () => {
+    it('낳는: 목+화 → 들불(火) ×3.0', () => {
       const fusion = findFusionCombo('mok', 'hwa')
       expect(fusion?.name).toBe('들불')
       expect(fusion?.result).toBe('hwa')
-      expect(fusion?.multiplier).toBe(2.5)
+      expect(fusion?.multiplier).toBe(3.0)
       const result = judgeCombo([makeCard('mok', 'yang', 5), makeCard('hwa', 'yin', 6)])
       expect(result.finishingElement).toBe('hwa')
     })
 
-    it('낳는: 화+토 → 옹기가마(土) ×2.5', () => {
+    it('낳는: 화+토 → 옹기가마(土) ×3.0', () => {
       const fusion = findFusionCombo('hwa', 'to')
       expect(fusion?.name).toBe('옹기가마')
       expect(fusion?.result).toBe('to')
-      expect(fusion?.multiplier).toBe(2.5)
+      expect(fusion?.multiplier).toBe(3.0)
     })
 
     it('낳는: 토+금 → 광맥(金) ×2.5', () => {
@@ -190,7 +190,7 @@ describe('Phase 1.9 QA — 새 조합 체계 + 응축 + 극/반극', () => {
       // 같은 카드 값으로 비교
       const fusion = judgeCombo([makeCard('mok', 'yang', 5), makeCard('hwa', 'yin', 5)])
       expect(fusion.type).toBe('fusion-birth')
-      expect(fusion.multiplier).toBe(2.5)
+      expect(fusion.multiplier).toBe(3.0)
 
       const gather = judgeCombo([makeCard('mok', 'yang', 5), makeCard('mok', 'yin', 5)])
       expect(gather.type).toBe('gather')

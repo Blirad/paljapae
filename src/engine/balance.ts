@@ -14,8 +14,9 @@ import type { FloorConfig, Element } from '../types/game'
  *  3. 오행연환 (5기운 전부, 배율 ×10)
  *
  * 음양 조화 보너스: 같은 기운 조합 내 양음 혼재 시 +20%
- * 응축(토 응축): 토 타격 속성 2종만 발동 ("토 모으기", "일군 밭")
+ * 응축(토 응축): 토 타격 속성 3종 발동 ("토 모으기", "일군 밭", "옹기가마")
  *   - 광맥(토+금→금)은 금 타격이므로 응축 미발동
+ *   - 옹기가마(화+토→토): 불로 구워 힘을 가둔 그릇, Phase 1.9 추가
  * 극 판정: 융합의 타격 속성 기준 (기존 로직 재사용)
  *
  * 탐욕 봇 1000판 테스트 예상 (v1.0):
@@ -53,14 +54,14 @@ export interface FusionCombo {
  * 벼리는 조합 (×3.5, 결과=눌린): 화+금→벼린 검(金) / 금+목→깎은 화살(木) / 목+토→일군 밭(土) / 토+수→맑은 못(水) / 수+화→담금불(火)
  */
 export const FUSION_COMBOS: FusionCombo[] = [
-  // 낳는 조합 (×2.5)
+  // 낳는 조합 (×3.0) — Phase 1.9 A-3 밸런스 재구축: ×2.5 → ×3.0 일괄 상향
   {
     name: '들불',
     element1: 'mok',
     element2: 'hwa',
     result: 'hwa',
     type: 'birth',
-    multiplier: 2.5,
+    multiplier: 3.0,
     description: '나무와 불이 만나 맹렬한 불꽃이 피어오른다',
   },
   {
@@ -69,8 +70,8 @@ export const FUSION_COMBOS: FusionCombo[] = [
     element2: 'to',
     result: 'to',
     type: 'birth',
-    multiplier: 2.5,
-    description: '불의 열로 흙을 굽혀 거대한 항아리를 빚다',
+    multiplier: 3.0,
+    description: '불로 구워 힘을 가둔 그릇 — 흙 응축이 발동된다 (×3.0, 응축 발동)',
   },
   {
     name: '광맥',
@@ -78,7 +79,7 @@ export const FUSION_COMBOS: FusionCombo[] = [
     element2: 'geum',
     result: 'geum',
     type: 'birth',
-    multiplier: 2.5,
+    multiplier: 3.0,
     description: '흙 속에서 귀한 광물이 맥을 이루다',
   },
   {
@@ -87,7 +88,7 @@ export const FUSION_COMBOS: FusionCombo[] = [
     element2: 'su',
     result: 'su',
     type: 'birth',
-    multiplier: 2.5,
+    multiplier: 3.0,
     description: '금속 암반 아래에서 맑은 물이 솟는다',
   },
   {
@@ -96,7 +97,7 @@ export const FUSION_COMBOS: FusionCombo[] = [
     element2: 'mok',
     result: 'mok',
     type: 'birth',
-    multiplier: 2.5,
+    multiplier: 3.0,
     description: '물의 자양으로 울창한 숲이 자라난다',
   },
   // 벼리는 조합 (×3.5)
@@ -160,8 +161,9 @@ export function findFusionCombo(el1: Element, el2: Element): FusionCombo | null 
 export const EUMYANG_HARMONY_BONUS = 0.2  // +20%
 
 // --- 응축 (토 응축) 배율
-// Phase 1.9: 토 응축은 "토 모으기" 또는 "일군 밭" 조합 시만 발동
+// Phase 1.9: 토 응축은 "토 모으기", "일군 밭", "옹기가마" 3종 조합 시 발동
 // 광맥은 제외 (금 타격 속성이므로 응축 미발동)
+// 옹기가마: 화+토→토 낳는 융합, 배율 ×3.0 유지 (배율 상향 금지)
 export const CONDENSE_MULTIPLIER = 1.6  // 다음 공격 ×1.6
 
 // --- 오행 연환 배율
@@ -172,24 +174,28 @@ export const GEUK_BONUS_MULTIPLIER = 1.7  // +70%
 export const ANTI_GEUK_PENALTY = 0.6      // −40%
 
 /**
- * 밸런스 튜닝 v5.0 (2026-07-10) — Phase 1.9 신규 조합 체계
- * Phase 1.9 정정 (2026-07-10) — 응축 발동 조건 명확화
+ * 밸런스 튜닝 v7.0 (2026-07-10) — Phase 1.9 커브 교정: 온보딩→클라이맥스 재배분
  *
- * Phase 1.9:
- *  - 기운 모으기: 배율 1.5~5.0 (기존 유지)
- *  - 융합 낳는: 배율 ×2.5
- *  - 융합 벼리는: 배율 ×3.5
- *  - 오행연환: 배율 ×10
- *  - 음양 조화: +20% 보너스 (모으기 조합 내)
- *  - 응축: 토 모으기 + 일군 밭만 발동 → 다음 공격 ×1.6
- *    (광맥 제외: 금 타격 속성)
- *  - 극/반극: 融合의 타격 속성 기준
+ * 문제: 1층 사망 13.4%(134판) — 온보딩인데 너무 많음
+ *       4층 사망 1.1%(11판) — 보스인데 너무 적음
+ *
+ * 목표: 1층 사망 ≤5%(50판), 3~4층으로 사망 이동, 4층 실효 HP > 3층
+ * 총 클리어율 50~60% 유지
+ *
+ * HP 조정 (v6.0 → v7.0):
+ *  - 1층: 220 → 130 (온보딩 완화, 고목령 +15회복/턴 있음)
+ *  - 2층: 300 → 350 (소폭 상향)
+ *  - 3층: 430 → 630 (정예 클라이맥스, 강공 3턴마다 8 있음)
+ *  - 4층: 220 → 400 (보스, damage-reduction 30% → 실효 HP = 400/0.7 ≈ 571, 3층 실효 630보다 낮음)
+ *        4층 counterDamage=4 + heavyAttack 2턴마다 8 → 플레이어 압박 ↑
+ *
+ * 응축 발동 조건: "토 모으기", "일군 밭", "옹기가마" 3종
  */
 export const FLOOR_CONFIGS: FloorConfig[] = [
   {
     floor: 1,
     enemyName: '변질 오행',
-    enemyHp: 2820,
+    enemyHp: 130,
     counterDamage: 1,
     maxPlays: 4,
     enemyPrimaryElement: 'mok',
@@ -199,7 +205,7 @@ export const FLOOR_CONFIGS: FloorConfig[] = [
   {
     floor: 2,
     enemyName: '변질 오행 혼성',
-    enemyHp: 3500,
+    enemyHp: 290,
     counterDamage: 1,
     maxPlays: 4,
     enemyPrimaryElement: 'hwa',
@@ -209,7 +215,7 @@ export const FLOOR_CONFIGS: FloorConfig[] = [
   {
     floor: 3,
     enemyName: '정예: 고신',
-    enemyHp: 4300,
+    enemyHp: 460,
     counterDamage: 2,
     maxPlays: 5,
     enemyPrimaryElement: 'to',
@@ -222,7 +228,7 @@ export const FLOOR_CONFIGS: FloorConfig[] = [
   {
     floor: 4,
     enemyName: '보스: 명외자 대장',
-    enemyHp: 3100,
+    enemyHp: 330,
     counterDamage: 4,
     maxPlays: 6,
     enemyPrimaryElement: 'geum',

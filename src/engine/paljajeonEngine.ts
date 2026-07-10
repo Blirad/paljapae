@@ -214,10 +214,11 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
   // 주의: 토 타격 속성 3가지만 응축 발동
   //   1. 토 모으기 (토 기운 모으기 조합)
   //   2. 일군 밭 (목+토→토 벼리는 융합)
-  //   3. [제거됨] 광맥 — 실제로는 금 타격이므로 제외
+  //   3. 옹기가마 (화+토→토 낳는 융합) — 불로 구워 힘을 가둔 그릇, Phase 1.9 추가
   const isToCondenseTrigger = finishEl === 'to' && (
     (result.name?.includes('흙 모으기')) ||  // 토 모으기
-    result.name === '일군 밭'                 // 일군 밭 (벼리는)
+    result.name === '일군 밭' ||              // 일군 밭 (벼리는)
+    result.name === '옹기가마'                // 옹기가마 (낳는) — 응축 발동 3번째
   )
 
   if (isToCondenseTrigger && !state.condenseActive) {

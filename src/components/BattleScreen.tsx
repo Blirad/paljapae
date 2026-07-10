@@ -30,7 +30,7 @@ import { FLOOR_CONFIGS, GEUK_BONUS_MULTIPLIER } from '../engine/balance'
 // Phase 1.7: FLOOR_ENEMY_ELEMENTS는 floorConfig.enemyPrimaryElement로 대체됨
 import { useGameContext } from '../context/GameContext'
 import { audioManager } from '../services/audioManager'
-import { judgeHand, detectElementClash, calcGeukBonusMultiplier, detectYeokgeukPenalty, determinePrimaryElement } from '../engine/pokerHandJudge'
+import { judgeHand, detectElementClash, calcGeukBonusMultiplier, detectYeokgeukPenalty, determinePrimaryElement, judgeCombo } from '../engine/pokerHandJudge'
 import type { Element } from '../types/game'
 import TalismanBar from './TalismanBar'
 import type { TalismanId } from '../engine/talismans'
@@ -97,6 +97,139 @@ function josa(word: string, withBatchim: string, withoutBatchim: string): string
 function getGeukKoLabel(attacker: Element, victim: Element, bonusPct: number): string {
   return `${josa(ELEMENT_KO[attacker], '이', '가')} ${josa(ELEMENT_KO[victim], '을', '를')} 이긴다 +${bonusPct}%`
 }
+
+// ─── B-1: 신형 미리보기 빌더 ───────────────────────────────────────────────
+
+const ELEMENT_GEUK_REASON: Record<Element, string> = {
+  mok: '나무가 흙을 이긴다',
+  hwa: '불이 쇠를 이긴다',
+  to: '흙이 물을 이긴다',
+  geum: '쇠가 나무를 이긴다',
+  su: '물이 불을 이긴다',
+}
+
+const ELEMENT_ANTI_REASON: Record<Element, string> = {
+  mok: '나무가 흙을 막는다',
+  hwa: '불이 쇠를 막는다',
+  to: '흙이 물을 막는다',
+  geum: '쇠가 나무를 막는다',
+  su: '물이 불을 막는다',
+}
+
+function buildPreviewText(
+  cards: Array<{ element: Element; value: number; polarity: string; id: string }>,
+  enemyElement: Element,
+): { line1: string; line2: string | null; line1Color: string } | null {
+  if (cards.length === 0) return null
+
+  const comboResult = judgeCombo(cards as any)
+  if (comboResult.type === 'none') return null
+
+  const fe = comboResult.finishingElement
+  const feHanja = ELEMENT_LABELS[fe]
+  const geuksEnemy = GEUK_MAP[fe] === enemyElement
+  const enemyGeuksFinish = GEUK_MAP[enemyElement] === fe
+
+  if (comboResult.type === 'ohang-yeonhwan') {
+    return {
+      line1: '오행연환 · 배율 ×10',
+      line2: null,
+      line1Color: '#D9A441',
+    }
+  }
+
+  if (comboResult.type === 'gather') {
+    const elementName = ELEMENT_KO[cards[0].element]
+    const mult = comboResult.multiplier
+    const baseScore = comboResult.baseScore
+    let line1 = `${elementName} 모으기 ${cards.length} · 배율 ×${mult}`
+    let line1Color = '#D8CCB4'
+    let geukInfo = ''
+    if (geuksEnemy) {
+      geukInfo = ` +70%`
+      line1Color = '#4A9B6E'
+    } else if (enemyGeuksFinish) {
+      geukInfo = ` −40%`
+      line1Color = '#C63D2F'
+    }
+    if (geukInfo) line1 += geukInfo
+    const finalMult = geuksEnemy ? mult * 1.7 : enemyGeuksFinish ? mult * 0.6 : mult
+    const line2 = `기본 ${baseScore} × ${mult}(모으기)${geuksEnemy ? ' × 1.7(극 유리)' : enemyGeuksFinish ? ' × 0.6(극 불리)' : ''} = ${Math.round(baseScore * finalMult)}`
+    return { line1, line2, line1Color }
+  }
+
+  // 융합 (낳는 / 벼리는)
+  const comboName = comboResult.name
+  const mult = comboResult.multiplier
+  const baseScore = comboResult.baseScore
+  const typeLabel = comboResult.type === 'fusion-hone' ? '벼리는' : '낳는'
+
+  let geukSuffix = ''
+  let geukMultLabel = ''
+  let line1Color = '#D8CCB4'
+
+  if (geuksEnemy) {
+    const reason = ELEMENT_GEUK_REASON[fe] ?? `${feHanja}이 이긴다`
+    geukSuffix = ` · ${reason} +70%`
+    geukMultLabel = ' × 1.7(극 유리)'
+    line1Color = '#4A9B6E'
+  } else if (enemyGeuksFinish) {
+    const reason = ELEMENT_ANTI_REASON[enemyElement] ?? '막힌다'
+    geukSuffix = ` · ${reason} −40%`
+    geukMultLabel = ' × 0.6(극 불리)'
+    line1Color = '#C63D2F'
+  }
+
+  const finalMult = geuksEnemy ? mult * 1.7 : enemyGeuksFinish ? mult * 0.6 : mult
+  const line1 = `${comboName} (${feHanja})${geukSuffix}`
+  const line2 = `기본 ${baseScore} × ${mult}(${typeLabel})${geukMultLabel} = ${Math.round(baseScore * finalMult)}`
+
+  return { line1, line2, line1Color }
+}
+
+// ─── B-2: 이종 기운 3장 이상 차단 판정 ────────────────────────────────────
+
+/** 현재 선택 기운 종류 배열 반환 */
+function getSelectedElements(
+  hand: Array<{ id: string; element: Element }>,
+  selectedIds: string[],
+): Element[] {
+  const selected = hand.filter(c => selectedIds.includes(c.id))
+  return [...new Set(selected.map(c => c.element))]
+}
+
+/**
+ * 카드 클릭 시 차단 여부 판단
+ * 반환: 차단하면 true
+ */
+function shouldBlockCardSelection(
+  hand: Array<{ id: string; element: Element }>,
+  selectedIds: string[],
+  targetCardId: string,
+): boolean {
+  const targetCard = hand.find(c => c.id === targetCardId)
+  if (!targetCard) return false
+
+  const currentSelectedEls = getSelectedElements(hand, selectedIds)
+  if (currentSelectedEls.length < 2) return false  // 아직 차단 조건 미충족
+
+  const targetEl = targetCard.element
+  // 이미 선택된 기운에 없고, 현재 기운 종류가 이미 2종인 경우 차단
+  if (!currentSelectedEls.includes(targetEl) && currentSelectedEls.length >= 2) {
+    return true
+  }
+  return false
+}
+
+/**
+ * 5기운 전부 핸드에 있는지 확인 (오행연환 원탭 유도용)
+ */
+function handHasAllFiveElements(hand: Array<{ element: Element }>): boolean {
+  const els = new Set(hand.map(c => c.element))
+  return els.size === 5 && ['mok', 'hwa', 'to', 'geum', 'su'].every(e => els.has(e as Element))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 // A2: 순환 도표 오버레이 (탭하면 반화면)
 function CycleChartOverlay({
@@ -993,6 +1126,38 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
   // Phase 1.8: 기운 잇기 3 이상 팝업
   const [chainPopup, setChainPopup] = useState<{ text: string; id: number } | null>(null)
 
+  // B-2: 이종 기운 차단 안내 텍스트 (500ms 소멸)
+  const [blockMsg, setBlockMsg] = useState<string | null>(null)
+  const blockMsgTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // B-3: 오행연환 shimmer 상태 (5기운 보유 여부)
+  const hasAllFiveElements = handHasAllFiveElements(hand)
+
+  // B-4: 응축 최초 툴팁 (localStorage 플래그)
+  const CONDENSE_TOOLTIP_KEY = 'paljajeon_condensation_explained'
+  const [showCondenseTooltip, setShowCondenseTooltip] = useState(false)
+  const condensePrevActive = useRef(false)
+
+  // B-4: 최초 응축 발동 시 툴팁 표시
+  useEffect(() => {
+    if (condenseActive && !condensePrevActive.current) {
+      try {
+        const explained = localStorage.getItem(CONDENSE_TOOLTIP_KEY)
+        if (!explained) {
+          setShowCondenseTooltip(true)
+        }
+      } catch { /* noop */ }
+    }
+    condensePrevActive.current = condenseActive
+  }, [condenseActive])
+
+  const handleCondenseTooltipClose = useCallback(() => {
+    setShowCondenseTooltip(false)
+    try {
+      localStorage.setItem(CONDENSE_TOOLTIP_KEY, '1')
+    } catch { /* noop */ }
+  }, [])
+
   // 2번: 드래그 앤 드롭 훅 (합성 소환 인터랙션)
   const { dragState, handleDragStart, handleDragOver, handleDragEnd, handleDragCancel, rejectAnimCardId } = useDragAndDrop()
 
@@ -1450,6 +1615,18 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
 
   // 카드 선택 사운드
   const handleCardSelect = useCallback((cardId: string) => {
+    // B-2: 이종 기운 3장 이상 차단
+    const isAlreadySelected = selectedCards.includes(cardId)
+    if (!isAlreadySelected && shouldBlockCardSelection(hand, selectedCards, cardId)) {
+      // 5기운 전부 있으면 연환 모드이므로 차단 안 함
+      if (!hasAllFiveElements) {
+        if (blockMsgTimerRef.current) clearTimeout(blockMsgTimerRef.current)
+        setBlockMsg('서로 다른 기운은 둘까지만 손을 잡는다 — 다섯이 모이면 연환이 된다.')
+        blockMsgTimerRef.current = setTimeout(() => setBlockMsg(null), 500)
+        return  // 선택 자체를 막음
+      }
+    }
+
     audioManager.cardSelectTick()
     console.log('[SFX] 카드 선택 틱', { cardId, timestamp: Date.now() })
 
@@ -1471,7 +1648,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     }
 
     toggleCardSelect(cardId)
-  }, [toggleCardSelect, hand, enemyElement])
+  }, [toggleCardSelect, hand, selectedCards, enemyElement, hasAllFiveElements, blockMsgTimerRef])
 
   // 출수 처리
   const handlePlayCards = useCallback(() => {
@@ -1560,6 +1737,35 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     console.log('[UX] 훈수 버튼 — 최강 조합 하이라이트', { bestIds, bestScore, timestamp: Date.now() })
   }, [hand])
 
+  // B-3: 연환 완성하기 — 각 기운 최고값 카드 1장씩 자동 선택
+  const handleYeonhwanComplete = useCallback(() => {
+    const FIVE_ELEMENTS: Element[] = ['mok', 'hwa', 'to', 'geum', 'su']
+    const toSelect: string[] = []
+    for (const el of FIVE_ELEMENTS) {
+      const candidates = hand.filter(c => c.element === el)
+      if (candidates.length === 0) continue
+      const best = candidates.reduce((max, c) => c.value > max.value ? c : max)
+      toSelect.push(best.id)
+    }
+    // 현재 선택 초기화 후 5장 선택
+    // 이미 선택된 것 포함해서 toggleCardSelect 로직이 복잡하므로
+    // 이미 선택 안된 것만 토글
+    const currentSelected = new Set(selectedCards)
+    // 기존 선택 전부 해제 (해당 5장 외)
+    for (const id of selectedCards) {
+      if (!toSelect.includes(id)) {
+        toggleCardSelect(id)
+      }
+    }
+    for (const id of toSelect) {
+      if (!currentSelected.has(id)) {
+        toggleCardSelect(id)
+      }
+    }
+    audioManager.cardSelectTick()
+    console.log('[B-3] 연환 완성하기 자동 선택', { toSelect, timestamp: Date.now() })
+  }, [hand, selectedCards, toggleCardSelect])
+
   // 버리기 처리
   const handleDiscardCards = useCallback(() => {
     if (selectedCards.length === 0 || discardsLeft <= 0) return
@@ -1644,37 +1850,16 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     return boosts
   }
 
-  const previewBannerText = getPreviewBannerText()
-  const warningTexts = getWarningTexts()
-  const boostTexts = getBoostTexts()
+  // B-1 이전 로직 — 사용 안 함 (신형 buildPreviewText로 대체), 타입 에러 방지
+  void getPreviewBannerText
+  void getWarningTexts
+  void getBoostTexts
+  void primaryEl
 
-  // A1: 극 뱃지 — 주 기운 원칙 반영으로 boostTexts로 대체됨 (참고용 유지)
   const bonusPct = Math.round((GEUK_BONUS_MULTIPLIER - 1) * 100)
-  void bonusPct  // 미리보기 콘솔 디버깅용 유지
+  void bonusPct
   void hasGeukOnEnemy
   void geukAttacker
-
-  // Phase 1.8: 마무리 기운 미리보기 텍스트
-  const getFinishingElementText = (): { text: string; color: string } | null => {
-    if (!previewResult || selectedCards.length === 0) return null
-    const fe = previewResult.finishingElement
-    const feLabel = ELEMENT_LABELS[fe]
-    const geuksEnemy = GEUK_MAP[fe] === enemyElement
-    const enemyGeuksFinish = GEUK_MAP[enemyElement] === fe
-    if (geuksEnemy) {
-      return { text: `${feLabel}으로 마무리 · ${feLabel}이/가 ${ELEMENT_LABELS[enemyElement]}을/를 이긴다 +70%`, color: '#FF7A5C' }
-    } else if (enemyGeuksFinish) {
-      return { text: `${feLabel}으로 마무리 · ${ELEMENT_LABELS[enemyElement]}에 눌린다 −40%`, color: '#C63D2F' }
-    } else {
-      return { text: `${feLabel}으로 마무리`, color: '#D9A441' }
-    }
-  }
-  const finishingText = getFinishingElementText()
-
-  // 주 기운 표시 텍스트
-  const primaryElText = primaryEl
-    ? `주 기운: ${ELEMENT_KO[primaryEl.element]}(${primaryEl.count}장, 합 ${primaryEl.totalValue})`
-    : null
 
   // G1 수정 #6 — 배경 격자: 4층은 붉은 격자
   const isBossFloor = currentFloor === 4
@@ -1786,6 +1971,20 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           70%  { opacity: 1; transform: scale(1); }
           100% { opacity: 0; }
         }
+        @keyframes yeonhwanShimmer {
+          0%   { box-shadow: 0 0 4px #FFD98A; border-color: #D9A441; }
+          50%  { box-shadow: 0 0 16px #FFD98A, 0 0 32px rgba(255,217,138,0.5); border-color: #FFD98A; }
+          100% { box-shadow: 0 0 4px #FFD98A; border-color: #D9A441; }
+        }
+        @keyframes yeonhwanButtonShimmer {
+          0%   { background-position: -200% center; }
+          100% { background-position: 200% center; }
+        }
+        @keyframes condensePulse {
+          0%   { opacity: 1; box-shadow: 0 0 6px rgba(217,164,65,0.8); }
+          50%  { opacity: 0.6; box-shadow: 0 0 12px rgba(217,164,65,0.5); }
+          100% { opacity: 1; box-shadow: 0 0 6px rgba(217,164,65,0.8); }
+        }
         @keyframes geukArrowPulse {
           0%   { opacity: 0.7; transform: translateX(-50%) translateY(0); }
           50%  { opacity: 1; transform: translateX(-50%) translateY(-5px); }
@@ -1847,6 +2046,55 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           100% { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
         }
       `}</style>
+
+      {/* B-4: 응축 최초 툴팁 (localStorage 1회) */}
+      {showCondenseTooltip && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 250,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'rgba(22,19,15,0.6)',
+        }}>
+          <div style={{
+            maxWidth: '280px',
+            width: '90%',
+            backgroundColor: 'rgba(28,23,16,0.95)',
+            border: '1px solid #D9A441',
+            borderRadius: '4px',
+            padding: '16px 20px',
+            textAlign: 'center',
+          }}>
+            <div style={{
+              color: '#D8CCB4',
+              fontSize: '13px',
+              lineHeight: '1.7',
+              letterSpacing: '0.04em',
+              marginBottom: '16px',
+            }}>
+              "흙은 힘을 모은다 —<br />지금은 약하게, 다음에 크게."
+            </div>
+            <button
+              onClick={handleCondenseTooltipClose}
+              style={{
+                width: '44px',
+                height: '36px',
+                backgroundColor: '#D9A441',
+                border: 'none',
+                color: '#1C1710',
+                fontSize: '14px',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                borderRadius: '2px',
+              }}
+            >
+              확인
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 오행연환 오버레이 */}
       <ElementalSequenceOverlay seq={elementalSeq} getCssDuration={getCssDuration} />
@@ -2504,83 +2752,92 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           </div>
         )}
 
-        {/* G1 수정 #1 — 족보 미리보기 실체화 (최소 64px 높이, 붓글씨 20px+) */}
-        <div
-          style={{
-            minHeight: '64px',
-            backgroundColor: previewBannerText ? '#1C1710' : 'transparent',
-            borderTop: '1px solid #2A2620',
-            borderBottom: '1px solid #2A2620',
-            padding: '0 16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: `background-color ${getCssDuration(150)}`,
-            flexShrink: 0,
-          }}
-        >
-          {previewBannerText ? (
-            <div style={{ textAlign: 'center' }}>
-              {previewResult?.rank !== 'none' ? (
+        {/* B-1: 신형 미리보기 패널 */}
+        {(() => {
+          const preview = selectedCards.length > 0
+            ? buildPreviewText(selectedCardObjs, enemyElement)
+            : null
+          return (
+            <div
+              style={{
+                minHeight: '64px',
+                backgroundColor: preview ? 'rgba(28,23,16,0.85)' : 'transparent',
+                borderTop: '1px solid #2A2620',
+                borderBottom: '1px solid #2A2620',
+                padding: '8px 16px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: `background-color ${getCssDuration(150)}`,
+                flexShrink: 0,
+                gap: '4px',
+                borderRadius: '4px',
+              }}
+            >
+              {preview ? (
                 <>
-                  {/* 족보명 (붓글씨체 20px, 금색, 글로우) */}
+                  {/* 라인1: 조합명 (속성 한자) · 상성 사유 + 극 배율 */}
                   <div
                     style={{
-                      color: '#D9A441',
-                      fontSize: '20px',
-                      fontFamily: '"Noto Serif KR", "UnifrakturMaguntia", "Georgia", serif',
-                      fontWeight: 'bold',
-                      letterSpacing: '0.1em',
-                      textShadow: '0 0 16px rgba(217,164,65,0.5)',
                       animation: previewBounce ? `previewBounce 220ms ease-out` : undefined,
-                      marginBottom: '2px',
+                      textAlign: 'center',
                     }}
                   >
-                    {previewResult?.description.split(' — ')[0] ?? ''}
+                    <span style={{
+                      color: preview.line1Color,
+                      fontSize: '14px',
+                      fontWeight: 'bold',
+                      letterSpacing: '0.04em',
+                    }}>
+                      {preview.line1}
+                    </span>
                   </div>
-                  {/* 수식 (A1 한글화: 공격력 N × N배 = N 피해) */}
-                  <div style={{ fontSize: '14px', lineHeight: '1.4' }}>
-                    <span style={{ color: '#E8DCC4' }}>공격력 {previewResult?.baseScore}</span>
-                    <span style={{ color: '#6A6560' }}> × </span>
-                    <span style={{ color: '#E8DCC4' }}>{previewResult?.multiplier}배</span>
-                    <span style={{ color: '#6A6560' }}> = </span>
-                    <span style={{ color: '#D9A441', fontWeight: 'bold' }}>예상 {previewResult?.totalScore} 피해</span>
-                    {/* A1: 극 정보 — 주 기운 원칙 반영 */}
-                    {boostTexts.length > 0 && boostTexts.map((t, i) => (
-                      <span key={i} style={{ color: '#FF7A5C', fontWeight: 'bold' }}> · {t}</span>
-                    ))}
-                  </div>
-                  {/* Phase 1.8: 마무리 기운 */}
-                  {finishingText && (
-                    <div style={{ fontSize: '11px', color: finishingText.color, marginTop: '2px', fontWeight: 'bold' }}>
-                      {finishingText.text}
+                  {/* 라인2: 계산 과정 투명 표시 */}
+                  {preview.line2 && (
+                    <div style={{
+                      color: '#D8CCB4',
+                      fontSize: '12px',
+                      letterSpacing: '0.03em',
+                      opacity: 0.85,
+                      textAlign: 'center',
+                    }}>
+                      {preview.line2}
                     </div>
                   )}
-                  {/* Phase 1.6 A: 주 기운 표시 */}
-                  {primaryElText && selectedCards.length > 0 && (
-                    <div style={{ fontSize: '11px', color: '#6A6560', marginTop: '2px' }}>
-                      {primaryElText}
+                  {/* B-2: 차단 안내 인라인 (11px, #D9A441) */}
+                  {blockMsg && (
+                    <div style={{
+                      color: '#D9A441',
+                      fontSize: '11px',
+                      letterSpacing: '0.04em',
+                      textAlign: 'center',
+                      marginTop: '2px',
+                    }}>
+                      {blockMsg}
                     </div>
                   )}
-                  {/* Phase 1.6 A: 기운 충돌 경고 (붉은색) */}
-                  {warningTexts.map((w, i) => (
-                    <div key={i} style={{ fontSize: '11px', color: '#C63D2F', marginTop: '1px', fontWeight: 'bold' }}>
-                      {w}
-                    </div>
-                  ))}
                 </>
               ) : (
-                <span style={{ color: '#6A6560', fontSize: '14px' }}>
-                  조합 없음 — 낱장 합산
-                </span>
+                <div style={{ textAlign: 'center' }}>
+                  {blockMsg ? (
+                    <div style={{
+                      color: '#D9A441',
+                      fontSize: '11px',
+                      letterSpacing: '0.04em',
+                    }}>
+                      {blockMsg}
+                    </div>
+                  ) : (
+                    <span style={{ color: '#6A6560', fontSize: '11px', opacity: 0.6 }}>
+                      — 카드를 골라 공격 —
+                    </span>
+                  )}
+                </div>
               )}
             </div>
-          ) : (
-            <span style={{ color: '#2A2620', fontSize: '11px' }}>
-              카드 선택 시 조합 표시
-            </span>
-          )}
-        </div>
+          )
+        })()}
 
         {/* G1 수정 #4 — 인라인 안내 배너 (핸드 위) */}
         <InlineBanner message={bannerMessage} visible={bannerVisible} getCssDuration={getCssDuration} />
@@ -2643,7 +2900,36 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                 {/* 팔자 — 소형 텍스트 */}
                 <text x="18" y="34" textAnchor="middle" fontSize="6" fill="#D9A441" opacity="0.6" fontWeight="bold">팔자</text>
               </svg>
-              {/* 정령 구체 D11: 조합에 포함된 오행 차례 소환 */}
+              {/* B-4: 응축 황색 구슬 + 라벨 */}
+            {condenseActive && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                marginTop: '4px',
+              }}>
+                <div style={{
+                  width: '12px',
+                  height: '12px',
+                  borderRadius: '50%',
+                  background: 'radial-gradient(circle at 30% 30%, #FFE8A8, #D9A441)',
+                  boxShadow: '0 0 6px rgba(217,164,65,0.8)',
+                  flexShrink: 0,
+                  animation: 'condensePulse 1.5s ease-in-out infinite',
+                }} />
+                <span style={{
+                  color: '#D9A441',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  letterSpacing: '0.05em',
+                  whiteSpace: 'nowrap',
+                }}>
+                  응축: 다음 공격 +60%
+                </span>
+              </div>
+            )}
+
+            {/* 정령 구체 D11: 조합에 포함된 오행 차례 소환 */}
               {spiritOrbs.map((el, orbIdx) => (
                 <div
                   key={`orb-${el}-${orbIdx}`}
@@ -2731,12 +3017,22 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
             const isDropTarget = dragState.overCardId === card.id
             const isRejectAnim = rejectAnimCardId === card.id
 
+            // B-2: 이종 기운 차단 (선택 안된 카드만 해당)
+            const isBlockedByDiversity = !isSelected && shouldBlockCardSelection(hand, selectedCards, card.id) && !hasAllFiveElements
+
+            // B-3: 5기운 shimmer 대상 (핸드에 5기운 있을 때 각 기운 최고값 카드)
+            const isYeonhwanCandidate = hasAllFiveElements && (() => {
+              const sameEl = hand.filter(c => c.element === card.element)
+              const best = sameEl.reduce((max, c) => c.value > max.value ? c : max, sameEl[0])
+              return best?.id === card.id
+            })()
+
             return (
               <button
                 key={card.id}
-                draggable
-                onClick={() => !isDraggingThis && handleCardSelect(card.id)}
-                onDragStart={() => handleDragStart(card.id)}
+                draggable={!isBlockedByDiversity}
+                onClick={() => !isDraggingThis && !isBlockedByDiversity && handleCardSelect(card.id)}
+                onDragStart={() => !isBlockedByDiversity && handleDragStart(card.id)}
                 onDragOver={e => { e.preventDefault(); handleDragOver(card.id, hand) }}
                 onDrop={() => {
                   const fusion = (cards: typeof hand) => {
@@ -2763,12 +3059,14 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                   backgroundColor: isYeokgeukInHand ? '#1A1614' : '#E8DCC4',
                   border: isHinted
                     ? `2px solid #D9A441`
+                    : isYeonhwanCandidate && !isSelected
+                    ? `2px solid #FFD98A`
                     : isDropTarget && dragState.fusionPreview?.type !== 'reject'
                     ? `2px solid #D9A441`
                     : `2px solid ${isSelected ? elColor : isYeokgeukInHand ? '#2A2620' : '#2A2620'}`,
                   borderRadius: '2px',
                   position: 'relative',
-                  cursor: 'grab',
+                  cursor: isBlockedByDiversity ? 'not-allowed' : 'grab',
                   transform: isDraggingThis
                     ? `rotate(${angle}deg) scale(0.9) translateY(${isSelected ? -14 : 0}px)`
                     : isRejectAnim
@@ -2779,14 +3077,21 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                     : `transform ${getCssDuration(120)} ease-out, border-color ${getCssDuration(120)} ease-out`,
                   boxShadow: isHinted
                     ? `0 0 12px #D9A441`
+                    : isYeonhwanCandidate && !isSelected
+                    ? `0 0 8px #FFD98A, 0 0 16px rgba(255,217,138,0.4)`
                     : isDropTarget && dragState.fusionPreview?.type !== 'reject'
                     ? `0 0 14px #D9A441`
                     : isSelected ? `0 0 8px ${glowColor}` : 'none',
                   flexShrink: 0,
                   padding: 0,
-                  // G1 수정: 역극 opacity 0.35, 필터 강화
-                  opacity: isDraggingThis ? 0.5 : isYeokgeukInHand ? 0.35 : 1,
-                  filter: isYeokgeukInHand ? 'grayscale(0.85) brightness(0.4)' : 'none',
+                  // A-1 Phase 1.9: 죽은 기운 카드 — 채도 -70%만 적용 (opacity 제거)
+                  // B-2: 차단 카드 opacity 0.4
+                  opacity: isDraggingThis ? 0.5 : isBlockedByDiversity ? 0.4 : 1,
+                  filter: isYeokgeukInHand ? 'saturate(0.3)' : 'none',
+                  // B-3: shimmer 애니메이션
+                  animation: isYeonhwanCandidate && !isSelected
+                    ? 'yeonhwanShimmer 300ms ease-in-out 3'
+                    : undefined,
                 }}
               >
                 <div style={{
@@ -2795,27 +3100,54 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                   opacity: isSelected ? 0.9 : 0.3,
                   borderRadius: '1px',
                 }} />
+                {/* A-1 Phase 1.9: 죽은 기운 카드 — 먹색 리본 상단 */}
+                {isYeokgeukInHand && (
+                  <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: '16px',
+                    backgroundColor: '#2F2F2F',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 2,
+                    borderRadius: '1px 1px 0 0',
+                  }}>
+                    <span style={{ color: '#FFFFFF', fontSize: '10px', fontWeight: 'bold', letterSpacing: '0.05em' }}>
+                      힘 없음
+                    </span>
+                  </div>
+                )}
+                {/* A-1: 값(숫자) 좌상단 18px */}
                 <span style={{
-                  color: isYeokgeukInHand ? '#4A4540' : '#2A2620',
-                  fontSize: '17px',
+                  color: '#2A2620',
+                  fontSize: '18px',
                   fontWeight: 'bold',
-                  position: 'absolute', top: '50%', left: '50%',
-                  transform: 'translate(-50%, -50%)',
+                  position: 'absolute',
+                  top: isYeokgeukInHand ? '20px' : '4px',
+                  left: '5px',
+                  lineHeight: 1,
                 }}>
                   {card.value}
                 </span>
-                {/* A1: 한자(크게) + 한글(나무) 병기 */}
+                {/* A-1: 속성(한자) 중앙 32px */}
                 <span style={{
-                  color: isYeokgeukInHand ? '#3A3530' : elColor,
-                  fontSize: '13px',
+                  color: elColor,
+                  fontSize: '32px',
                   fontWeight: 'bold',
-                  position: 'absolute', bottom: '14px', left: '50%',
-                  transform: 'translateX(-50%)',
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  lineHeight: 1,
                 }}>
                   {ELEMENT_LABELS[card.element]}
                 </span>
+                {/* A-1: 한글 속성명 하단 중앙 (죽은 기운 카드에서도 유지) */}
                 <span style={{
-                  color: isYeokgeukInHand ? '#3A3530' : elColor,
+                  color: elColor,
                   fontSize: '9px',
                   position: 'absolute', bottom: '3px', left: '50%',
                   transform: 'translateX(-50%)',
@@ -2829,21 +3161,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                 }}>
                   {card.polarity === 'yang' ? '●' : '○'}
                 </span>
-                {/* G1 수정 #2(c) — 역극 표시: "역" → "剋" 한자 10px, #B33A2B */}
-                {isYeokgeukInHand && (
-                  <span style={{
-                    position: 'absolute',
-                    top: '3px',
-                    left: '3px',
-                    fontSize: '10px',
-                    color: '#B33A2B',
-                    opacity: 0.9,
-                    fontWeight: 'bold',
-                    animation: 'yeokgeukInk 400ms ease-out forwards',
-                  }}>
-                    剋
-                  </span>
-                )}
+                {/* A-1 Phase 1.9: 죽은 기운 카드 剋 표시 제거 (리본으로 대체됨) */}
                 {/* 역극 첫 진입 안내 텍스트 (카드 아래) */}
                 {isYeokgeukInHand && showYeokgeukHint && (
                   <div style={{
@@ -2890,6 +3208,32 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
         </div>
         {/* 핸드+부적슬롯 외부 flex 컨테이너 닫기 */}
         </div>
+
+        {/* B-3: 연환 완성하기 버튼 (5기운 보유 시만 표시) */}
+        {hasAllFiveElements && (
+          <div style={{ padding: '0 8px', flexShrink: 0 }}>
+            <button
+              onClick={handleYeonhwanComplete}
+              style={{
+                width: '100%',
+                height: '44px',
+                backgroundColor: 'rgba(61,90,128,0.8)',
+                border: '1.5px solid #8FB8DE',
+                color: '#FFFDF7',
+                fontSize: '14px',
+                fontWeight: 'bold',
+                letterSpacing: '0.08em',
+                cursor: 'pointer',
+                borderRadius: '4px',
+                position: 'relative',
+                overflow: 'hidden',
+                animation: 'yeonhwanButtonShimmer 2s ease-in-out infinite',
+              }}
+            >
+              연환 완성하기 →
+            </button>
+          </div>
+        )}
 
         {/* 5-B: 내 체력 하단 상시 노출 */}
         <div style={{

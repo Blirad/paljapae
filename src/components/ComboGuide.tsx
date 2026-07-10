@@ -1,8 +1,10 @@
 /**
- * 팔자전 — 조합 도감 (ComboGuide) Phase 1.8
- * 원리 두 개 + 낳는 관계 / 이기는 관계 원형 도표 + 조합 예시
+ * 팔자전 — 조합 도감 (ComboGuide) Phase 1.9
+ * B-5: 탭 5개 — 기운 모으기 / 융합 10쌍 / 오행연환 / 응축 / 상성
+ * 낳는 ×3.0 / 벼리는 ×3.5 / "예시" 폐지 — 전 조합 공개
  */
 
+import { useState } from 'react'
 import type { Element } from '../types/game'
 
 interface ComboGuideProps {
@@ -18,6 +20,9 @@ const ELEMENT_HANJA: Record<string, string> = {
 const ELEMENT_COLORS: Record<string, string> = {
   mok: '#4A9B6E', hwa: '#C63D2F', to: '#D9A441', geum: '#C8C0B0', su: '#3D5A80',
 }
+const ELEMENT_GLOW: Record<string, string> = {
+  mok: '#7BD4A3', hwa: '#FF7A5C', to: '#FFD98A', geum: '#E8E3D5', su: '#8FB8DE',
+}
 
 // 상생 순서: 목→화→토→금→수→목
 const SAENG_ORDER: Element[] = ['mok', 'hwa', 'to', 'geum', 'su']
@@ -27,7 +32,34 @@ const GEUK_MAP: Record<Element, Element> = {
   mok: 'to', hwa: 'geum', to: 'su', geum: 'mok', su: 'hwa',
 }
 
-// 상생 원형 도표
+// 상극 관계 설명
+const GEUK_REASON: Record<Element, string> = {
+  mok: '나무가 흙을 이긴다',
+  hwa: '불이 쇠를 이긴다',
+  to: '흙이 물을 이긴다',
+  geum: '쇠가 나무를 이긴다',
+  su: '물이 불을 이긴다',
+}
+
+// 낳는 조합 5쌍
+const BIRTH_COMBOS = [
+  { el1: 'mok', el2: 'hwa', name: '들불', result: 'hwa', reason: '불이 쇠를 이긴다' },
+  { el1: 'hwa', el2: 'to', name: '옹기가마', result: 'to', reason: '흙이 물을 이긴다', condense: true },
+  { el1: 'to', el2: 'geum', name: '광맥', result: 'geum', reason: '쇠가 나무를 이긴다' },
+  { el1: 'geum', el2: 'su', name: '샘', result: 'su', reason: '물이 불을 이긴다' },
+  { el1: 'su', el2: 'mok', name: '숲', result: 'mok', reason: '나무가 흙을 이긴다' },
+] as const
+
+// 벼리는 조합 5쌍
+const HONE_COMBOS = [
+  { el1: 'hwa', el2: 'geum', name: '벼린 검', result: 'geum', reason: '쇠가 나무를 이긴다' },
+  { el1: 'geum', el2: 'mok', name: '깎은 화살', result: 'mok', reason: '나무가 흙을 이긴다' },
+  { el1: 'mok', el2: 'to', name: '일군 밭', result: 'to', reason: '흙이 물을 이긴다', condense: true },
+  { el1: 'to', el2: 'su', name: '맑은 못', result: 'su', reason: '물이 불을 이긴다' },
+  { el1: 'su', el2: 'hwa', name: '담금불', result: 'hwa', reason: '불이 쇠를 이긴다' },
+] as const
+
+// ─── 상생 원형 도표 ─────────────────────────────────────────────────────────
 function SaengCircleChart() {
   const cx = 90, cy = 90, r = 64
   const pos = SAENG_ORDER.map((el, i) => {
@@ -39,7 +71,6 @@ function SaengCircleChart() {
 
   return (
     <svg width="180" height="180" viewBox="0 0 180 180" style={{ display: 'block', margin: '0 auto' }}>
-      {/* 상생 화살표 */}
       {SAENG_ORDER.map((el, i) => {
         const next = SAENG_ORDER[(i + 1) % 5]
         const p1 = posMap[el], p2 = posMap[next]
@@ -60,7 +91,6 @@ function SaengCircleChart() {
           </g>
         )
       })}
-      {/* 노드 */}
       {pos.map(({ el, x, y }) => (
         <g key={el}>
           <circle cx={x} cy={y} r="20" fill="rgba(28,23,16,0.95)" stroke={ELEMENT_COLORS[el]} strokeWidth="2" />
@@ -76,10 +106,9 @@ function SaengCircleChart() {
   )
 }
 
-// 상극 별 모양 도표
+// ─── 상극 별 도표 ────────────────────────────────────────────────────────────
 function GeukCircleChart() {
   const cx = 90, cy = 90, r = 64
-  // 상극 순서 배치 (별 모양)
   const GEUK_ORDER: Element[] = ['mok', 'hwa', 'to', 'geum', 'su']
   const pos = GEUK_ORDER.map((el, i) => {
     const angle = (i / 5) * Math.PI * 2 - Math.PI / 2
@@ -127,28 +156,358 @@ function GeukCircleChart() {
   )
 }
 
-// 미니 카드 예시
-function MiniCard({ element, value }: { element: Element; value: number }) {
-  const c = ELEMENT_COLORS[element]
+// ─── 탭 1: 기운 모으기 ───────────────────────────────────────────────────────
+function TabGather() {
+  const rows = [
+    { count: 2, mult: '×1.5', desc: '두 장' },
+    { count: 3, mult: '×2.5', desc: '세 장' },
+    { count: 4, mult: '×3.5', desc: '네 장' },
+    { count: 5, mult: '×5.0', desc: '다섯 장 (최대)' },
+  ]
   return (
-    <div style={{
-      width: '36px', height: '50px',
-      backgroundColor: '#E8DCC4',
-      border: `2px solid ${c}`,
-      borderRadius: '2px',
-      display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center',
-      position: 'relative', flexShrink: 0,
-    }}>
-      <span style={{ color: '#2A2620', fontSize: '14px', fontWeight: 'bold' }}>{value}</span>
-      <span style={{ color: c, fontSize: '10px', fontWeight: 'bold', position: 'absolute', bottom: '4px' }}>
-        {ELEMENT_HANJA[element]}
-      </span>
+    <div>
+      <div style={{ color: '#D8CCB4', fontSize: '13px', letterSpacing: '0.05em', marginBottom: '16px', lineHeight: '1.6' }}>
+        같은 기운을 모으면 힘이 커진다
+      </div>
+      <div style={{ marginBottom: '4px', display: 'flex', gap: '0', borderBottom: '1px solid rgba(216,204,180,0.2)' }}>
+        {['장수', '배율', '설명'].map((h, i) => (
+          <div key={h} style={{
+            flex: i === 2 ? 2 : 1,
+            color: '#B33A2B',
+            fontSize: '12px',
+            fontWeight: 700,
+            padding: '4px 8px',
+            letterSpacing: '0.05em',
+          }}>{h}</div>
+        ))}
+      </div>
+      {rows.map(row => (
+        <div key={row.count} style={{ display: 'flex', gap: '0', borderBottom: '1px solid rgba(216,204,180,0.08)', alignItems: 'center' }}>
+          <div style={{ flex: 1, padding: '8px 8px', color: '#D8CCB4', fontSize: '13px' }}>{row.count}장</div>
+          <div style={{ flex: 1, padding: '8px 8px', color: '#FFD98A', fontSize: '13px', fontWeight: 700 }}>{row.mult}</div>
+          <div style={{ flex: 2, padding: '8px 8px', color: '#D8CCB4', fontSize: '13px' }}>{row.desc}</div>
+        </div>
+      ))}
+      <div style={{
+        marginTop: '16px',
+        padding: '8px',
+        backgroundColor: 'rgba(74,155,110,0.1)',
+        border: '1px solid #4A9B6E',
+        borderRadius: '2px',
+      }}>
+        <div style={{ color: '#7BD4A3', fontSize: '12px', fontWeight: 600, marginBottom: '4px' }}>음양 조화 보너스</div>
+        <div style={{ color: '#D8CCB4', fontSize: '12px', lineHeight: '1.6' }}>
+          같은 기운 조합에 양(陽)·음(陰)이 섞여 있으면<br />공격력 +20% 추가
+        </div>
+      </div>
     </div>
   )
 }
 
+// ─── 탭 2: 융합 10쌍 ─────────────────────────────────────────────────────────
+function TabFusion() {
+  const [expandedBirth, setExpandedBirth] = useState<number | null>(null)
+  const [expandedHone, setExpandedHone] = useState<number | null>(null)
+
+  return (
+    <div>
+      {/* 낳는 조합 5종 */}
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{ color: '#4A9B6E', fontSize: '15px', fontWeight: 'bold', letterSpacing: '0.12em', marginBottom: '8px' }}>
+          낳는 조합 (5종)
+        </div>
+        <div style={{ color: '#D8CCB4', fontSize: '12px', marginBottom: '12px', lineHeight: '1.5' }}>
+          기운은 낳는다 — 목과 화가 만나 불이 된다
+        </div>
+        <div style={{ marginBottom: '4px', display: 'flex', gap: '0', borderBottom: '1px solid rgba(216,204,180,0.2)' }}>
+          {['재료', '조합명', '결과', '배율', '타격 속성'].map((h, i) => (
+            <div key={h} style={{
+              flex: [2, 1.5, 0.8, 0.8, 2][i],
+              color: '#B33A2B', fontSize: '11px', fontWeight: 700,
+              padding: '4px 4px', letterSpacing: '0.03em',
+            }}>{h}</div>
+          ))}
+        </div>
+        {BIRTH_COMBOS.map((combo, i) => {
+          const isExpanded = expandedBirth === i
+          return (
+            <div key={combo.name}>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '0',
+                  borderBottom: '1px solid rgba(216,204,180,0.08)',
+                  alignItems: 'center',
+                  cursor: 'pointer',
+                }}
+                onClick={() => setExpandedBirth(isExpanded ? null : i)}
+              >
+                <div style={{ flex: 2, padding: '8px 4px', color: '#D8CCB4', fontSize: '12px' }}>
+                  {ELEMENT_HANJA[combo.el1]}({ELEMENT_KO[combo.el1]}) + {ELEMENT_HANJA[combo.el2]}({ELEMENT_KO[combo.el2]})
+                </div>
+                <div style={{ flex: 1.5, padding: '8px 4px', color: '#D8CCB4', fontSize: '12px', fontWeight: 600 }}>{combo.name}</div>
+                <div style={{ flex: 0.8, padding: '8px 4px', color: ELEMENT_COLORS[combo.result], fontSize: '15px', fontWeight: 700 }}>
+                  {ELEMENT_HANJA[combo.result]}
+                </div>
+                <div style={{ flex: 0.8, padding: '8px 4px', color: '#FFD98A', fontSize: '12px', fontWeight: 700 }}>×3.0</div>
+                <div style={{ flex: 2, padding: '8px 4px', color: '#D8CCB4', fontSize: '11px' }}>{combo.reason}</div>
+              </div>
+              {isExpanded && (
+                <div style={{
+                  padding: '8px 12px',
+                  backgroundColor: `rgba(${combo.result === 'mok' ? '74,155,110' : combo.result === 'hwa' ? '198,61,47' : combo.result === 'to' ? '217,164,65' : combo.result === 'geum' ? '200,192,176' : '61,90,128'},0.15)`,
+                  fontSize: '12px',
+                  color: ELEMENT_GLOW[combo.result],
+                  letterSpacing: '0.03em',
+                  borderBottom: '1px solid rgba(216,204,180,0.08)',
+                }}>
+                  {combo.reason} +70%
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* 구분선 */}
+      <div style={{ borderTop: '1px solid rgba(216,204,180,0.2)', marginBottom: '20px' }} />
+
+      {/* 벼리는 조합 5종 */}
+      <div>
+        <div style={{ color: '#FF7A5C', fontSize: '15px', fontWeight: 'bold', letterSpacing: '0.12em', marginBottom: '8px' }}>
+          벼리는 조합 (5종)
+        </div>
+        <div style={{ color: '#D8CCB4', fontSize: '12px', marginBottom: '12px', lineHeight: '1.5' }}>
+          기운은 벼린다 — 불과 쇠가 만나 검이 된다
+        </div>
+        <div style={{ marginBottom: '4px', display: 'flex', gap: '0', borderBottom: '1px solid rgba(216,204,180,0.2)' }}>
+          {['재료', '조합명', '결과', '배율', '타격 속성'].map((h, i) => (
+            <div key={h} style={{
+              flex: [2, 1.5, 0.8, 0.8, 2][i],
+              color: '#B33A2B', fontSize: '11px', fontWeight: 700,
+              padding: '4px 4px', letterSpacing: '0.03em',
+            }}>{h}</div>
+          ))}
+        </div>
+        {HONE_COMBOS.map((combo, i) => {
+          const isExpanded = expandedHone === i
+          return (
+            <div key={combo.name}>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '0',
+                  borderBottom: '1px solid rgba(216,204,180,0.08)',
+                  alignItems: 'center',
+                  cursor: 'pointer',
+                }}
+                onClick={() => setExpandedHone(isExpanded ? null : i)}
+              >
+                <div style={{ flex: 2, padding: '8px 4px', color: '#D8CCB4', fontSize: '12px' }}>
+                  {ELEMENT_HANJA[combo.el1]}({ELEMENT_KO[combo.el1]}) + {ELEMENT_HANJA[combo.el2]}({ELEMENT_KO[combo.el2]})
+                </div>
+                <div style={{ flex: 1.5, padding: '8px 4px', color: '#D8CCB4', fontSize: '12px', fontWeight: 600 }}>{combo.name}</div>
+                <div style={{ flex: 0.8, padding: '8px 4px', color: ELEMENT_COLORS[combo.result], fontSize: '15px', fontWeight: 700 }}>
+                  {ELEMENT_HANJA[combo.result]}
+                </div>
+                <div style={{ flex: 0.8, padding: '8px 4px', color: '#FF7A5C', fontSize: '12px', fontWeight: 700 }}>×3.5</div>
+                <div style={{ flex: 2, padding: '8px 4px', color: '#D8CCB4', fontSize: '11px' }}>{combo.reason}</div>
+              </div>
+              {isExpanded && (
+                <div style={{
+                  padding: '8px 12px',
+                  backgroundColor: `rgba(${combo.result === 'mok' ? '74,155,110' : combo.result === 'hwa' ? '198,61,47' : combo.result === 'to' ? '217,164,65' : combo.result === 'geum' ? '200,192,176' : '61,90,128'},0.15)`,
+                  fontSize: '12px',
+                  color: ELEMENT_GLOW[combo.result],
+                  letterSpacing: '0.03em',
+                  borderBottom: '1px solid rgba(216,204,180,0.08)',
+                }}>
+                  {combo.reason} +70%
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─── 탭 3: 오행연환 ──────────────────────────────────────────────────────────
+function TabYeonhwan() {
+  return (
+    <div>
+      <div style={{ color: '#D8CCB4', fontSize: '13px', lineHeight: '1.7', letterSpacing: '0.05em', marginBottom: '16px' }}>
+        다섯 기운이 모여 순환을 이룬다
+      </div>
+      <SaengCircleChart />
+      <div style={{ marginTop: '16px', marginBottom: '12px' }}>
+        <div style={{ color: '#D8CCB4', fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>구성 조건</div>
+        <div style={{ color: '#D8CCB4', fontSize: '12px', lineHeight: '1.8' }}>
+          <div>· 木·火·土·金·水 5기운 각 1장 이상</div>
+          <div>· 정확히 5장 선택</div>
+        </div>
+      </div>
+      <div style={{
+        padding: '8px 12px',
+        backgroundColor: 'rgba(217,164,65,0.1)',
+        border: '1px solid #D9A441',
+        borderRadius: '2px',
+        marginBottom: '12px',
+      }}>
+        <div style={{ color: '#FFD98A', fontSize: '13px', fontWeight: 700 }}>배율: ×10 (게임 내 최고 배율)</div>
+        <div style={{ color: '#D8CCB4', fontSize: '12px', marginTop: '4px' }}>연출: 2.5초 상생 순환 애니메이션 전용 시퀀스</div>
+      </div>
+      <div style={{
+        padding: '10px 12px',
+        backgroundColor: 'rgba(61,90,128,0.15)',
+        border: '1px solid rgba(143,184,222,0.4)',
+        borderRadius: '2px',
+      }}>
+        <div style={{ color: '#8FB8DE', fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>원탭 완성법</div>
+        <div style={{ color: '#D8CCB4', fontSize: '12px', lineHeight: '1.8' }}>
+          <div>1. 핸드에 5기운이 모두 있으면 카드에 반짝임</div>
+          <div>2. [연환 완성하기] 버튼 클릭</div>
+          <div>3. 나머지 4장 자동 선택 완료</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── 탭 4: 응축 ──────────────────────────────────────────────────────────────
+function TabCondense() {
+  return (
+    <div>
+      <div style={{ color: '#D8CCB4', fontSize: '13px', lineHeight: '1.7', letterSpacing: '0.05em', marginBottom: '16px' }}>
+        "흙은 힘을 모은다 — 지금은 약하게, 다음에 크게."
+      </div>
+      <div style={{ color: '#D8CCB4', fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>발동 조건 (3종)</div>
+      <div style={{ marginBottom: '4px', display: 'flex', borderBottom: '1px solid rgba(216,204,180,0.2)' }}>
+        {['조합명', '타입', '타격 속성', '응축 발동'].map((h, i) => (
+          <div key={h} style={{
+            flex: [2, 2, 1.5, 1][i],
+            color: '#B33A2B', fontSize: '11px', fontWeight: 700,
+            padding: '4px 6px',
+          }}>{h}</div>
+        ))}
+      </div>
+      {[
+        { name: '토 모으기', type: '기운 모으기', attr: 'to', active: true },
+        { name: '일군 밭', type: '벼리는 융합', attr: 'to', active: true },
+        { name: '옹기가마', type: '낳는 융합', attr: 'to', active: true },
+        { name: '광맥', type: '낳는 융합', attr: 'geum', active: false },
+      ].map(row => (
+        <div
+          key={row.name}
+          style={{
+            display: 'flex',
+            borderBottom: '1px solid rgba(216,204,180,0.08)',
+            alignItems: 'center',
+            backgroundColor: row.active ? 'rgba(217,164,65,0.1)' : 'transparent',
+            opacity: row.active ? 1 : 0.5,
+          }}
+        >
+          <div style={{ flex: 2, padding: '8px 6px', color: '#D8CCB4', fontSize: '12px', fontWeight: row.active ? 600 : 400 }}>{row.name}</div>
+          <div style={{ flex: 2, padding: '8px 6px', color: '#D8CCB4', fontSize: '11px' }}>{row.type}</div>
+          <div style={{ flex: 1.5, padding: '8px 6px', color: ELEMENT_COLORS[row.attr], fontSize: '13px', fontWeight: 700 }}>
+            {ELEMENT_HANJA[row.attr]}
+          </div>
+          <div style={{ flex: 1, padding: '8px 6px', color: row.active ? '#D9A441' : '#4A4540', fontSize: '13px', fontWeight: row.active ? 700 : 400 }}>
+            {row.active ? 'O' : 'X (금 타격)'}
+          </div>
+        </div>
+      ))}
+      <div style={{ marginTop: '16px' }}>
+        <div style={{ color: '#D8CCB4', fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>효과</div>
+        <div style={{ color: '#D8CCB4', fontSize: '12px', lineHeight: '1.8' }}>
+          <div>· 발동 후 다음 공격 1회 +60%</div>
+          <div>· 영웅 옆 황색 구슬(●)로 활성 상태 표시</div>
+          <div>· 1회 공격 후 자동 소멸</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── 탭 5: 상성 ──────────────────────────────────────────────────────────────
+function TabAffinity() {
+  const [hoveredGeuk, setHoveredGeuk] = useState<Element | null>(null)
+  return (
+    <div>
+      <div style={{ color: '#D8CCB4', fontSize: '13px', lineHeight: '1.7', letterSpacing: '0.05em', marginBottom: '16px' }}>
+        오행은 서로를 이긴다
+      </div>
+      <div style={{ marginBottom: '8px', color: '#C63D2F', fontSize: '11px', letterSpacing: '0.1em' }}>
+        이기는 관계 (화살표 방향이 이기는 방향)
+      </div>
+      <GeukCircleChart />
+      {hoveredGeuk && (
+        <div style={{
+          textAlign: 'center', color: '#FF7A5C', fontSize: '12px',
+          marginTop: '8px', fontWeight: 600,
+        }}>
+          {GEUK_REASON[hoveredGeuk]} +70%
+        </div>
+      )}
+
+      <div style={{ marginTop: '20px', marginBottom: '8px' }}>
+        <div style={{ color: '#D8CCB4', fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>상성 배율표</div>
+        <div style={{ borderBottom: '1px solid rgba(216,204,180,0.2)', paddingBottom: '4px', marginBottom: '4px', display: 'flex' }}>
+          {['관계', '배율 효과', '설명'].map((h, i) => (
+            <div key={h} style={{ flex: [2, 1.5, 3][i], color: '#B33A2B', fontSize: '11px', fontWeight: 700, padding: '2px 4px' }}>{h}</div>
+          ))}
+        </div>
+        {[
+          { rel: '극 유리 (+70%)', mult: '×1.7', desc: '타격 속성이 적 기운을 이길 때', color: '#4A9B6E' },
+          { rel: '극 불리 (−40%)', mult: '×0.6', desc: '적 기운이 타격 속성을 이길 때', color: '#C63D2F' },
+          { rel: '중립', mult: '×1.0', desc: '상극 관계 없음', color: '#D8CCB4' },
+        ].map(row => (
+          <div key={row.rel} style={{ display: 'flex', borderBottom: '1px solid rgba(216,204,180,0.08)', alignItems: 'center' }}>
+            <div style={{ flex: 2, padding: '7px 4px', color: row.color, fontSize: '12px', fontWeight: 600 }}>{row.rel}</div>
+            <div style={{ flex: 1.5, padding: '7px 4px', color: row.color, fontSize: '12px', fontWeight: 700 }}>{row.mult}</div>
+            <div style={{ flex: 3, padding: '7px 4px', color: '#D8CCB4', fontSize: '11px' }}>{row.desc}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginTop: '16px' }}>
+        <div style={{ color: '#D8CCB4', fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>상극 관계 (전체)</div>
+        <div style={{ color: '#D8CCB4', fontSize: '12px', lineHeight: '2' }}>
+          {(Object.entries(GEUK_MAP) as [Element, Element][]).map(([from, to]) => (
+            <div key={from}>
+              <span
+                style={{ color: ELEMENT_COLORS[from] }}
+                onMouseEnter={() => setHoveredGeuk(from)}
+                onMouseLeave={() => setHoveredGeuk(null)}
+              >
+                {ELEMENT_KO[from]}({ELEMENT_HANJA[from]})
+              </span>
+              <span style={{ color: '#6A6560' }}> 이/가 </span>
+              <span style={{ color: ELEMENT_COLORS[to] }}>{ELEMENT_KO[to]}({ELEMENT_HANJA[to]})</span>
+              <span style={{ color: '#6A6560' }}>을/를 이긴다</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── 메인 ComboGuide ─────────────────────────────────────────────────────────
+type TabKey = 'gather' | 'fusion' | 'yeonhwan' | 'condense' | 'affinity'
+
+const TABS: { key: TabKey; label: string }[] = [
+  { key: 'gather', label: '기운 모으기' },
+  { key: 'fusion', label: '융합 10쌍' },
+  { key: 'yeonhwan', label: '오행연환' },
+  { key: 'condense', label: '응축' },
+  { key: 'affinity', label: '상성' },
+]
+
 export default function ComboGuide({ onClose }: ComboGuideProps) {
+  const [activeTab, setActiveTab] = useState<TabKey>('gather')
+
   return (
     <div
       style={{
@@ -165,13 +524,17 @@ export default function ComboGuide({ onClose }: ComboGuideProps) {
           borderTop: '1px solid #2A2620',
           borderRadius: '8px 8px 0 0',
           maxHeight: '82vh',
-          overflowY: 'auto',
-          padding: '20px 16px 32px',
+          display: 'flex',
+          flexDirection: 'column',
           animation: 'slideUp 220ms ease-out',
         }}
       >
         {/* 헤더 */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '16px 16px 0',
+          flexShrink: 0,
+        }}>
           <div style={{ color: '#D9A441', fontSize: '15px', fontWeight: 'bold', letterSpacing: '0.12em' }}>
             기운의 원리 (조합 도감)
           </div>
@@ -186,100 +549,50 @@ export default function ComboGuide({ onClose }: ComboGuideProps) {
           </button>
         </div>
 
-        {/* 원리 텍스트 */}
+        {/* 탭 바 (5개) */}
         <div style={{
-          backgroundColor: '#16130F',
-          border: '1px solid #2A2620',
-          padding: '14px 16px',
-          marginBottom: '20px',
-          color: '#D8CCB4',
-          fontSize: '13px',
-          lineHeight: '2',
-          letterSpacing: '0.04em',
+          display: 'flex',
+          borderBottom: '1px solid #2A2620',
+          padding: '8px 8px 0',
+          gap: '2px',
+          flexShrink: 0,
+          overflowX: 'auto',
         }}>
-          <div style={{ color: '#D9A441', fontWeight: 'bold', marginBottom: '6px', fontSize: '14px' }}>
-            원리는 두 개뿐입니다.
-          </div>
-          <div style={{ marginBottom: '12px' }}>
-            <div style={{ color: '#4A9B6E', fontWeight: 'bold', marginBottom: '4px' }}>하나, 낳는 관계 — 기운이 다음 기운을 키웁니다.</div>
-            <div style={{ color: '#8A8580', fontSize: '12px' }}>나무→불→흙→쇠→물→나무 (순환)</div>
-            <div style={{ color: '#6A6560', fontSize: '11px', lineHeight: '1.8' }}>
-              나무가 타서 불이 되고, 불이 꺼져 흙이 되고,<br/>
-              흙에서 쇠가 나고, 쇠가 차가워져 물이 맺히고,<br/>
-              물이 나무를 키웁니다.
-            </div>
-          </div>
-          <div>
-            <div style={{ color: '#C63D2F', fontWeight: 'bold', marginBottom: '4px' }}>둘, 이기는 관계 — 기운이 다른 기운을 누릅니다.</div>
-            <div style={{ color: '#8A8580', fontSize: '12px' }}>나무→흙, 흙→물, 물→불, 불→쇠, 쇠→나무</div>
-            <div style={{ color: '#6A6560', fontSize: '11px', lineHeight: '1.8' }}>
-              나무가 흙을 뚫고, 흙이 물을 막고,<br/>
-              물이 불을 끄고, 불이 쇠를 녹이고,<br/>
-              쇠가 나무를 벱니다.
-            </div>
-          </div>
+          {TABS.map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              style={{
+                backgroundColor: activeTab === tab.key ? '#2A2620' : 'transparent',
+                border: activeTab === tab.key ? '1px solid #B33A2B' : '1px solid transparent',
+                borderBottom: 'none',
+                color: activeTab === tab.key ? '#D9A441' : '#6A6560',
+                fontSize: '11px',
+                fontWeight: activeTab === tab.key ? 700 : 400,
+                letterSpacing: '0.04em',
+                cursor: 'pointer',
+                padding: '6px 8px',
+                borderRadius: '3px 3px 0 0',
+                whiteSpace: 'nowrap',
+                transition: 'color 150ms, background-color 150ms',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
-        {/* 낳는 순서 도표 */}
-        <div style={{ marginBottom: '20px' }}>
-          <div style={{ color: '#4A9B6E', fontSize: '11px', letterSpacing: '0.15em', marginBottom: '8px' }}>
-            낳는 관계 (화살표 방향이 키우는 방향)
-          </div>
-          <SaengCircleChart />
-        </div>
-
-        {/* 이기는 관계 도표 */}
-        <div style={{ marginBottom: '20px' }}>
-          <div style={{ color: '#C63D2F', fontSize: '11px', letterSpacing: '0.15em', marginBottom: '8px' }}>
-            이기는 관계 (화살표 방향이 이기는 방향)
-          </div>
-          <GeukCircleChart />
-        </div>
-
-        {/* 조합 예시 */}
-        <div>
-          <div style={{ color: '#6A6560', fontSize: '11px', letterSpacing: '0.15em', marginBottom: '12px' }}>
-            조합 예시 카드
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {/* 기운 잇기 3 */}
-            <div>
-              <div style={{ color: '#D9A441', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>
-                기운 잇기 3 (木→火→土) — ×3배
-              </div>
-              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                <MiniCard element="mok" value={4} />
-                <span style={{ color: '#4A9B6E', fontSize: '12px' }}>→</span>
-                <MiniCard element="hwa" value={6} />
-                <span style={{ color: '#4A9B6E', fontSize: '12px' }}>→</span>
-                <MiniCard element="to" value={5} />
-              </div>
-            </div>
-
-            {/* 같은 기운 모으기 5 */}
-            <div>
-              <div style={{ color: '#D9A441', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>
-                같은 기운 모으기 5 (木×5) — ×4배
-              </div>
-              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                {[8, 6, 4, 2, 4].map((v, i) => (
-                  <MiniCard key={i} element="mok" value={v} />
-                ))}
-              </div>
-            </div>
-
-            {/* 음양 짝 */}
-            <div>
-              <div style={{ color: '#D9A441', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>
-                오행연환 (5종 전부) — ×10배
-              </div>
-              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                {(['mok', 'hwa', 'to', 'geum', 'su'] as Element[]).map((el, i) => (
-                  <MiniCard key={i} element={el} value={i + 3} />
-                ))}
-              </div>
-            </div>
-          </div>
+        {/* 탭 콘텐츠 */}
+        <div style={{
+          overflowY: 'auto',
+          padding: '16px 16px 32px',
+          flex: 1,
+        }}>
+          {activeTab === 'gather' && <TabGather />}
+          {activeTab === 'fusion' && <TabFusion />}
+          {activeTab === 'yeonhwan' && <TabYeonhwan />}
+          {activeTab === 'condense' && <TabCondense />}
+          {activeTab === 'affinity' && <TabAffinity />}
         </div>
       </div>
 
