@@ -50,8 +50,14 @@ function loadHeroProfile(): SavedHeroProfile | null {
 function saveHeroProfile(profile: SavedHeroProfile): void {
   try {
     localStorage.setItem(HERO_PROFILE_STORAGE_KEY, JSON.stringify(profile))
-  } catch {
+    console.log('[SajuSave] ✅ 사주 저장 완료:', {
+      ilganChar: profile.ilganChar,
+      elementDist: profile.elementDist,
+      deckSeed: profile.deckSeed,
+    })
+  } catch (e) {
     // 저장 실패는 조용히 무시 (safari private 모드 등)
+    console.error('[SajuSave] ❌ 저장 실패:', e)
   }
 }
 
@@ -74,6 +80,13 @@ function buildHeroProfile(saju: SajuInfo): SavedHeroProfile {
 
   const elementDist = getSajuElementDistribution(y, m, d, h, isLunar)
   const deckSeed = calcDeckSeed(y, m, d)
+
+  console.log('[BuildProfile] 사주 프로필 생성:', {
+    ilganChar: sajuResult.day.cheonganChar,
+    ilganElement: sajuResult.day.cheonganElement,
+    elementDist,
+    deckSeed,
+  })
 
   return {
     sajuInfo: saju,

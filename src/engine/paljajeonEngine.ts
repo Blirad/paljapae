@@ -97,9 +97,23 @@ export function shuffleDeck(deck: Card[], seed?: number): Card[] {
 export function createInitialGameState(floorIndex = 0, heroProfile?: SavedHeroProfile | null): GameState {
   const floorConfig = FLOOR_CONFIGS[floorIndex]
   let deck: Card[]
+
+  // 진단: 사주 비례 덱 경로 추적
+  console.log('[GameInit] heroProfile:', {
+    exists: !!heroProfile,
+    hasDist: !!heroProfile?.elementDist,
+    hasSeed: !!heroProfile?.deckSeed,
+    elementDist: heroProfile?.elementDist,
+    deckSeed: heroProfile?.deckSeed,
+    ilganElement: heroProfile?.ilganElement,
+  })
+
   if (heroProfile?.elementDist && heroProfile?.deckSeed) {
+    console.log('[GameInit] 🎯 사주 비례 덱 생성 시작')
     deck = shuffleDeck(generateSajuDeck(heroProfile.elementDist, heroProfile.deckSeed))
+    console.log('[GameInit] 덱 생성 완료:', deck.map(c => c.element).reduce((acc, el) => { acc[el] = (acc[el] ?? 0) + 1; return acc }, {} as Record<string, number>))
   } else {
+    console.log('[GameInit] ⚠️ 폴백: 균등 덱 생성 (elementDist 또는 deckSeed 부재)')
     deck = shuffleDeck(createFixedDeck())
   }
   const hand = deck.slice(0, HAND_SIZE)

@@ -23,9 +23,19 @@ import type { HandJudgeResult } from '../types/game'
 function loadHeroProfileForStore(): SavedHeroProfile | null {
   try {
     const raw = localStorage.getItem(HERO_PROFILE_STORAGE_KEY)
-    if (!raw) return null
-    return JSON.parse(raw) as SavedHeroProfile
-  } catch {
+    if (!raw) {
+      console.log('[GameStore] ℹ️ localStorage에 사주 정보 없음')
+      return null
+    }
+    const profile = JSON.parse(raw) as SavedHeroProfile
+    console.log('[GameStore] ✅ 사주 로드 완료:', {
+      ilganChar: profile.ilganChar,
+      elementDist: profile.elementDist,
+      deckSeed: profile.deckSeed,
+    })
+    return profile
+  } catch (e) {
+    console.error('[GameStore] ❌ 사주 로드 실패:', e)
     return null
   }
 }
