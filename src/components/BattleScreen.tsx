@@ -26,7 +26,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useGameStore } from '../stores/gameStore'
-import { FLOOR_CONFIGS, GEUK_BONUS_MULTIPLIER, TRAIT_CONFIGS, SANG_MAP, SANG_PENALTY_MULTIPLIER, ANTI_GEUK_PENALTY, getCondenseMultiplier } from '../engine/balance'
+import { FLOOR_CONFIGS, GEUK_BONUS_MULTIPLIER, TRAIT_CONFIGS, SANG_MAP, SANG_PENALTY_MULTIPLIER, ANTI_GEUK_PENALTY, getCondenseBonus } from '../engine/balance'
 // Phase 1.7: FLOOR_ENEMY_ELEMENTS는 floorConfig.enemyPrimaryElement로 대체됨
 import { useGameContext } from '../context/GameContext'
 import { audioManager } from '../services/audioManager'
@@ -273,14 +273,17 @@ function buildPreviewText(
     }
   }
 
-  // 상태 ⑥: 토 타격 조합 (condenseType이 있을 때) — getCondenseMultiplier 소스 오브 트루스
+  // 상태 ⑥: 토 타격 조합 (condenseType이 있을 때) — T1 화/토 매트릭스
   const condenseAvail = getCondenseAvailability(comboResult.name ?? '', fe)
   if (condenseAvail !== null) {
     const mult = comboResult.multiplier
     const baseScore = comboResult.baseScore
     const finalDamage = Math.round(baseScore * mult * affinityMult)
-    // 응축 배율: 현재 선택 카드 수 기반 (getCondenseMultiplier = 소스 오브 트루스)
-    const condensePercent = Math.round(getCondenseMultiplier(cards.length) * 100)
+    // 응축 배율: 화/토 개수 기반 (T1 CONDENSE_MATRIX)
+    const hwaCount = cards.filter(c => c.element === 'hwa').length
+    const toCount = cards.filter(c => c.element === 'to').length
+    const bonusPercent = getCondenseBonus(hwaCount, toCount)
+    const condensePercent = bonusPercent > 0 ? bonusPercent : 0
     return {
       line1: '',
       line2: null,
@@ -3814,9 +3817,14 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
               ? getCondenseAvailability(selectedComboResult.name ?? '', selectedComboResult.finishingElement)
               : null
             const canAttack = selectedCards.length > 0 && playsLeft > 0 && !isInputLocked
-            // 응축 배율 계산 — getCondenseMultiplier 소스 오브 트루스 (balance.ts)
-            const condensePercent = condenseAvail === 'great' && selectedCards.length >= 2
-              ? Math.round(getCondenseMultiplier(selectedCards.length) * 100)
+            // 응축 배율 계산 — T1 화/토 매트릭스
+            const condensePercent = condenseAvail === 'great' && selectedCardObjs.length >= 2
+              ? (() => {
+                  const hwaCount = selectedCardObjs.filter(c => c.element === 'hwa').length
+                  const toCount = selectedCardObjs.filter(c => c.element === 'to').length
+                  const bonusPercent = getCondenseBonus(hwaCount, toCount)
+                  return bonusPercent > 0 ? bonusPercent : 0
+                })()
               : 0
             // 응축 버튼 비활성 조건
             const condenseAlreadyActive = (condensedMultiplier ?? 0) > 0
