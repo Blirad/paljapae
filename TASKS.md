@@ -15,31 +15,40 @@
 
 | # | 티켓 | 상태 | 게이트 | 증거 | 담당 | 비고 |
 |---|------|------|--------|------|------|------|
-| T1 | 응축 곱셈형 가중 (수치안 제출) | 대기 | 필수 | — | bilard | 선행: T3~T6 완료 후 검토 |
-| T2 | 연환 1회 제한 출처 확인/롤백 | 대기 | — | — | bilard | R2 유효성 재확인 필요 |
-| T3 | 사주 비례 덱 실기 로그 검증 | 완료 | — | 22b0807:L102~114 | bilard | 4단계 로깅 추가 |
-| T4 | 기세 죽음 표시 정리 + 경고 잘림 | 대기 | — | — | kail | B-4 경고 텍스트 + UI |
-| T5 | 강공 카운터 | 대기 | — | — | bilard | fullCapBot에서 누락 확인 |
-| T6 | 상성 표시 기준 확인 | 검수대기 | — | R6_AFFINITY_AUDIT 분석 완료 | bilard | 배포 전 최종 확인 |
-| T7 | 강화 수치 실측 + 정정 | 완료 | — | 393c847:L16 (UI ×1.5 수정) | bilard | "+2" → "×1.5" 매칭 |
-| T8 | 유물 엔진 구현 + 4종 풀 추첨 | 완료 | — | 393c847:L14-18,83 (ALL_REWARD_TYPES) | bilard | Relic 타입, GameState 추가 |
-| T9 | 카드 제거 UI 노출 | 완료 | — | 393c847:L17 (REWARD_OPTIONS) | bilard | remove-card 옵션 활성화 |
-| T10 | 시뮬 가호 장착 여부 감사 | 대기 | — | — | kail | fullCapBot 검토 필수 |
+| T1 | 응축 곱셈형 가중 (수치안 제출) | 진행 | 필수 | — | bilard | **1차 배치**: 수치안 표 제출까지만, 구현은 승인 후 |
+| T2 | 연환 1회 제한 출처 확인/롤백 | 진행 | — | — | bilard | **1차 배치**: 확인·보고형, 구현 없음 |
+| T3 | 사주 비례 덱 실기 로그 검증 | 검수대기 | — | 22b0807:L102~114 로깅 코드 | bilard | **아리 검수**: 이든 사주 기준 덱 20장 로그 스크린샷 필수 |
+| T4 | 기세 죽음 표시 정리 + 경고 잘림 | 대기 | — | — | kail | B-4 경고 텍스트 잘림 + UI 개선 |
+| T5 | 강공 카운터 | 대기 | — | — | bilard | fullCapBot 누락 항목 |
+| T6 | 상성 표시 기준 확인 | 진행 | — | R6_AFFINITY_AUDIT_20260711.md | bilard | **1차 배치**: 상성 배율 정상성 재확인 보고 |
+| T7 | 강화 수치 실측 + 정정 | 검수대기 | — | 393c847 (L16 수정) | bilard | **아리 검수**: 수정 전 값(+2 vs +50%) 명시, diff 인용 |
+| T8 | 유물 엔진 구현 + 4종 풀 추첨 | 검수대기 | — | 393c847 (Relic 타입 + GameState) | bilard | **무단 착수 기록**. 아리 검수: 스펙 항목별 대조 |
+| T9 | 카드 제거 UI 노출 | 검수대기 | — | 393c847 (L17 REWARD_OPTIONS) | bilard | **무단 착수 기록**. 아리 검수: 제거 UI 스크린샷 필수 |
+| T10 | 시뮬 가호 장착 여부 감사 | 진행 | — | — | kail | **1차 배치**: fullCapBot talismans 장착 검토·보고 |
 | T11 | 식신 발동 검증 ("낱장 조합" 재작업) | 대기 | — | — | bilard | 로그 기반 검증 필요 |
-| T12 | 패 확인 화면 처리 (B-2) | 대기 | — | — | kail | 3+ 이종기운 선택 차단 + 안내 |
-| T13 | balance-v2 재기준선 설정 | 게이트대기 | T7~T10 완료 | — | bilard | T7~T10 완료 후 시작 |
+| T12 | 패 확인 화면 처리 (B-2) | 대기 | — | — | kail | 3+ 이종기운 선택 차단 + 안내 메시지 |
+| T13 | balance-v2 재기준선 설정 | 대기 | T7~T10 완료 | — | bilard | T7~T10 완료 후 시작 |
 
 ---
 
 ## 상세: 완료항목
 
-### T3. 사주 비례 덱 실기 로그 검증 ✅
+### T3. 사주 비례 덱 실기 로그 검증 🔍 검수대기
 
-**상태**: 완료
+**상태**: 검수대기 (아리 검증 필요)
 
-**증거**: 커밋 22b0807
+**산출물**: 커밋 22b0807:L102~114 로깅 코드
 
-**코드**:
+**아리 검증 기준** (이든 지시):
+- ✋ "로깅 코드 추가"만으로는 완료 불가
+- ✅ 이든 사주 기준 시작 덱 20장 구성 로그 **실물** (스크린샷) 필수
+- 요구사항: 게임 시작 시 콘솔/브라우저 개발자 도구에서
+  - 이든 사주의 elementDist (목:?, 화:?, 토:?, 금:?, 수:?)
+  - deckSeed 값
+  - 생성된 20장 카드의 원소 분포
+  위 3가지가 모두 명확히 로깅되는지 증명
+
+**코드 (참고)**:
 ```typescript
 // src/engine/paljajeonEngine.ts L102~114
 console.log('[GameInit] heroProfile:', {
@@ -50,137 +59,200 @@ console.log('[GameInit] heroProfile:', {
   deckSeed: heroProfile?.deckSeed,
   ilganElement: heroProfile?.ilganElement,
 })
-if (heroProfile?.elementDist && heroProfile?.deckSeed) {
-  console.log('[GameInit] 🎯 사주 비례 덱 생성 시작')
-  deck = shuffleDeck(generateSajuDeck(heroProfile.elementDist, heroProfile.deckSeed))
-  console.log('[GameInit] 덱 생성 완료:', ...)
-}
 ```
-
-**검증**: 4단계 로깅으로 경로 추적 가능 (존재성 → 값 → 생성 시작 → 완료)
 
 ---
 
-### T7. 강화 수치 실측 + 정정 ✅
+### T7. 강화 수치 실측 + 정정 🔍 검수대기
 
-**상태**: 완료
+**상태**: 검수대기 (아리 검증 필수)
 
-**증거**: 커밋 393c847
+**아리 검증 기준** (이든 지시):
+- ✅ **실측 결과 명시** — 다음 둘 중 하나를 명확히 기술:
+  - "수정 전 프로덕션 UI 값: +2였음"
+  - "수정 전 프로덕션 UI 값: +50%였음"
+- ✅ **Diff 인용 제시** — 커밋 393c847에서 실제 변경 코드 인용
 
-**상황**:
+**현재 상황**:
 - 엔진 (fullCapBot.ts:390, 554): bonusPct = 50 (50% 배율)
-- UI (FloorRewardScreen.tsx:16): "기존 카드 값 +2" (불일치)
+- 수정 전 UI (FloorRewardScreen.tsx:16): "기존 카드 값 +2" → 불일치 발견
+- 수정 후 (393c847): "카드 값 ×1.5"
 
-**해결**:
+**Diff** (증거용):
 ```typescript
-// 변경: "기존 카드 값 +2" → "카드 값 ×1.5"
-const REWARD_OPTIONS = [
-  { label: '카드 획득', desc: '덱에 새 카드 추가' },
-  { label: '카드 강화', desc: '카드 값 ×1.5' },  // 수정됨
-  { label: '카드 제거', desc: '약한 카드 제거' },
-]
+// src/components/FloorRewardScreen.tsx L16
+- { label: '카드 강화', desc: '기존 카드 값 +2' },
++ { label: '카드 강화', desc: '카드 값 ×1.5' },
 ```
-
-**diff**: src/components/FloorRewardScreen.tsx L16
 
 ---
 
-### T8. 유물 엔진 구현 + 4종 풀 추첨 ✅
+### T8. 유물 엔진 구현 + 4종 풀 추첨 ⚠️ 검수대기 (무단 착수)
 
-**상태**: 완료
+**상태**: 검수대기 (아리 검증 필수)
 
-**증거**: 커밋 393c847
+**⚠️ 무단 착수 기록**:
+- T8, T9는 이든 확인 전 독단적으로 구현됨
+- 결과물이 검수 통과 시에만 수용
+- 재발 시 해당 작업 전체 롤백 처리
 
-**구현**:
+**아리 검증 기준** (이든 지시):
+구현물이 다음 스펙과 **항목별 대조 필수**:
 
-1. **Relic 타입** (types/game.ts):
+1. ✅ **유물 4종 정의** (balance.ts 또는 별도 파일):
+   - 해태상 (Haetae Statue)
+   - 오색실 (Five-Color Thread)
+   - 호리병 (Gourd Bottle)
+   - 목탁 (Wooden Clapper)
+
+2. ✅ **런 스코프** (run-scoped):
+   - GameState.relics: Relic[] 필드 추가 ✓
+   - 층간 유지, 게임 종료 시 리셋
+
+3. ✅ **전투 화면 아이콘**:
+   - 유물 획득 시 BattleScreen에 UI 노출
+   - (현재: 미구현 것으로 보임)
+
+4. ✅ **4종 풀에서 3개 추첨**:
+   - FloorRewardScreen: ALL_REWARD_TYPES 4개 정의 ✓
+   - 층별 고정 시드로 3개 선택 (useMemo, currentFloor 기반) ✓
+
+5. ✅ **가중치 balance.ts 노출**:
+   - 유물별 효과 수치가 balance.ts에 명시되었는가?
+   - (현재: Relic.description만 있음, balance.ts 연동 미확인)
+
+**현재 구현 (참고)**:
 ```typescript
+// types/game.ts
 export interface Relic {
   id: string
   name: string
   description: string
 }
-```
 
-2. **GameState.relics** (types/game.ts):
-```typescript
-relics: Relic[]  // 획득한 유물 목록 (런 한정 특수 효과)
-```
-
-3. **RewardOption 업데이트** (paljajeonEngine.ts):
-```typescript
-export type RewardOption =
-  | { type: 'add-card'; card: Card }
-  | { type: 'upgrade-card'; targetId: string; bonusPct: number }
-  | { type: 'remove-card'; targetId: string }
-  | { type: 'add-relic'; relic: any }
-```
-
-4. **4종 풀 + 3선택** (FloorRewardScreen.tsx):
-```typescript
+// FloorRewardScreen.tsx
 const ALL_REWARD_TYPES = [
   { type: 'add-card', label: '카드 획득', desc: '덱에 새 카드 추가' },
   { type: 'upgrade-card', label: '카드 강화', desc: '카드 값 ×1.5' },
   { type: 'remove-card', label: '카드 제거', desc: '약한 카드 제거' },
   { type: 'add-relic', label: '유물 획득', desc: '런 한정 특수 효과' },
 ]
-// 층별 고정 시드로 3개 선택 (균등 가중치)
 ```
 
-5. **보상 적용** (gameStore.ts):
-```typescript
-proceedToNextFloor: (rewardIndex: number) => {
-  const REWARD_TYPES = ['add-card', 'upgrade-card', 'remove-card', 'add-relic']
-  const rewardType = REWARD_TYPES[rewardIndex] || 'add-card'
-  // rewardType별 적용 로직 구현됨
-}
-```
-
-**diff**:
-- types/game.ts: Relic 인터페이스 + relics 필드
-- src/engine/paljajeonEngine.ts: RewardOption 타입 확장, applyRewardOption 'add-relic' 케이스
-- src/components/FloorRewardScreen.tsx: ALL_REWARD_TYPES, 동적 선택
-- src/stores/gameStore.ts: proceedToNextFloor 로직
+**필요 추가 검증**:
+- 유물 4종 실제 정의 위치
+- balance.ts와의 연동 여부
+- 전투 화면 아이콘 렌더링 확인
 
 ---
 
-### T9. 카드 제거 UI 노출 ✅
+### T9. 카드 제거 UI 노출 ⚠️ 검수대기 (무단 착수)
 
-**상태**: 완료
+**상태**: 검수대기 (아리 검증 필수)
 
-**증거**: 커밋 393c847
+**⚠️ 무단 착수 기록**:
+- T8, T9는 이든 확인 전 독단적으로 구현됨
+- 결과물이 검수 통과 시에만 수용
+- 재발 시 해당 작업 전체 롤백 처리
 
-**변경**:
+**아리 검증 기준** (이든 지시):
+- ✅ **제거 UI 스크린샷** 필수
+  - FloorRewardScreen에서 "카드 제거" 옵션 노출 확인
+  - 선택 가능 상태 확인
+  - 설명문 "약한 카드 제거" 명확히 표시
+
+**현재 구현** (커밋 393c847):
 ```typescript
-// FloorRewardScreen.tsx L17 추가
+// FloorRewardScreen.tsx L17
 { label: '카드 제거', desc: '약한 카드 제거' },
 ```
 
-**스코프**: "유물 획득" 대신 "카드 제거" 활성화 (balance-v2 예약)
+**스코프**:
+- balance-v2 예약으로 "유물 획득" 대신 "카드 제거" 활성화
+- 실제 카드 제거 로직은 gameStore.ts에 구현됨 (remove-card 타입)
 
 ---
 
-## 상세: 진행중/대기중 항목
+## 상세: 1차 배치 (진행중)
 
-### T1. 응축 곱셈형 가중 (수치안 제출)
+### T1. 응축 곱셈형 가중 (수치안 제출) 📊 진행
 
-**상태**: 게이트대기
+**상태**: 진행 (수치안 표 작성 중)
 
-**설명**: 응축 효과의 곱셈형 가중치 도입. 수치안 제출 → 이든 검토 후 구현.
+**착수 지시**: 2026-07-12 03:00 GMT+9
 
-**선행조건**: T3~T6 완료
+**요구사항**:
+- ✅ 응축 효과 곱셈형 가중치 수치안 표 제출
+- ✋ 구현은 **승인 후에만** 진행 (이든 검토 필수)
 
-**게이트**: 수치안 이든 승인
+**수치안 포함 항목**:
+- 응축 보유 조건 (현재: yeonhwanUsed, condensedMultiplier)
+- 곱셈형 가중치 (기본안)
+- 적 HP별 적용 시나리오
+- balance.ts와의 매칭 구조
+
+**게이트**: 수치안 이든 승인 시 다음 단계 착수
 
 ---
 
-### T2. 연환 1회 제한 출처 확인/롤백
+### T2. 연환 1회 제한 출처 확인/롤백 📋 진행
 
-**상태**: 대기
+**상태**: 진행 (확인·보고형, 구현 없음)
 
-**설명**: 오행연환(ohang-yeonhwan) 1회 제한 기능의 출처 확인. R2 유효성 재검증 필요.
+**착수 지시**: 2026-07-12 03:00 GMT+9
 
-**현재상태**: yeonhwanUsed 필드 있음 (L100 GameState)
+**작업 내용**:
+1. R2 커밋에서 오행연환(ohang-yeonhwan) 1회 제한 기능 출처 확인
+2. 현재 코드 (GameState.yeonhwanUsed, L100) 유효성 재검증
+3. 혹시 롤백 필요한 부분 있는지 검토
+4. 보고서 제출 (마크다운, 2장 이내)
+
+**검토 파일**:
+- src/engine/paljajeonEngine.ts (yeonhwanUsed)
+- git history (R2 기준점)
+
+---
+
+### T6. 상성 표시 기준 확인 ✅ 진행
+
+**상태**: 진행 (검증 완료, 배포 최종 확인 대기)
+
+**착수 지시**: 2026-07-12 03:00 GMT+9
+
+**산출물**: R6_AFFINITY_AUDIT_20260711.md (완료)
+
+**내용**:
+- ✅ 극(×1.5) / 생(×0.5) / 역극(×0.75) / 동기(×1.0) 배율 정상성 확인
+- ✅ 상성 스왑 없음 (매트릭스 5×5 검증)
+- ✅ 3000판 시뮬 재검증 완료
+
+**남은 작업**:
+- 배포 전 최종 확인 (이든 리뷰)
+- 배포 승인 후 T13(balance-v2) 시작 가능
+
+---
+
+### T10. 시뮬 가호 장착 여부 감사 📋 진행
+
+**상태**: 진행 (fullCapBot 검토 중)
+
+**착수 지시**: 2026-07-12 03:00 GMT+9
+
+**담당**: kail
+
+**작업 내용**:
+1. fullCapBot.ts에서 talismans 필드 사용 여부 확인
+2. 매 층마다 부적술(talisman) 장착 로직 있는지 검증
+3. 현재 시뮬에서 부적술 영향이 반영되는지 확인
+4. 보고서 제출 (마크다운, 코드 인용 포함)
+
+**검토 파일**:
+- src/engine/fullCapBot.ts (talismans 검색)
+- src/engine/talismans.ts (부적술 정의)
+
+---
+
+## 상세: 대기중 항목
 
 ---
 
@@ -205,28 +277,6 @@ proceedToNextFloor: (rewardIndex: number) => {
 **설명**: Heavy Attack 카운터 누락. fullCapBot에서 확인됨.
 
 **검토 필요**: fullCapBot.ts 코드 감시
-
----
-
-### T6. 상성 표시 기준 확인
-
-**상태**: 검수대기
-
-**증거**: R6_AFFINITY_AUDIT_20260711.md 완료
-
-**내용**: 극/생/역극/동기 배율 정상성 확인됨 (상성 스왑 없음)
-
-**배포 전 최종 확인 필요**
-
----
-
-### T10. 시뮬 가호 장착 여부 감사
-
-**상태**: 대기
-
-**설명**: fullCapBot에서 talismans 장착 여부 검토 필수
-
-**담당**: kail (케일)
 
 ---
 
