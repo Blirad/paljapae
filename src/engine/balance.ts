@@ -291,9 +291,9 @@ export const TRAIT_CONFIGS: Record<string, TraitConfig> = {
   },
   quench: {
     name: '담금질',
-    bannerText: '담금질 — 카드 값이 1 영구히 올랐다',
+    bannerText: '담금질 — 쓴 카드 값이 1 영구히 올랐다',
     tooltipTitle: '담금질 (담금불)',
-    tooltipBody: '불로 달군다. 현재 손의 카드 값이 1 영구히 오른다. 이번 출정이 끝날 때까지 유지된다.',
+    tooltipBody: '불로 달군다. 이번 공격에 쓴 카드들의 값이 1 영구히 오른다. 이번 출정이 끝날 때까지 유지된다.',
     element: 'hwa',
     fusionType: 'hone',
     keyframe: 'fireRise',
@@ -343,8 +343,8 @@ export const SANG_MAP: Record<string, string> = {
   su: 'mok',
 }
 
-/** 극(剋) 배율: 내가 적을 극 (×1.5) */
-export const GEUK_BONUS_MULTIPLIER = 1.5  // ×1.5 (스펙 v2)
+/** 극(剋) 배율: 내가 적을 극 (×1.7) — R8 복원 */
+export const GEUK_BONUS_MULTIPLIER = 1.7  // ×1.7 (R8: 1.5→1.7 복원)
 /** 생(生) 배율: 내가 적을 생 (×0.5, 피해 감소) */
 export const SANG_PENALTY_MULTIPLIER = 0.5
 /** 역극 배율: 적이 나를 극 (×0.75) */
@@ -408,7 +408,7 @@ export const FLOOR_CONFIGS: FloorConfig[] = [
   {
     floor: 3,
     enemyName: '정예: 고신',
-    enemyHp: 680,
+    enemyHp: 580,  // R11: 680→580 (밸런스 라운드 확정)
     counterDamage: 2,
     maxPlays: 5,
     enemyPrimaryElement: 'to',
@@ -451,3 +451,37 @@ export const SUB_GEUK_BONUS = 1.25
 export const YONGSIN_BONUS_MULTIPLIER = 1.3
 /** 연환 3장 이상, 마지막 카드가 용신 원소 시 배율 (×1.3 대체) */
 export const YONGSIN_CHAIN_MULTIPLIER = 1.5
+
+// --- 4층 적 원소 생성 (R7-2용)
+/**
+ * 5원소 순열 난수 생성
+ * Fisher-Yates 셔플로 5원소를 무작위 순서로 정렬 후 각 층에 배치
+ */
+export function getRandomFloorElements(rng: () => number): Array<{
+  primaryElement: Element
+  subElement: Element
+}> {
+  const ELEMENTS: Element[] = ['mok', 'hwa', 'to', 'geum', 'su']
+
+  // Fisher-Yates 셔플 (1층~4층용, 5원소 중 4개)
+  const shuffled = [...ELEMENTS]
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1))
+    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+  }
+
+  const result = []
+  for (let floor = 0; floor < 4; floor++) {
+    const primaryIdx = Math.floor(rng() * ELEMENTS.length)
+    const primary = ELEMENTS[primaryIdx]
+
+    // 부 원소: 주 원소 제외 4원소 중 선택
+    const subCandidates = ELEMENTS.filter(el => el !== primary)
+    const subIdx = Math.floor(rng() * subCandidates.length)
+    const sub = subCandidates[subIdx]
+
+    result.push({ primaryElement: primary, subElement: sub })
+  }
+
+  return result
+}

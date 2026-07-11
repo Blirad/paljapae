@@ -104,6 +104,11 @@ export interface GameState {
   // Phase 1.9.5: 10종 융합 특성
   lastTraitTriggered?: string             // 마지막 발동 특성 ID ('wildfire', 'mining', ...)
   carryoverBurn?: number                  // 번짐 이월 피해 수치
+  // R10: 미구현 3종 융합 특성 상태
+  purifiedElements?: Element[]            // 정화(샘): 기세 죽음 해제된 원소 목록
+  keenActive?: boolean                    // 예리(벼린 검): 다음 극 보너스 ×1.5
+  mirrorShieldActive?: boolean            // 비침(맑은 못): 다음 강공 피해 50% 감소
+  disabledTraits?: string[]               // R10-5 어블레이션: 비활성화할 특성 ID 목록
   // Phase 1.9.4 신규 — 덱 재순환
   reshuffled: boolean                     // 이번 턴 덱 재순환 발동 여부 (UI 배너용)
   // 스펙 v2 — 용신 원소 (일간 기반 계산)

@@ -236,6 +236,8 @@ export interface FullCapRunResult {
   discardCount: number
   condenseCount: number
   fusionCount: number
+  /** R10-5: 특성별 발동 횟수 */
+  traitCounts?: Record<string, number>
 }
 
 function makeLcg(seed: number): () => number {
@@ -270,6 +272,14 @@ export interface FullCapSimOptions {
    * true이면 층 클리어 시 카드 3장 제시 → 기대 데미지 최대화 선택 (작업 3)
    */
   enableFloorReward?: boolean
+  /** R7-2 검증용: 4층 적 원소 강제 */
+  forceFloor4Element?: Element
+  /** R7-5 어블레이션: 응축 구버전 (mult≥1.2 임계값, 동적 HP 비교 OFF) */
+  condenseOldStyle?: boolean
+  /** R7-5 어블레이션: 용신 스코어링 OFF (카드 선택 시 용신 보너스 무시) */
+  disableYongsinScoring?: boolean
+  /** R10-5 어블레이션: 비활성화할 특성 ID 목록 (예: ['quench']) */
+  disabledTraits?: string[]
 }
 
 /**
@@ -467,6 +477,7 @@ function createDeterministicState(
     carryoverBurn: 0,
     reshuffled: false,
     favorableElement: opts?.favorableElement,
+    disabledTraits: opts?.disabledTraits,
   }
 }
 
@@ -474,9 +485,11 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
   const rng = makeLcg(seed)
 
   // 작업 2: 용신 원소 결정 — favorableElement 우선, 없으면 ilganElement로 함수 도출
+  // R7-5 어블레이션: disableYongsinScoring → 카드 선택 시 용신 보너스 무시
   const resolvedFavorableElement: Element | undefined =
-    opts?.favorableElement
-    ?? (opts?.ilganElement ? getFavorableElement(opts.ilganElement) : undefined)
+    opts?.disableYongsinScoring
+    ? undefined
+    : (opts?.favorableElement ?? (opts?.ilganElement ? getFavorableElement(opts.ilganElement) : undefined))
 
   // 층별 적 원소 결정: 어블레이션 모드면 R1 고정 배치, 아니면 R2 랜덤화
   const floorElements = opts?.useFixedFloorElements
@@ -490,6 +503,8 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
   let discardCount = 0
   let condenseCount = 0
   let fusionCount = 0
+  const traitCounts: Record<string, number> = {}
+  const floor4PlayedElements: Element[] = []  // [R7-2] 4층에서 플레이된 카드 원소 기록
 
   // createDeterministicState에 resolvedFavorableElement 반영을 위해 opts 래핑
   const resolvedOpts: FullCapSimOptions | undefined = opts
@@ -588,25 +603,30 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
           deathFloor = floor
           floorStats.push({ floor, attackCount, cleared: false })
         }
-        return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount }
+        return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor >= 4 || floor4PlayedElements.length > 0, floor4PlayedElements: floor4PlayedElements.length > 0 ? floor4PlayedElements : undefined }
       }
 
       if (state.playsLeft <= 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount }
+        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor >= 4 || floor4PlayedElements.length > 0, floor4PlayedElements: floor4PlayedElements.length > 0 ? floor4PlayedElements : undefined }
       }
 
       if (state.playerHp <= 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount }
+        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor >= 4 || floor4PlayedElements.length > 0, floor4PlayedElements: floor4PlayedElements.length > 0 ? floor4PlayedElements : undefined }
       }
 
-      // 랜덤화된 층별 원소 사용 (작업 2)
+      // 랜덤화된 층별 원소 사용 (작업 2) — R7-2 검증용 4층 강제 옵션 지원
       const floorIdx = state.currentFloor - 1
-      const randomElem = floorElements[floorIdx]
       const floorConf = FLOOR_CONFIGS[floorIdx]
+
+      // 4층 적 원소 강제 옵션 (R7-2 게이트 검증용)
+      const randomElem = (opts?.forceFloor4Element && state.currentFloor === 4)
+        ? { primaryElement: opts.forceFloor4Element, subElement: floorConf.enemySubElement }
+        : floorElements[floorIdx]
+
       // phase switch 시: primary↔sub 교환
       const basePrimary = randomElem?.primaryElement ?? floorConf.enemyPrimaryElement
       const baseSub = randomElem?.subElement ?? floorConf.enemySubElement
@@ -627,7 +647,7 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
       if (decision.cardIds.length === 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount }
+        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor >= 4 || floor4PlayedElements.length > 0, floor4PlayedElements: floor4PlayedElements.length > 0 ? floor4PlayedElements : undefined }
       }
 
       // 버리기 전략
@@ -649,12 +669,22 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         if (condenseKind === 'great') {
           const mult = getCondenseMultiplier(selectedCards.length)
           if (mult > 0) {
-            // 개선된 조건: 현재 최선 데미지로 적 HP를 한 번에 격파 불가능할 때 응축
-            const bestDamage = decision.bestDamage
-            if (state.enemyHp > bestDamage) {
-              condenseCount++
-              state = applyCondense(state, decision.cardIds)
-              continue
+            // 응축 조건 분기: 구버전(mult≥1.2) vs 동적(HP>딜)
+            if (opts?.condenseOldStyle) {
+              // R4.5 구버전: mult ≥ 1.2이면 무조건 응축
+              if (mult >= 1.2) {
+                condenseCount++
+                state = applyCondense(state, decision.cardIds)
+                continue
+              }
+            } else {
+              // 정본: 현재 최선 데미지로 적 HP를 한 번에 격파 불가능할 때 응축
+              const bestDamage = decision.bestDamage
+              if (state.enemyHp > bestDamage) {
+                condenseCount++
+                state = applyCondense(state, decision.cardIds)
+                continue
+              }
             }
           }
         }
@@ -667,13 +697,36 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         fusionCount++
       }
 
+      // [R7-2] 4층 플레이 카드 원소 기록
+      if (state.currentFloor === 4) {
+        selectedCards.forEach(card => floor4PlayedElements.push(card.element))
+      }
+
       state = playCards(state, decision.cardIds)
+      // R10-5: 특성 발동 추적
+      if (state.lastTraitTriggered) {
+        traitCounts[state.lastTraitTriggered] = (traitCounts[state.lastTraitTriggered] ?? 0) + 1
+      }
       attackCount++
       playerHp = state.playerHp
     }
   }
 
-  return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount }
+  // [R7-2] 4층 도달 여부 및 플레이된 카드 원소 기록
+  const reachedFloor4 = floorsCleared >= 4 || floor === 4
+
+  return {
+    victory: state.isVictory,
+    floorsCleared: state.floorsCleared,
+    deathFloor,
+    floorStats,
+    discardCount,
+    condenseCount,
+    fusionCount,
+    traitCounts,
+    reachedFloor4,
+    floor4PlayedElements: reachedFloor4 ? floor4PlayedElements : undefined,
+  }
 }
 
 export interface FullCapSimReport {

@@ -139,6 +139,10 @@ export function createInitialGameState(floorIndex = 0, heroProfile?: SavedHeroPr
     // Phase 1.9.5: 10종 융합 특성
     lastTraitTriggered: undefined,
     carryoverBurn: 0,
+    // R10: 미구현 3종 융합 특성
+    purifiedElements: [],
+    keenActive: false,
+    mirrorShieldActive: false,
     reshuffled: false,
     // 스펙 v2: 용신 원소
     favorableElement,
@@ -159,6 +163,11 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
 
   const result = judgeHand(playedCards)
   let damage = result.totalScore
+
+  // R10: 3종 융합 특성 상태 (상성 계산·강공 계산보다 먼저 선언)
+  let newPurifiedElements = state.purifiedElements ?? []
+  let newKeenActive = state.keenActive ?? false
+  let newMirrorShieldActive = state.mirrorShieldActive ?? false
 
   // Phase 1.7 — 기운 전환 반영: 전환 시 주/부 기운 교대
   const primaryEl = (!state.enemyPhaseSwitch)
@@ -200,23 +209,40 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
 
   // 상생상극 매트릭스 적용 (스펙 v2 — 유일한 원소 상성 배율)
   if (floorEnemyEl) {
-    const iGeukEnemy   = GEUK_MAP[repEl] === floorEnemyEl    // 내가 적을 극 → ×1.5
+    const iGeukEnemy   = GEUK_MAP[repEl] === floorEnemyEl    // 내가 적을 극 → ×1.7 (R8 복원)
     const iSaengEnemy  = SANG_MAP[repEl] === floorEnemyEl    // 내가 적을 생 → ×0.5
     const enemyGeukMe  = GEUK_MAP[floorEnemyEl] === repEl    // 적이 나를 극 → ×0.75
 
     if (iGeukEnemy) {
-      damage = Math.round(damage * GEUK_BONUS_MULTIPLIER)    // ×1.5
+      damage = Math.round(damage * GEUK_BONUS_MULTIPLIER)    // ×1.7 (R8)
+      // R10: 예리(벼린 검) — 극 보너스 추가 ×1.5 (1회 소모)
+      if (state.keenActive) {
+        damage = Math.round(damage * 1.5)
+        newKeenActive = false
+      }
     } else if (iSaengEnemy) {
       damage = Math.round(damage * SANG_PENALTY_MULTIPLIER)  // ×0.5
     } else if (enemyGeukMe) {
-      damage = Math.round(damage * ANTI_GEUK_PENALTY)        // ×0.75
+      // R10: 정화(샘) — 해제된 원소는 역극 면역
+      const isPurified = (state.purifiedElements ?? []).includes(repEl)
+      if (!isPurified) {
+        damage = Math.round(damage * ANTI_GEUK_PENALTY)      // ×0.75
+      }
     }
     // 동기(同氣) 또는 적이 나를 생 → ×1.0 (변화 없음)
   }
 
-  // 레거시 — 부 기운 극 보너스 (SUB_GEUK_BONUS, 호환성 유지 — 스펙 v2에서는 위 매트릭스가 유일)
-  // 아래 코드는 비활성화됨 (스펙 v2 지시: 상생상극 매트릭스가 유일한 원소 상성 배율)
-  void SUB_GEUK_BONUS  // 호환성 import 유지
+  // R8 복원: 부 기운 극 보너스 ×1.25 (주 기운 극 미적용 시, 카드가 부 기운을 극하면 적용)
+  const subEl = (!state.enemyPhaseSwitch)
+    ? floorConfig.enemySubElement
+    : floorConfig.enemyPrimaryElement
+  const mainGeukApplied = floorEnemyEl ? GEUK_MAP[repEl] === floorEnemyEl : false
+  if (!mainGeukApplied && subEl) {
+    const hasSubGeuk = playedCards.some(c => GEUK_MAP[c.element] === subEl)
+    if (hasSubGeuk) {
+      damage = Math.round(damage * SUB_GEUK_BONUS)
+    }
+  }
 
   // E-1: 연환 1회 제한 — 오행연환인데 이미 사용했으면 피해 0 (연환 차단)
   const isYeonhwan = result.rank === 'ohang-yeonhwan'
@@ -313,6 +339,11 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
   let heavyAttackDamage = 0
   if (heavyAttackConf && newAttackCount % heavyAttackConf.everyN === 0) {
     heavyAttackDamage = heavyAttackConf.damage
+    // R10: 비침(맑은 못) — 강공 피해 50% 감소 (1회 소모)
+    if (state.mirrorShieldActive) {
+      heavyAttackDamage = Math.round(heavyAttackDamage * 0.5)
+      newMirrorShieldActive = false
+    }
   }
 
   // Phase 1.7: 격노(rage) 보스 효과 — 반격 배율 강화 (체력 전환 후)
@@ -336,11 +367,11 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
   // 불변 조건: "공격 기회가 남아 있는 한, 핸드는 항상 리필된다" — 진행 불능 상태 금지
   let newDeck = [...state.deck]
   // 플레이한 카드는 버림더미로 이동 (리필 전 먼저 계산)
-  const newDiscardPileBase = [...state.discardPile, ...playedCards]
+  let newDiscardPile = [...state.discardPile, ...playedCards]
   let reshuffled = false
   if (newDeck.length < playedCards.length) {
     // 덱 부족: 버림더미(방금 사용한 카드 포함)를 섞어 덱 재구성 (카드 상태 유지)
-    const allCards = [...newDeck, ...newDiscardPileBase]
+    const allCards = [...newDeck, ...newDiscardPile]
     newDeck = shuffleDeck(allCards)
     reshuffled = true
   }
@@ -363,9 +394,10 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
   if (isFusion && comboName && !isBlocked) {
     const traitId = FUSION_TRAIT_MAP[comboName]
     if (traitId && traitId !== 'snipe') {  // snipe은 위에서 처리
+      const isDisabled = (state.disabledTraits ?? []).includes(traitId)
       newLastTraitTriggered = traitId
       const config = TRAIT_CONFIGS[traitId]
-      if (config) {
+      if (config && !isDisabled) {
         switch (traitId) {
           case 'wildfire': {
             // 번짐: 피해 30% 다음 공격에 이월
@@ -395,12 +427,36 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
             break
           }
           case 'quench': {
-            // 담금질: 손의 모든 카드 값 +1 (영구, 출정 내)
-            newHand = newHand.map(c => ({ ...c, value: c.value + 1 }))
+            // 담금질: 이번 공격에 쓴 카드 값 +1 영구 (덱 재순환 시 유지)
+            const quenchIds = new Set(cardIds)
+            const quenchUp = (c: Card) => quenchIds.has(c.id) ? { ...c, value: c.value + 1 } : c
+            newHand = newHand.map(quenchUp)
+            newDeck = newDeck.map(quenchUp)
+            newDiscardPile = newDiscardPile.map(quenchUp)
             break
           }
-          // yonggigama(응축), purification(정화), keen(예리), mirror(비침)은
-          // 별도 처리 (응축은 applyCondense, 정화/예리/비침은 추후 상태 기반)
+          case 'purification': {
+            // R10: 정화(샘) — 기세 죽음 1종 해제
+            // 적 주기운이 극하는 원소를 purifiedElements에 추가
+            if (floorEnemyEl) {
+              const deadEl = GEUK_MAP[floorEnemyEl] as Element | undefined
+              if (deadEl && !(state.purifiedElements ?? []).includes(deadEl)) {
+                newPurifiedElements = [...(state.purifiedElements ?? []), deadEl]
+              }
+            }
+            break
+          }
+          case 'keen': {
+            // R10: 예리(벼린 검) — 다음 극 보너스 ×1.5
+            newKeenActive = true
+            break
+          }
+          case 'mirror': {
+            // R10: 비침(맑은 못) — 다음 강공 피해 50% 감소
+            newMirrorShieldActive = true
+            break
+          }
+          // yonggigama(응축)는 applyCondense에서 별도 처리
           default:
             break
         }
@@ -451,7 +507,7 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     playerHp: finalPlayerHp,
     hand: newHand,
     deck: newDeck,
-    discardPile: reshuffled ? [] : newDiscardPileBase,
+    discardPile: reshuffled ? [] : newDiscardPile,
     selectedCards: [],
     playsLeft: newPlaysLeft,
     phase,
@@ -467,6 +523,10 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     isLastAttack: newIsLastAttack,
     lastTraitTriggered: newLastTraitTriggered,
     carryoverBurn: newCarryoverBurn,
+    // R10: 3종 융합 특성 상태
+    purifiedElements: newPurifiedElements,
+    keenActive: newKeenActive,
+    mirrorShieldActive: newMirrorShieldActive,
     // Phase 1.9.4: 덱 재순환 배너용 플래그
     reshuffled,
   }
@@ -480,11 +540,11 @@ export function discardCards(state: GameState, cardIds: string[]): GameState {
   const remainHand = state.hand.filter(c => !cardIds.includes(c.id))
 
   // Phase 1.9.4: 덱 부족 시 재순환 (버리기도 동일 불변 조건 적용)
-  const newDiscardPileBase = [...state.discardPile, ...discarded]
+  const newDiscardPile = [...state.discardPile, ...discarded]
   let newDeck = [...state.deck]
   let reshuffled = false
   if (newDeck.length < discarded.length) {
-    const allCards = [...newDeck, ...newDiscardPileBase]
+    const allCards = [...newDeck, ...newDiscardPile]
     newDeck = shuffleDeck(allCards)
     reshuffled = true
   }
@@ -505,7 +565,7 @@ export function discardCards(state: GameState, cardIds: string[]): GameState {
     ...state,
     hand: [...remainHand, ...drawnCards],
     deck: newDeck,
-    discardPile: reshuffled ? [] : newDiscardPileBase,
+    discardPile: reshuffled ? [] : newDiscardPile,
     selectedCards: [],
     discardsLeft: state.discardsLeft - 1,
     playerHp: newPlayerHp,
@@ -618,6 +678,10 @@ export function advanceToNextFloor(state: GameState): GameState {
     isLastAttack: floorConfig.maxPlays === 1,
     lastTraitTriggered: undefined,
     carryoverBurn: 0,
+    // R10: 층 전환 시 리셋
+    purifiedElements: [],
+    keenActive: false,
+    mirrorShieldActive: false,
     reshuffled: false,
     // 스펙 v2: 용신 원소 유지 (층 전환해도 동일 플레이어)
     favorableElement: state.favorableElement,
@@ -665,10 +729,10 @@ export function applyCondense(state: GameState, cardIds: string[]): GameState {
   const remainHand = state.hand.filter(c => !cardIds.includes(c.id))
 
   // 덱 부족 시 재순환
-  const newDiscardPileBase = [...state.discardPile, ...condensedCards]
+  const newDiscardPile = [...state.discardPile, ...condensedCards]
   let newDeck = [...state.deck]
   if (newDeck.length < condensedCards.length) {
-    const allCards = [...newDeck, ...newDiscardPileBase]
+    const allCards = [...newDeck, ...newDiscardPile]
     newDeck = shuffleDeck(allCards)
   }
   const drawnCards: Card[] = []
@@ -681,12 +745,36 @@ export function applyCondense(state: GameState, cardIds: string[]): GameState {
     ...state,
     hand: newHand,
     deck: newDeck,
-    discardPile: newDiscardPileBase,
+    discardPile: newDiscardPile,
     playsLeft: newPlaysLeft,
     selectedCards: [],
     condensedMultiplier: multiplier,
     isLastAttack: newPlaysLeft === 1,
     lastTraitTriggered: 'yonggigama',
     reshuffled: false,
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 층 보상 (3택) — 영속 덱 적용
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type RewardOption =
+  | { type: 'add-card'; card: Card }
+  | { type: 'upgrade-card'; targetId: string; bonusPct: number }
+  | { type: 'remove-card'; targetId: string }
+
+export function applyRewardOption(deck: Card[], option: RewardOption): Card[] {
+  switch (option.type) {
+    case 'add-card':
+      return [...deck, option.card]
+    case 'upgrade-card':
+      return deck.map(c =>
+        c.id === option.targetId
+          ? { ...c, value: Math.round(c.value * (1 + option.bonusPct / 100)) }
+          : c
+      )
+    case 'remove-card':
+      return deck.filter(c => c.id !== option.targetId)
   }
 }
