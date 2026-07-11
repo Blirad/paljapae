@@ -32,7 +32,6 @@ import {
   SANG_PENALTY_MULTIPLIER,
   ANTI_GEUK_PENALTY,
   getCondenseMultiplier,
-  FUSION_TRAIT_MAP,
   YONGSIN_BONUS_MULTIPLIER,
   YONGSIN_CHAIN_MULTIPLIER,
   getRandomFloorElements,
@@ -409,29 +408,6 @@ function selectFloorReward(
   return { type: 'add-card', card: newCard }
 }
 
-/** 하위 호환: R3 이전 카드 추가 방식 (R3 테스트에서 사용) */
-function selectFloorRewardCard(
-  currentDeck: Card[],
-  rng: () => number,
-  nextEnemyEl?: Element,
-  favorableEl?: Element,
-): Card {
-  const result = selectFloorReward(currentDeck, rng, nextEnemyEl, favorableEl)
-  if (result.type === 'add-card') return result.card
-  // b/c 선택 시에도 add-card 로 fallback (R3 호환 — R4 시뮬에서는 selectFloorReward 직접 사용)
-  const ELEMENTS: Element[] = ['mok', 'hwa', 'to', 'geum', 'su']
-  const elIdx = Math.floor(rng() * ELEMENTS.length)
-  const value = Math.floor(rng() * 10) + 1
-  return {
-    id: `reward-compat-${Date.now()}-${Math.floor(rng() * 99999)}`,
-    element: ELEMENTS[elIdx],
-    polarity: 'yang',
-    value,
-    type: 'soldier',
-    rarity: 'common',
-  }
-}
-
 function createDeterministicState(
   floorIndex: number,
   rng: () => number,
@@ -603,19 +579,19 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
           deathFloor = floor
           floorStats.push({ floor, attackCount, cleared: false })
         }
-        return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor >= 4 || floor4PlayedElements.length > 0, floor4PlayedElements: floor4PlayedElements.length > 0 ? floor4PlayedElements : undefined }
+        return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts }
       }
 
       if (state.playsLeft <= 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor >= 4 || floor4PlayedElements.length > 0, floor4PlayedElements: floor4PlayedElements.length > 0 ? floor4PlayedElements : undefined }
+        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts }
       }
 
       if (state.playerHp <= 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor >= 4 || floor4PlayedElements.length > 0, floor4PlayedElements: floor4PlayedElements.length > 0 ? floor4PlayedElements : undefined }
+        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts }
       }
 
       // 랜덤화된 층별 원소 사용 (작업 2) — R7-2 검증용 4층 강제 옵션 지원
@@ -647,7 +623,7 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
       if (decision.cardIds.length === 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor >= 4 || floor4PlayedElements.length > 0, floor4PlayedElements: floor4PlayedElements.length > 0 ? floor4PlayedElements : undefined }
+        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts }
       }
 
       // 버리기 전략
@@ -712,9 +688,6 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
     }
   }
 
-  // [R7-2] 4층 도달 여부 및 플레이된 카드 원소 기록
-  const reachedFloor4 = floorsCleared >= 4 || floor === 4
-
   return {
     victory: state.isVictory,
     floorsCleared: state.floorsCleared,
@@ -724,8 +697,6 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
     condenseCount,
     fusionCount,
     traitCounts,
-    reachedFloor4,
-    floor4PlayedElements: reachedFloor4 ? floor4PlayedElements : undefined,
   }
 }
 
