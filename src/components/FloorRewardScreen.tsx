@@ -3,7 +3,7 @@
  * 카드 선택 보상 / 다음 층 안내
  */
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { FLOOR_CONFIGS } from '../engine/balance'
 
 interface FloorRewardScreenProps {
@@ -11,10 +11,11 @@ interface FloorRewardScreenProps {
   onProceed: (rewardIndex: number) => void
 }
 
-const REWARD_OPTIONS = [
-  { label: '카드 획득', desc: '덱에 새 카드 추가' },
-  { label: '카드 강화', desc: '카드 값 ×1.5' },
-  { label: '카드 제거', desc: '약한 카드 제거' },
+const ALL_REWARD_TYPES = [
+  { type: 'add-card', label: '카드 획득', desc: '덱에 새 카드 추가' },
+  { type: 'upgrade-card', label: '카드 강화', desc: '카드 값 ×1.5' },
+  { type: 'remove-card', label: '카드 제거', desc: '약한 카드 제거' },
+  { type: 'add-relic', label: '유물 획득', desc: '런 한정 특수 효과' },
 ]
 
 const ELEMENT_LABELS: Record<string, string> = {
@@ -30,6 +31,19 @@ export default function FloorRewardScreen({ currentFloor, onProceed }: FloorRewa
   const nextFloor = currentFloor + 1
   const isLastFloor = currentFloor >= 4
   const nextConfig = !isLastFloor ? FLOOR_CONFIGS[nextFloor - 1] : null
+
+  // 균등 확률로 4개 중 3개 선택 (randomize per floor, seed-based for reproducibility)
+  const REWARD_OPTIONS = useMemo(() => {
+    const seed = currentFloor * 12345  // 층별 고정 시드
+    const shuffled = [...ALL_REWARD_TYPES]
+      .sort((a, b) => {
+        const aHash = a.type.charCodeAt(0) + seed
+        const bHash = b.type.charCodeAt(0) + seed
+        return aHash - bHash
+      })
+      .slice(0, 3)
+    return shuffled
+  }, [currentFloor])
 
   const handleChoose = (i: number) => {
     setChosen(i)

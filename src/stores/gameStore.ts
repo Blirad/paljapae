@@ -16,9 +16,24 @@ import {
   activateJeungpok,
   acquireTalisman,
   applyCondense,
+  applyRewardOption,
 } from '../engine/paljajeonEngine'
 import { judgeHand } from '../engine/pokerHandJudge'
-import type { HandJudgeResult } from '../types/game'
+import type { HandJudgeResult, Card, Element } from '../types/game'
+
+function generateRandomCard(): Card {
+  const ELEMENTS: Element[] = ['mok', 'hwa', 'to', 'geum', 'su']
+  const element = ELEMENTS[Math.floor(Math.random() * ELEMENTS.length)]
+  const value = Math.floor(Math.random() * 10) + 1
+  return {
+    id: `reward-${Date.now()}-${Math.floor(Math.random() * 99999)}`,
+    element,
+    polarity: Math.random() > 0.5 ? 'yang' : 'yin',
+    value,
+    type: 'soldier',
+    rarity: 'common',
+  }
+}
 
 function loadHeroProfileForStore(): SavedHeroProfile | null {
   try {
@@ -137,10 +152,55 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   proceedToNextFloor: (rewardIndex: number) => {
     const state = get()
-    // TODO: Apply reward based on rewardIndex (1-4 task)
-    // rewardIndex: 0 = add-card, 1 = upgrade-card, 2 = remove-card, (3 = add-relic for future)
+    const REWARD_TYPES = ['add-card', 'upgrade-card', 'remove-card', 'add-relic']
+    const rewardType = REWARD_TYPES[rewardIndex] || 'add-card'
+
+    // 현재 덱 수집 (hand + deck + discardPile)
+    const allCurrentCards = [...state.hand, ...state.deck, ...state.discardPile]
+
+    // 보상 유형별 적용
+    let updatedDeck = allCurrentCards
+    let newRelics = state.relics
+
+    if (rewardType === 'add-card') {
+      const newCard = generateRandomCard()
+      updatedDeck = applyRewardOption(allCurrentCards, { type: 'add-card', card: newCard })
+    } else if (rewardType === 'upgrade-card' && allCurrentCards.length > 0) {
+      const upgradeTarget = allCurrentCards.reduce((best, card) =>
+        card.value > best.value ? card : best
+      )
+      updatedDeck = applyRewardOption(allCurrentCards, {
+        type: 'upgrade-card',
+        targetId: upgradeTarget.id,
+        bonusPct: 50
+      })
+    } else if (rewardType === 'remove-card' && allCurrentCards.length > 1) {
+      const removeTarget = allCurrentCards.reduce((worst, card) =>
+        card.value < worst.value ? card : worst
+      )
+      updatedDeck = applyRewardOption(allCurrentCards, {
+        type: 'remove-card',
+        targetId: removeTarget.id
+      })
+    } else if (rewardType === 'add-relic') {
+      // TODO: balance-v2에서 실제 유물 정의 후 구현
+      // 임시: 유물 ID만 추가
+      const newRelic = { id: `relic_${Date.now()}`, name: '미정', description: '' }
+      newRelics = [...state.relics, newRelic]
+    }
+
+    // 다음 층으로 진행
     const newState = advanceToNextFloor(state)
-    set({ ...newState, previewResult: null })
+
+    // 적용된 덱 설정 (분배는 advanceToNextFloor 이후)
+    const handSize = Math.min(5, updatedDeck.length)
+    set({
+      ...newState,
+      hand: updatedDeck.slice(0, handSize),
+      deck: updatedDeck.slice(handSize),
+      relics: newRelics,
+      previewResult: null
+    })
   },
 
   resetGame: () => {
