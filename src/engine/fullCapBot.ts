@@ -442,6 +442,7 @@ function createDeterministicState(
     isVictory: false,
     floorsCleared: 0,
     talismans: [],
+    relics: [],
     amplifyActive: false,
     attackCount: 0,
     enemyPhaseSwitch: false,
