@@ -101,6 +101,8 @@ const INITIAL_BATTLE_STATS: BattleStats = {
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
+  // DEV: expose store for screenshot automation (remove before release)
+  ...(typeof window !== 'undefined' && ((window as any).__GAME_STORE__ = { getState: () => get(), setState: (s: any) => set(s) }), {}),
   ...createInitialGameState(0, loadHeroProfileForStore()),
   previewResult: null,
 
