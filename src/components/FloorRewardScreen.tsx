@@ -17,6 +17,14 @@ const REWARD_OPTIONS = [
   { label: '유물 획득', desc: '런 한정 특수 효과' },
 ]
 
+const ELEMENT_LABELS: Record<string, string> = {
+  mok: '木', hwa: '火', to: '土', geum: '金', su: '水',
+}
+
+const ELEMENT_COLORS: Record<string, string> = {
+  mok: '#4A9B6E', hwa: '#C63D2F', to: '#D9A441', geum: '#C8C0B0', su: '#3D5A80',
+}
+
 export default function FloorRewardScreen({ currentFloor, onProceed }: FloorRewardScreenProps) {
   const [chosen, setChosen] = useState<number | null>(null)
   const nextFloor = currentFloor + 1
@@ -84,8 +92,14 @@ export default function FloorRewardScreen({ currentFloor, onProceed }: FloorRewa
           <div style={{ color: '#D8CCB4', fontSize: '14px', marginTop: '4px' }}>
             {nextFloor}층 — {nextConfig.enemyName}
           </div>
-          <div style={{ color: '#6A6560', fontSize: '12px', marginTop: '2px' }}>
-            체력 {nextConfig.enemyHp} · 반격 {nextConfig.counterDamage} · 공격 {nextConfig.maxPlays}회
+          <div style={{ color: '#6A6560', fontSize: '12px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
+            <div>체력 {nextConfig.enemyHp} · 반격 {nextConfig.counterDamage} · 공격 {nextConfig.maxPlays}회</div>
+            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+              <span style={{ fontSize: '10px', color: '#4A4540' }}>적:</span>
+              <span style={{ fontSize: '14px', color: ELEMENT_COLORS[nextConfig.enemyPrimaryElement], fontWeight: 'bold' }}>
+                {ELEMENT_LABELS[nextConfig.enemyPrimaryElement]}
+              </span>
+            </div>
           </div>
         </div>
       )}

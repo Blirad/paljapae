@@ -30,7 +30,7 @@ export const PASSIVE_POOL: Passive[] = [
   {
     id: 'sikshin',
     name: '식신(食神)',
-    effect: '기운 잇기 조합 시 피해 +20%',
+    effect: '낱장 조합 시 피해 +20%',
     rarity: 'common',
     sipsong: 'sikshin',
   },

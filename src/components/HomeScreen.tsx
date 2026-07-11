@@ -145,17 +145,28 @@ export default function HomeScreen({ onNewRun, wins, losses, heroProfile, onRese
           {(() => {
             const yongsin = getFavorableElement(heroProfile.ilganElement as any)
             const yongsinKo = ELEMENT_KO[yongsin] ?? yongsin
+            const yongsinCount = heroProfile.elementDist?.[yongsin] ?? 0
+            const hasEnoughYongsin = yongsinCount >= 2
+
             return (
               <div style={{
                 marginTop: '12px',
                 padding: '8px 12px',
                 borderTop: '1px solid #2A2620',
-                color: '#8A8580',
+                color: hasEnoughYongsin ? '#8A8580' : '#C63D2F',
                 fontSize: '12px',
                 lineHeight: '1.6',
                 letterSpacing: '0.04em',
               }}>
-                당신의 용신은 <span style={{ color: ELEMENT_COLORS[yongsin], fontWeight: 600 }}>{yongsinKo}</span> — 콤보에 섞으면 피해가 커집니다
+                {hasEnoughYongsin ? (
+                  <>
+                    당신의 용신은 <span style={{ color: ELEMENT_COLORS[yongsin], fontWeight: 600 }}>{yongsinKo}</span> — 콤보에 섞으면 피해가 커집니다
+                  </>
+                ) : (
+                  <>
+                    당신의 팔자에 <span style={{ color: ELEMENT_COLORS[yongsin], fontWeight: 600 }}>{yongsinKo}</span>이 없다 — 여정에서 <span style={{ color: ELEMENT_COLORS[yongsin], fontWeight: 600 }}>{yongsinKo}</span>을 구하라. 콤보에 섞으면 피해가 커집니다
+                  </>
+                )}
               </div>
             )
           })()}
