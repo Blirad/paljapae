@@ -9,7 +9,7 @@
 import { useMemo } from 'react'
 import type { SavedHeroProfile } from '../types/game'
 import { getArchetypeByChar, getSpiritByChar } from '../engine/heroes'
-import { getTodayFortune, getTodayDayElement } from '../engine/manseryeok'
+import { getTodayFortune, getTodayDayElement, getFavorableElement } from '../engine/manseryeok'
 import { getFortuneText, getDailyVariant } from '../data/fortuneTexts'
 
 interface HomeScreenProps {
@@ -140,6 +140,25 @@ export default function HomeScreen({ onNewRun, wins, losses, heroProfile, onRese
               )
             })}
           </div>
+
+          {/* 용신 안내 */}
+          {(() => {
+            const yongsin = getFavorableElement(heroProfile.ilganElement as any)
+            const yongsinKo = ELEMENT_KO[yongsin] ?? yongsin
+            return (
+              <div style={{
+                marginTop: '12px',
+                padding: '8px 12px',
+                borderTop: '1px solid #2A2620',
+                color: '#8A8580',
+                fontSize: '12px',
+                lineHeight: '1.6',
+                letterSpacing: '0.04em',
+              }}>
+                당신의 용신은 <span style={{ color: ELEMENT_COLORS[yongsin], fontWeight: 600 }}>{yongsinKo}</span> — 콤보에 섞으면 피해가 커집니다
+              </div>
+            )
+          })()}
         </div>
       ) : (
         /* 영웅 없음 — 안내 */

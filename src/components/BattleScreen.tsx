@@ -178,6 +178,7 @@ function buildPreviewText(
   options?: {
     hasAllFive?: boolean
     condensedMultiplier?: number  // 응축 활성 시 예상 최종 데미지 미리보기용
+    favorableElement?: Element  // 용신 원소
   },
 ): {
   line1: string
@@ -188,8 +189,9 @@ function buildPreviewText(
   isIdle?: boolean
   isYeonhwanReady?: boolean
   isInvalidCombo?: boolean
+  yongsinLabel?: string  // "용신 ×1.3" or "용신(연환) ×1.5"
 } | null {
-  const { hasAllFive = false, condensedMultiplier = 0 } = options ?? {}
+  const { hasAllFive = false, condensedMultiplier = 0, favorableElement } = options ?? {}
 
   // 상태 ⑤: 연환 가능 (선택 0장이어도 핸드에 5기운 있으면 표시)
   if (hasAllFive && cards.length === 0) {
@@ -242,6 +244,18 @@ function buildPreviewText(
   const repEl = getRepresentativeElement(cards)
   const affinity = calcAffinity(repEl, enemyElement)
   const affinityMult = getAffinityMultiplier(affinity)
+
+  // 용신 라벨 계산
+  const yongsinLabel = (() => {
+    if (!favorableElement) return undefined
+    const hasYongsin = cards.some(c => c.element === favorableElement)
+    if (!hasYongsin) return undefined
+    const isChain3Plus = cards.length >= 3
+    const lastCard = cards[cards.length - 1]
+    const lastIsYongsin = lastCard?.element === favorableElement
+    if (isChain3Plus && lastIsYongsin) return '용신(연환) ×1.5'
+    return '용신 ×1.3'
+  })()
 
   const fe = comboResult.finishingElement
   const feHanja = ELEMENT_LABELS[fe]
@@ -322,13 +336,13 @@ function buildPreviewText(
     const line2Str = finalDamageWithCondense !== null
       ? `예상 ${baseDamage} → 응축 후 ${finalDamageWithCondense}`
       : `예상 ${baseDamage}${geukMultLabel ? ` (상성 보정 포함)` : ''}`
-    return { line1, line2: line2Str, line1Color: gColor }
+    return { line1, line2: line2Str, line1Color: gColor, yongsinLabel }
   }
 
   const line1 = `${comboName} (${feHanja})${geukSuffix} · 공격력 ${baseScore} × ${mult} = 예상 ${baseDamage}${finalDamageWithCondense !== null ? ` → 응축 후 ${finalDamageWithCondense}` : ''}`
   const line2 = geukMultLabel ? `기본 ${baseScore} × ${mult}(${typeLabel})${geukMultLabel} = ${baseDamage}` : null
 
-  return { line1, line2, line1Color }
+  return { line1, line2, line1Color, yongsinLabel }
 }
 
 // ─── B-2: 이종 기운 3장 이상 차단 판정 ────────────────────────────────────
@@ -3151,7 +3165,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           const preview = buildPreviewText(
             selectedCardObjs,
             enemyElement,
-            { hasAllFive: hasAllFiveElements, condensedMultiplier: condensedMultiplier ?? 0 },
+            { hasAllFive: hasAllFiveElements, condensedMultiplier: condensedMultiplier ?? 0, favorableElement },
           )
 
           // condenseInfo: 토 타격 조합
@@ -3245,6 +3259,14 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                   {preview.line2}
                 </div>
               )}
+              {preview.yongsinLabel && (
+                <div style={{
+                  color: '#C8A830', fontSize: '11px', fontWeight: 600,
+                  letterSpacing: '0.06em', textAlign: 'center',
+                }}>
+                  {preview.yongsinLabel}
+                </div>
+              )}
             </div>
           )
         })()}
@@ -3310,6 +3332,23 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                 {/* 팔자 — 소형 텍스트 */}
                 <text x="18" y="34" textAnchor="middle" fontSize="6" fill="#D9A441" opacity="0.6" fontWeight="bold">팔자</text>
               </svg>
+              {/* 용신 배지 — 팔자 아이콘 아래 고정 */}
+              {favorableElement && (
+                <div style={{
+                  marginTop: '2px',
+                  padding: '1px 5px',
+                  border: `1px solid ${ELEMENT_COLORS[favorableElement]}`,
+                  borderRadius: '2px',
+                  backgroundColor: 'rgba(22,19,15,0.85)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  whiteSpace: 'nowrap',
+                }}>
+                  <span style={{ fontSize: '8px', color: '#6A6560', letterSpacing: '0.05em' }}>용신</span>
+                  <span style={{ fontSize: '9px', color: ELEMENT_COLORS[favorableElement], fontWeight: 700 }}>{ELEMENT_LABELS[favorableElement]}</span>
+                </div>
+              )}
               {/* Phase 1.9.5: 응축 구슬 + 라벨 "응축 +P% 대기" */}
             {(condensedMultiplier ?? 0) > 0 && (
               <div style={{
@@ -3430,9 +3469,6 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
               return best?.id === card.id
             })()
 
-            // 스펙 v2: 용신 카드 판정 (은은한 골드 테두리)
-            const isYongsinCard = favorableElement !== undefined && card.element === favorableElement
-
             return (
               <button
                 key={card.id}
@@ -3470,8 +3506,6 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                     ? `2px solid #FFD98A`
                     : isDropTarget && dragState.fusionPreview?.type !== 'reject'
                     ? `2px solid #D9A441`
-                    : isYongsinCard && !isSelected
-                    ? `1px solid #C8A830`
                     : `2px solid ${isSelected ? elColor : '#2A2620'}`,
                   borderRadius: '2px',
                   position: 'relative',
@@ -3490,8 +3524,6 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                     ? `0 0 8px #FFD98A, 0 0 16px rgba(255,217,138,0.4)`
                     : isDropTarget && dragState.fusionPreview?.type !== 'reject'
                     ? `0 0 14px #D9A441`
-                    : isYongsinCard && !isSelected
-                    ? `0 0 4px rgba(200,168,48,0.5)`
                     : isSelected ? `0 0 8px ${glowColor}` : 'none',
                   flexShrink: 0,
                   padding: 0,
