@@ -14,7 +14,8 @@ interface FloorRewardScreenProps {
 const REWARD_OPTIONS = [
   { label: '카드 획득', desc: '덱에 새 카드 추가' },
   { label: '카드 강화', desc: '기존 카드 값 +2' },
-  { label: '유물 획득', desc: '런 한정 특수 효과' },
+  // TODO(balance-v2): 유물 시스템 구현 후 활성화
+  // { label: '유물 획득', desc: '런 한정 특수 효과' },
 ]
 
 const ELEMENT_LABELS: Record<string, string> = {
