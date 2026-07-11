@@ -9,8 +9,9 @@ import {
   GEUK_MAP,
   detectElementClash,
 } from './pokerHandJudge'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseMultiplier, FUSION_TRAIT_MAP, TRAIT_CONFIGS } from './balance'
+import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseMultiplier, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER } from './balance'
 import { generateSajuDeck } from './deckGenerator'
+import { getFavorableElement } from './manseryeok'
 
 /**
  * C10(d): 오행 속성별 기믹 정의 (balance.ts 수치 변경 없이 새로운 로직 추가)
@@ -104,6 +105,11 @@ export function createInitialGameState(floorIndex = 0, heroProfile?: SavedHeroPr
   const hand = deck.slice(0, HAND_SIZE)
   const remainDeck = deck.slice(HAND_SIZE)
 
+  // 스펙 v2: 용신 원소 계산 (영웅 프로필의 일간 기준)
+  const favorableElement = heroProfile?.ilganElement
+    ? getFavorableElement(heroProfile.ilganElement)
+    : undefined
+
   // balance.ts 수치 그대로 사용 (기믹은 전투 중 별도 로직으로 적용)
   return {
     currentFloor: floorConfig.floor,
@@ -134,6 +140,8 @@ export function createInitialGameState(floorIndex = 0, heroProfile?: SavedHeroPr
     lastTraitTriggered: undefined,
     carryoverBurn: 0,
     reshuffled: false,
+    // 스펙 v2: 용신 원소
+    favorableElement,
   }
 }
 
@@ -156,9 +164,6 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
   const primaryEl = (!state.enemyPhaseSwitch)
     ? floorConfig.enemyPrimaryElement
     : floorConfig.enemySubElement
-  const subEl = (!state.enemyPhaseSwitch)
-    ? floorConfig.enemySubElement
-    : floorConfig.enemyPrimaryElement
 
   // Phase 1.6 A — 전투 규칙 3종 (floorEnemyEl = 현재 주 기운)
   const floorEnemyEl = primaryEl as Element | undefined
@@ -169,38 +174,49 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     damage = Math.round(damage * 0.7)
   }
 
-  // Phase 1.8: 마무리 기운 기준 극/반극 판정
-  const finishEl = result.finishingElement
+  // 스펙 v2 — 상생상극 매트릭스: 콤보 대표 원소 판정
+  // 다수결: 가장 많이 등장한 원소. 동수 시: 마지막 카드의 원소
+  void result.finishingElement  // 마무리 기운 (포커핸드 판정 기준, UI는 repEl 기준)
+  const repEl: Element = (() => {
+    const counts: Record<string, number> = {}
+    for (const c of playedCards) {
+      counts[c.element] = (counts[c.element] ?? 0) + 1
+    }
+    let maxCount = 0
+    let repCandidate: Element = playedCards[playedCards.length - 1].element
+    for (const [el, cnt] of Object.entries(counts)) {
+      if (cnt > maxCount) {
+        maxCount = cnt
+        repCandidate = el as Element
+      }
+    }
+    // 동수 시: 마지막 카드 원소
+    const maxEntries = Object.entries(counts).filter(([, cnt]) => cnt === maxCount)
+    if (maxEntries.length > 1) {
+      return playedCards[playedCards.length - 1].element
+    }
+    return repCandidate
+  })()
 
-  // A-2: [마무리 기운 원칙] 마무리 기운이 적 주 기운을 극하면 +70%, 아닌 기운이 극하면 +10%
-  let mainGeukApplied = false
+  // 상생상극 매트릭스 적용 (스펙 v2 — 유일한 원소 상성 배율)
   if (floorEnemyEl) {
-    const finishGeuksEnemy = GEUK_MAP[finishEl] === floorEnemyEl
-    const anyGeuksEnemy = playedCards.some(c => GEUK_MAP[c.element] === floorEnemyEl)
-    if (finishGeuksEnemy) {
-      damage = Math.round(damage * 1.7)
-      mainGeukApplied = true
-    } else if (anyGeuksEnemy) {
-      damage = Math.round(damage * 1.1)
-      mainGeukApplied = true
+    const iGeukEnemy   = GEUK_MAP[repEl] === floorEnemyEl    // 내가 적을 극 → ×1.5
+    const iSaengEnemy  = SANG_MAP[repEl] === floorEnemyEl    // 내가 적을 생 → ×0.5
+    const enemyGeukMe  = GEUK_MAP[floorEnemyEl] === repEl    // 적이 나를 극 → ×0.75
+
+    if (iGeukEnemy) {
+      damage = Math.round(damage * GEUK_BONUS_MULTIPLIER)    // ×1.5
+    } else if (iSaengEnemy) {
+      damage = Math.round(damage * SANG_PENALTY_MULTIPLIER)  // ×0.5
+    } else if (enemyGeukMe) {
+      damage = Math.round(damage * ANTI_GEUK_PENALTY)        // ×0.75
     }
+    // 동기(同氣) 또는 적이 나를 생 → ×1.0 (변화 없음)
   }
 
-  // Phase 1.7 신규: 부 기운 극 보너스 +25% (주 기운 극 적용 안 된 경우만)
-  if (!mainGeukApplied && subEl) {
-    const hasSubGeuk = playedCards.some(c => GEUK_MAP[c.element] === subEl)
-    if (hasSubGeuk) {
-      damage = Math.round(damage * SUB_GEUK_BONUS)
-    }
-  }
-
-  // A-3: [적의 반극] 마무리 기운이 적 주 기운에 의해 극 당하면 -40% (Phase 1.8)
-  if (floorEnemyEl) {
-    const enemyGeuksFinish = GEUK_MAP[floorEnemyEl] === finishEl
-    if (enemyGeuksFinish) {
-      damage = Math.round(damage * ANTI_GEUK_PENALTY)
-    }
-  }
+  // 레거시 — 부 기운 극 보너스 (SUB_GEUK_BONUS, 호환성 유지 — 스펙 v2에서는 위 매트릭스가 유일)
+  // 아래 코드는 비활성화됨 (스펙 v2 지시: 상생상극 매트릭스가 유일한 원소 상성 배율)
+  void SUB_GEUK_BONUS  // 호환성 import 유지
 
   // E-1: 연환 1회 제한 — 오행연환인데 이미 사용했으면 피해 0 (연환 차단)
   const isYeonhwan = result.rank === 'ohang-yeonhwan'
@@ -213,6 +229,24 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
   // Phase 1.6 B — 증폭부: 다음 공격 ×2
   if (state.amplifyActive && !isBlocked) {
     damage = damage * 2
+  }
+
+  // 스펙 v2 — 용신 보너스
+  // 콤보에 플레이어 용신 원소 카드가 포함되어 있으면 ×1.3
+  // 연환 3장 이상이고 마지막 카드가 용신 원소이면 ×1.5 (×1.3 대체)
+  if (state.favorableElement && !isBlocked) {
+    const favEl = state.favorableElement
+    const hasYongsin = playedCards.some(c => c.element === favEl)
+    if (hasYongsin) {
+      const isChain3Plus = playedCards.length >= 3
+      const lastCard = playedCards[playedCards.length - 1]
+      const lastIsYongsin = lastCard?.element === favEl
+      if (isChain3Plus && lastIsYongsin) {
+        damage = Math.round(damage * YONGSIN_CHAIN_MULTIPLIER)  // ×1.5
+      } else {
+        damage = Math.round(damage * YONGSIN_BONUS_MULTIPLIER)  // ×1.3
+      }
+    }
   }
 
   // Phase 1.9.5: 응축 % 방식 소모 — condensedMultiplier > 0이면 damage × (1 + multiplier) 적용
@@ -578,13 +612,15 @@ export function advanceToNextFloor(state: GameState): GameState {
     attackCount: 0,
     enemyPhaseSwitch: false,
     condenseActive: false,
-    // Phase 1.9.5: 층 전환 시 리셋
+    // Phase 1.9.5: 층 전환 시 리��
     yeonhwanUsed: false,
     condensedMultiplier: 0,
     isLastAttack: floorConfig.maxPlays === 1,
     lastTraitTriggered: undefined,
     carryoverBurn: 0,
     reshuffled: false,
+    // 스펙 v2: 용신 원소 유지 (층 전환해도 동일 플레이어)
+    favorableElement: state.favorableElement,
   }
 }
 

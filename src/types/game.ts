@@ -106,6 +106,8 @@ export interface GameState {
   carryoverBurn?: number                  // 번짐 이월 피해 수치
   // Phase 1.9.4 신규 — 덱 재순환
   reshuffled: boolean                     // 이번 턴 덱 재순환 발동 여부 (UI 배너용)
+  // 스펙 v2 — 용신 원소 (일간 기반 계산)
+  favorableElement?: Element              // 플레이어 용신 원소 (없으면 undefined)
 }
 
 export type FortuneLevel = 'daegil' | 'gil' | 'pyeong' | 'hyung' | 'daehyung'

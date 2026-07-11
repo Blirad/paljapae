@@ -319,9 +319,40 @@ export const FUSION_TRAIT_MAP: Record<string, string> = {
 // --- 오행 연환 배율 (Phase 1.9.2 — E-1: ×10 → ×8 희소화)
 export const OHANG_YEONHWAN_MULTIPLIER = 8
 
-// --- 극 판정 배율
-export const GEUK_BONUS_MULTIPLIER = 1.7  // +70%
-export const ANTI_GEUK_PENALTY = 0.6      // −40%
+// --- 상생상극 매트릭스 배율 (스펙 v2 — 단일 출처)
+// 극(剋): 내가 적을 극 → ×1.5
+// 생(生): 내가 적을 생 → ×0.5
+// 적이 나를 극 → ×0.75
+// 동기/적이 나를 생 → ×1.0
+
+/** 오행 상극: key가 value를 극함 (木克土, 火克金, 土克水, 金克木, 水克火) */
+export const GEUK_MAP_BALANCE: Record<string, string> = {
+  mok: 'to',
+  hwa: 'geum',
+  to: 'su',
+  geum: 'mok',
+  su: 'hwa',
+}
+
+/** 오행 상생: key가 value를 생함 (木生火, 火生土, 土生金, 金生水, 水生木) */
+export const SANG_MAP: Record<string, string> = {
+  mok: 'hwa',
+  hwa: 'to',
+  to: 'geum',
+  geum: 'su',
+  su: 'mok',
+}
+
+/** 극(剋) 배율: 내가 적을 극 (×1.5) */
+export const GEUK_BONUS_MULTIPLIER = 1.5  // ×1.5 (스펙 v2)
+/** 생(生) 배율: 내가 적을 생 (×0.5, 피해 감소) */
+export const SANG_PENALTY_MULTIPLIER = 0.5
+/** 역극 배율: 적이 나를 극 (×0.75) */
+export const ANTI_GEUK_PENALTY = 0.75     // ×0.75 (스펙 v2)
+
+// 하위 호환 — 극 판정 배율 (deprecated, GEUK_BONUS_MULTIPLIER로 통일)
+/** @deprecated GEUK_BONUS_MULTIPLIER 사용 */
+export const YEOKGEUK_PENALTY_OLD = 0.5
 
 /**
  * 밸런스 튜닝 v9.0 (2026-07-11) — Phase 1.9.4 역산 재수행: 저장형 응축 + 덱 재순환 반영
@@ -409,8 +440,14 @@ export const BASE_DISCARDS = 3
 export const BASE_PLAYS = 4
 export const BOSS_FLOOR = 4
 
-/** 역극 페널티: 카드 데미지를 절반으로 */
+/** 역극 페널티: 카드 데미지를 절반으로 (legacy, 상생상극 매트릭스로 대체됨) */
 export const YEOKGEUK_PENALTY = 0.5
 
 // Phase 1.7 호환성: 부 기운 극 보너스 (현재는 사용 미정, 호환성 유지)
 export const SUB_GEUK_BONUS = 1.25
+
+// --- 용신 보너스 (스펙 v2 — 작업 4)
+/** 콤보에 용신 원소 포함 시 배율 */
+export const YONGSIN_BONUS_MULTIPLIER = 1.3
+/** 연환 3장 이상, 마지막 카드가 용신 원소 시 배율 (×1.3 대체) */
+export const YONGSIN_CHAIN_MULTIPLIER = 1.5

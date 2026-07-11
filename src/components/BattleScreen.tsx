@@ -26,7 +26,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useGameStore } from '../stores/gameStore'
-import { FLOOR_CONFIGS, GEUK_BONUS_MULTIPLIER, TRAIT_CONFIGS } from '../engine/balance'
+import { FLOOR_CONFIGS, GEUK_BONUS_MULTIPLIER, TRAIT_CONFIGS, SANG_MAP, SANG_PENALTY_MULTIPLIER, ANTI_GEUK_PENALTY, getCondenseMultiplier } from '../engine/balance'
 // Phase 1.7: FLOOR_ENEMY_ELEMENTS는 floorConfig.enemyPrimaryElement로 대체됨
 import { useGameContext } from '../context/GameContext'
 import { audioManager } from '../services/audioManager'
@@ -132,23 +132,64 @@ const ELEMENT_ANTI_REASON: Record<Element, string> = {
   su: '물이 불을 막는다',
 }
 
+// ─── 상생상극 매트릭스: 대표 원소 기준 상성 배율 계산 (소스 오브 트루스 = balance.ts) ──────
+/** 콤보 카드들의 대표 원소 판정 (다수결, 동수 시 마지막 카드) */
+function getRepresentativeElement(cards: Array<{ element: Element }>): Element {
+  const counts: Record<string, number> = {}
+  for (const c of cards) {
+    counts[c.element] = (counts[c.element] ?? 0) + 1
+  }
+  let maxCount = 0
+  for (const cnt of Object.values(counts)) {
+    if (cnt > maxCount) maxCount = cnt
+  }
+  const maxEntries = Object.entries(counts).filter(([, cnt]) => cnt === maxCount)
+  if (maxEntries.length > 1) {
+    // 동수: 마지막 카드 원소
+    return cards[cards.length - 1].element
+  }
+  return maxEntries[0][0] as Element
+}
+
+/** 상생상극 매트릭스 결과 타입 */
+type AffinityResult = 'geuk' | 'saeng' | 'anti-geuk' | 'neutral'
+
+/** 대표 원소(A)와 적 원소(B)의 상성 판정 */
+function calcAffinity(repEl: Element, enemyEl: Element): AffinityResult {
+  if (GEUK_MAP[repEl] === enemyEl) return 'geuk'        // 내가 적을 극
+  if (SANG_MAP[repEl] === enemyEl) return 'saeng'       // 내가 적을 생
+  if (GEUK_MAP[enemyEl] === repEl) return 'anti-geuk'   // 적이 나를 극
+  return 'neutral'
+}
+
+/** 상성 배율 (balance.ts 값만 참조 — 소스 오브 트루스) */
+function getAffinityMultiplier(affinity: AffinityResult): number {
+  switch (affinity) {
+    case 'geuk':      return GEUK_BONUS_MULTIPLIER    // ×1.5
+    case 'saeng':     return SANG_PENALTY_MULTIPLIER  // ×0.5
+    case 'anti-geuk': return ANTI_GEUK_PENALTY        // ×0.75
+    default:          return 1.0
+  }
+}
+
 function buildPreviewText(
   cards: Array<{ element: Element; value: number; polarity: string; id: string }>,
   enemyElement: Element,
   options?: {
     hasAllFive?: boolean
+    condensedMultiplier?: number  // 응축 활성 시 예상 최종 데미지 미리보기용
   },
 ): {
   line1: string
   line2: string | null
   line1Color: string
   line1Style?: React.CSSProperties
-  condenseInfo?: { attack: number; type: 'basic' | 'great'; comboName: string }
+  condenseInfo?: { attack: number; type: 'basic' | 'great'; comboName: string; condensePercent: number }
   isIdle?: boolean
   isYeonhwanReady?: boolean
   isInvalidCombo?: boolean
 } | null {
-  const { hasAllFive = false } = options ?? {}
+  const { hasAllFive = false, condensedMultiplier = 0 } = options ?? {}
 
   // 상태 ⑤: 연환 가능 (선택 0장이어도 핸드에 5기운 있으면 표시)
   if (hasAllFive && cards.length === 0) {
@@ -175,8 +216,11 @@ function buildPreviewText(
     const card = cards[0]
     const isDeadGeuki = GEUK_MAP[enemyElement] === card.element
     const baseVal = isDeadGeuki ? Math.round(card.value * 0.6) : card.value
+    const withCondense = condensedMultiplier > 0
+      ? Math.round(baseVal * (1 + condensedMultiplier))
+      : null
     return {
-      line1: `낱장 — 공격력 ${baseVal}`,
+      line1: `낱장 — 공격력 ${baseVal}${withCondense !== null ? ` → 예상 ${withCondense} (응축)` : ''}`,
       line2: null,
       line1Color: '#FFFDF7',
     }
@@ -194,10 +238,16 @@ function buildPreviewText(
     }
   }
 
+  // 상생상극 매트릭스: 대표 원소 기준
+  const repEl = getRepresentativeElement(cards)
+  const affinity = calcAffinity(repEl, enemyElement)
+  const affinityMult = getAffinityMultiplier(affinity)
+
   const fe = comboResult.finishingElement
   const feHanja = ELEMENT_LABELS[fe]
-  const geuksEnemy = GEUK_MAP[fe] === enemyElement
-  const enemyGeuksFinish = GEUK_MAP[enemyElement] === fe
+  const geuksEnemy = affinity === 'geuk'
+  const saengEnemy = affinity === 'saeng'
+  const enemyGeuksMe = affinity === 'anti-geuk'
 
   // 상태 ⑤: 연환
   if (comboResult.type === 'ohang-yeonhwan') {
@@ -209,19 +259,19 @@ function buildPreviewText(
     }
   }
 
-  // 상태 ⑥: 토 타격 조합 (condenseType이 있을 때)
+  // 상태 ⑥: 토 타격 조합 (condenseType이 있을 때) — getCondenseMultiplier 소스 오브 트루스
   const condenseAvail = getCondenseAvailability(comboResult.name ?? '', fe)
   if (condenseAvail !== null) {
     const mult = comboResult.multiplier
     const baseScore = comboResult.baseScore
-    const geukMult = geuksEnemy ? 1.7 : enemyGeuksFinish ? 0.6 : 1.0
-    const finalDamage = Math.round(baseScore * mult * geukMult)
-    // Phase 1.9.3: 조합명 포함
+    const finalDamage = Math.round(baseScore * mult * affinityMult)
+    // 응축 배율: 현재 선택 카드 수 기반 (getCondenseMultiplier = 소스 오브 트루스)
+    const condensePercent = Math.round(getCondenseMultiplier(cards.length) * 100)
     return {
       line1: '',
       line2: null,
       line1Color: '#FFFDF7',
-      condenseInfo: { attack: finalDamage, type: condenseAvail, comboName: comboResult.name },
+      condenseInfo: { attack: finalDamage, type: condenseAvail, comboName: comboResult.name, condensePercent },
     }
   }
 
@@ -240,32 +290,43 @@ function buildPreviewText(
   }
 
   if (geuksEnemy) {
-    const reason = ELEMENT_GEUK_REASON[fe] ?? `${feHanja}이 이긴다`
-    geukSuffix = ` · ${reason} +70%`
-    geukMultLabel = ' × 1.7(극 유리)'
+    const reason = ELEMENT_GEUK_REASON[repEl] ?? `${feHanja}이 이긴다`
+    geukSuffix = ` · ${reason} +50%`
+    geukMultLabel = ' × 1.5(극 유리)'
     line1Color = '#4A9B6E'
-  } else if (enemyGeuksFinish) {
+  } else if (saengEnemy) {
+    geukSuffix = ` · ${ELEMENT_KO[repEl]}이 ${ELEMENT_KO[enemyElement]}을 먹인다 −50%`
+    geukMultLabel = ' × 0.5(생 불리)'
+    line1Color = '#D9A441'
+  } else if (enemyGeuksMe) {
     const reason = ELEMENT_ANTI_REASON[enemyElement] ?? '막힌다'
-    geukSuffix = ` · ${reason} −40%`
-    geukMultLabel = ' × 0.6(극 불리)'
+    geukSuffix = ` · ${reason} −25%`
+    geukMultLabel = ' × 0.75(극 불리)'
     line1Color = '#C63D2F'
   }
+
+  const baseDamage = Math.round(baseScore * mult * affinityMult)
+  // 응축 활성 시: 최종 예상 데미지에 응축 배율까지 반영
+  const finalDamageWithCondense = condensedMultiplier > 0
+    ? Math.round(baseDamage * (1 + condensedMultiplier))
+    : null
 
   // gather 타입
   if (comboResult.type === 'gather') {
     const elementName = ELEMENT_KO[cards[0].element]
     let line1 = `${elementName} 모으기 ${cards.length} (${ELEMENT_LABELS[cards[0].element]}) · 공격력 ${baseScore} × ${mult}`
     let gColor = '#D8CCB4'
-    if (geuksEnemy) { line1 += ' +70%'; gColor = '#4A9B6E' }
-    else if (enemyGeuksFinish) { line1 += ' −40%'; gColor = '#C63D2F' }
-    const finalMult = geuksEnemy ? mult * 1.7 : enemyGeuksFinish ? mult * 0.6 : mult
-    const line2 = `예상 ${Math.round(baseScore * finalMult)}${geukMultLabel ? ` (극 보정 포함)` : ''}`
-    return { line1, line2, line1Color: gColor }
+    if (geuksEnemy) { line1 += ' +50%'; gColor = '#4A9B6E' }
+    else if (saengEnemy) { line1 += ' −50%'; gColor = '#D9A441' }
+    else if (enemyGeuksMe) { line1 += ' −25%'; gColor = '#C63D2F' }
+    const line2Str = finalDamageWithCondense !== null
+      ? `예상 ${baseDamage} → 응축 후 ${finalDamageWithCondense}`
+      : `예상 ${baseDamage}${geukMultLabel ? ` (상성 보정 포함)` : ''}`
+    return { line1, line2: line2Str, line1Color: gColor }
   }
 
-  const finalMult = geuksEnemy ? mult * 1.7 : enemyGeuksFinish ? mult * 0.6 : mult
-  const line1 = `${comboName} (${feHanja})${geukSuffix} · 공격력 ${baseScore} × ${mult} = 예상 ${Math.round(baseScore * finalMult)}`
-  const line2 = geukMultLabel ? `기본 ${baseScore} × ${mult}(${typeLabel})${geukMultLabel} = ${Math.round(baseScore * finalMult)}` : null
+  const line1 = `${comboName} (${feHanja})${geukSuffix} · 공격력 ${baseScore} × ${mult} = 예상 ${baseDamage}${finalDamageWithCondense !== null ? ` → 응축 후 ${finalDamageWithCondense}` : ''}`
+  const line2 = geukMultLabel ? `기본 ${baseScore} × ${mult}(${typeLabel})${geukMultLabel} = ${baseDamage}` : null
 
   return { line1, line2, line1Color }
 }
@@ -1077,6 +1138,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     lastTraitTriggered,
     carryoverBurn: _carryoverBurn,
     reshuffled,
+    favorableElement,
     toggleCardSelect,
     playSelectedCards,
     discardSelectedCards,
@@ -2940,6 +3002,64 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
             </div>
           )}
 
+          {/* 스펙 v2 — 상성 미리보기 UI (선택 시점 즉시 갱신) */}
+          {selectedCardObjs.length >= 1 && (() => {
+            const repEl = getRepresentativeElement(selectedCardObjs)
+            const affinity = calcAffinity(repEl, enemyElement)
+            const affinityMult = getAffinityMultiplier(affinity)
+            // 간단한 예상 데미지: comboResult 기반 (단일 카드 포함)
+            const comboR = selectedCardObjs.length >= 2
+              ? judgeCombo(selectedCardObjs as any)
+              : null
+            const baseEstimate = comboR
+              ? Math.round(comboR.baseScore * comboR.multiplier * affinityMult)
+              : Math.round(selectedCardObjs[0].value * affinityMult)
+            const withCondense = (condensedMultiplier ?? 0) > 0
+              ? Math.round(baseEstimate * (1 + (condensedMultiplier ?? 0)))
+              : null
+
+            const affinityColor = affinity === 'geuk' ? '#4A9B6E'
+              : affinity === 'saeng' ? '#D9A441'
+              : affinity === 'anti-geuk' ? '#C63D2F'
+              : '#6A6560'
+            const affinityLabel = affinity === 'geuk'
+              ? `${ELEMENT_KO[repEl]}이 ${ELEMENT_KO[enemyElement]}을 이긴다 (×1.5)`
+              : affinity === 'saeng'
+              ? `${ELEMENT_KO[repEl]}이 ${ELEMENT_KO[enemyElement]}을 먹인다 (×0.5)`
+              : affinity === 'anti-geuk'
+              ? `${ELEMENT_KO[enemyElement]}이 ${ELEMENT_KO[repEl]}을 누른다 (×0.75)`
+              : '동기 또는 중립 (×1.0)'
+
+            return (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '4px 8px',
+                backgroundColor: 'rgba(22,19,15,0.7)',
+                border: `1px solid ${affinityColor}40`,
+                borderRadius: '3px',
+                flexWrap: 'wrap',
+                justifyContent: 'center',
+              }}>
+                {/* 대표 원소 → 적 원소 */}
+                <span style={{ color: ELEMENT_COLORS[repEl], fontSize: '11px', fontWeight: 700 }}>
+                  {ELEMENT_LABELS[repEl]}
+                </span>
+                <span style={{ color: '#4A4540', fontSize: '10px' }}>→</span>
+                <span style={{ color: ELEMENT_COLORS[enemyElement], fontSize: '11px', fontWeight: 700 }}>
+                  {ELEMENT_LABELS[enemyElement]}
+                </span>
+                <span style={{ color: affinityColor, fontSize: '11px', fontWeight: 600, letterSpacing: '0.03em' }}>
+                  {affinityLabel}
+                </span>
+                <span style={{ color: '#8B9BB4', fontSize: '11px' }}>
+                  {withCondense !== null ? `예상 ${baseEstimate} → 응축 후 ${withCondense}` : `예상 ${baseEstimate}`}
+                </span>
+              </div>
+            )
+          })()}
+
           {/* 피해 내역 패널: 적 HP바 아래 인라인 배치 */}
           <DamageBreakdownPanel breakdown={damageBreakdown} getCssDuration={getCssDuration} />
 
@@ -3031,19 +3151,20 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           const preview = buildPreviewText(
             selectedCardObjs,
             enemyElement,
-            { hasAllFive: hasAllFiveElements },
+            { hasAllFive: hasAllFiveElements, condensedMultiplier: condensedMultiplier ?? 0 },
           )
 
           // condenseInfo: 토 타격 조합
           // Phase 1.9.4: 저장형 응축 미리보기 —
           // "옹기가마 (土) · 공격: 예상 45 / 대응축: 45를 굽는다 → 다음 공격 +90"
+          // condenseInfo: 토 타격 조합 — getCondenseMultiplier 소스 오브 트루스
           if (preview?.condenseInfo) {
-            const { attack, type, comboName } = preview.condenseInfo
-            const mult = type === 'great' ? 2.0 : 1.5
-            const savedBonus = Math.round(attack * mult)
-            const label = type === 'great' ? '대응축' : '응축'
-            const verbPhrase = type === 'great' ? '를 굽는다' : '를 담는다'
-            const labelColor = type === 'great' ? '#FF8C40' : '#D9A441'
+            const { attack, comboName, condensePercent } = preview.condenseInfo
+            // condensePercent = getCondenseMultiplier(cardCount) * 100 (balance.ts 소스 오브 트루스)
+            const condensedDamage = condensePercent > 0
+              ? Math.round(attack * (1 + condensePercent / 100))
+              : null
+            const alreadyActive = (condensedMultiplier ?? 0) > 0
             return (
               <div style={{
                 background: 'rgba(28,23,16,0.9)',
@@ -3060,9 +3181,19 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                 <span style={{ fontSize: '13px', color: '#4A4540' }}>·</span>
                 <span style={{ fontSize: '13px', color: '#FFFDF7' }}>공격: 예상 {attack}</span>
                 <span style={{ fontSize: '13px', color: '#4A4540' }}>/</span>
-                <span style={{ fontSize: '13px', color: labelColor, fontWeight: type === 'great' ? 700 : 600 }}>
-                  {label}: {attack}{verbPhrase} → 다음 공격 +{savedBonus}
-                </span>
+                {alreadyActive ? (
+                  <span style={{ fontSize: '13px', color: '#FFD98A', fontWeight: 600 }}>
+                    응축 대기 중 (+{Math.round((condensedMultiplier ?? 0) * 100)}%)
+                  </span>
+                ) : condensePercent > 0 ? (
+                  <span style={{ fontSize: '13px', color: '#FF8C40', fontWeight: 700 }}>
+                    대응축({selectedCards.length}장) +{condensePercent}% → 다음 공격 예상 {condensedDamage}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: '13px', color: '#D9A441', fontWeight: 600 }}>
+                    대응축 — 옹기가마에 굽는다
+                  </span>
+                )}
               </div>
             )
           }
@@ -3299,6 +3430,9 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
               return best?.id === card.id
             })()
 
+            // 스펙 v2: 용신 카드 판정 (은은한 골드 테두리)
+            const isYongsinCard = favorableElement !== undefined && card.element === favorableElement
+
             return (
               <button
                 key={card.id}
@@ -3336,6 +3470,8 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                     ? `2px solid #FFD98A`
                     : isDropTarget && dragState.fusionPreview?.type !== 'reject'
                     ? `2px solid #D9A441`
+                    : isYongsinCard && !isSelected
+                    ? `1px solid #C8A830`
                     : `2px solid ${isSelected ? elColor : '#2A2620'}`,
                   borderRadius: '2px',
                   position: 'relative',
@@ -3354,6 +3490,8 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                     ? `0 0 8px #FFD98A, 0 0 16px rgba(255,217,138,0.4)`
                     : isDropTarget && dragState.fusionPreview?.type !== 'reject'
                     ? `0 0 14px #D9A441`
+                    : isYongsinCard && !isSelected
+                    ? `0 0 4px rgba(200,168,48,0.5)`
                     : isSelected ? `0 0 8px ${glowColor}` : 'none',
                   flexShrink: 0,
                   padding: 0,
@@ -3644,9 +3782,9 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
               ? getCondenseAvailability(selectedComboResult.name ?? '', selectedComboResult.finishingElement)
               : null
             const canAttack = selectedCards.length > 0 && playsLeft > 0 && !isInputLocked
-            // Phase 1.9.5: 응축 배율 계산 (선택 카드 수 기반)
+            // 응축 배율 계산 — getCondenseMultiplier 소스 오브 트루스 (balance.ts)
             const condensePercent = condenseAvail === 'great' && selectedCards.length >= 2
-              ? Math.round(selectedCards.length >= 5 ? 240 : [0, 0, 120, 160, 200, 240][selectedCards.length] ?? 240)
+              ? Math.round(getCondenseMultiplier(selectedCards.length) * 100)
               : 0
             // 응축 버튼 비활성 조건
             const condenseAlreadyActive = (condensedMultiplier ?? 0) > 0

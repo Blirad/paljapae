@@ -251,6 +251,31 @@ export function lunarToSolar(
   return { year: solar.getYear(), month: solar.getMonth(), day: solar.getDay() }
 }
 
+/**
+ * 일간(日干) 오행 기반 용신(用神) 결정
+ *
+ * 기본 원칙 (팔자전 간소화 규칙):
+ *  木 일간 → 水 용신 (인성: 나를 생하는 기운)
+ *  火 일간 → 木 용신 (인성: 나를 생하는 기운)
+ *  土 일간 → 火 용신 (인성: 나를 생하는 기운)
+ *  金 일간 → 土 용신 (인성: 나를 생하는 기운)
+ *  水 일간 → 金 용신 (인성: 나를 생하는 기운)
+ *
+ * 인성(印星) = 나를 생해주는 기운 (상생에서 나를 생하는 자)
+ * SANG_MAP에서 역방향: SANG_MAP[X] === myElement → X가 나를 생함
+ */
+export function getFavorableElement(ilganElement: Element): Element {
+  // 나를 생하는 기운: SANG_MAP[X] = ilganElement → X가 용신
+  const saengChaeReverse: Record<Element, Element> = {
+    mok: 'su',    // 水生木
+    hwa: 'mok',   // 木生火
+    to:  'hwa',   // 火生土
+    geum: 'to',   // 土生金
+    su:  'geum',  // 金生水
+  }
+  return saengChaeReverse[ilganElement]
+}
+
 // 폴리필 — 천간/지지 한자 이름 export (heroes.ts에서 사용)
 export {
   CHEONGAN_CHARS,
