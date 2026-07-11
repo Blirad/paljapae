@@ -171,8 +171,8 @@ export default function App() {
     setScreen('result')
   }, [])
 
-  const handleFloorRewardProceed = useCallback(() => {
-    proceedToNextFloor()
+  const handleFloorRewardProceed = useCallback((rewardIndex: number) => {
+    proceedToNextFloor(rewardIndex)
     setScreen('battle')
   }, [proceedToNextFloor])
 

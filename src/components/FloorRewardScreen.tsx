@@ -8,14 +8,13 @@ import { FLOOR_CONFIGS } from '../engine/balance'
 
 interface FloorRewardScreenProps {
   currentFloor: number
-  onProceed: () => void
+  onProceed: (rewardIndex: number) => void
 }
 
 const REWARD_OPTIONS = [
   { label: '카드 획득', desc: '덱에 새 카드 추가' },
-  { label: '카드 강화', desc: '기존 카드 값 +2' },
-  // TODO(balance-v2): 유물 시스템 구현 후 활성화
-  // { label: '유물 획득', desc: '런 한정 특수 효과' },
+  { label: '카드 강화', desc: '카드 값 ×1.5' },
+  { label: '카드 제거', desc: '약한 카드 제거' },
 ]
 
 const ELEMENT_LABELS: Record<string, string> = {
@@ -107,7 +106,7 @@ export default function FloorRewardScreen({ currentFloor, onProceed }: FloorRewa
 
       {/* 진행 버튼 */}
       <button
-        onClick={onProceed}
+        onClick={() => chosen !== null && onProceed(chosen)}
         disabled={chosen === null}
         className="mt-8 transition-all duration-150 active:scale-95"
         style={{

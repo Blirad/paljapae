@@ -9,6 +9,12 @@ export type Polarity = 'yang' | 'yin'  // 양음
 export type CardType = 'soldier' | 'commander' | 'spell'
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'celestial'
 
+export interface Relic {
+  id: string
+  name: string
+  description: string
+}
+
 export interface Card {
   id: string
   element: Element
@@ -113,6 +119,8 @@ export interface GameState {
   reshuffled: boolean                     // 이번 턴 덱 재순환 발동 여부 (UI 배너용)
   // 스펙 v2 — 용신 원소 (일간 기반 계산)
   favorableElement?: Element              // 플레이어 용신 원소 (없으면 undefined)
+  // Phase 1.9.6 신규 — 유물 시스템
+  relics: Relic[]                         // 획득한 유물 목록 (런 한정 특수 효과)
 }
 
 export type FortuneLevel = 'daegil' | 'gil' | 'pyeong' | 'hyung' | 'daehyung'

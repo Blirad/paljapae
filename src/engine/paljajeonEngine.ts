@@ -160,6 +160,8 @@ export function createInitialGameState(floorIndex = 0, heroProfile?: SavedHeroPr
     reshuffled: false,
     // 스펙 v2: 용신 원소
     favorableElement,
+    // Phase 1.9.6: 유물 시스템
+    relics: [],
   }
 }
 
@@ -699,6 +701,8 @@ export function advanceToNextFloor(state: GameState): GameState {
     reshuffled: false,
     // 스펙 v2: 용신 원소 유지 (층 전환해도 동일 플레이어)
     favorableElement: state.favorableElement,
+    // Phase 1.9.6: 유물 유지 (런 동안 누적)
+    relics: state.relics,
   }
 }
 
@@ -777,6 +781,7 @@ export type RewardOption =
   | { type: 'add-card'; card: Card }
   | { type: 'upgrade-card'; targetId: string; bonusPct: number }
   | { type: 'remove-card'; targetId: string }
+  | { type: 'add-relic'; relic: any }
 
 export function applyRewardOption(deck: Card[], option: RewardOption): Card[] {
   switch (option.type) {
@@ -790,5 +795,7 @@ export function applyRewardOption(deck: Card[], option: RewardOption): Card[] {
       )
     case 'remove-card':
       return deck.filter(c => c.id !== option.targetId)
+    case 'add-relic':
+      return deck  // relics are handled separately in GameState
   }
 }

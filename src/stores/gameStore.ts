@@ -64,7 +64,7 @@ interface GameStore extends GameState {
   toggleCardSelect: (cardId: string) => void
   playSelectedCards: () => void
   discardSelectedCards: () => void
-  proceedToNextFloor: () => void
+  proceedToNextFloor: (rewardIndex: number) => void
   resetGame: () => void
   markFirstHandShown: () => void
   markFirstDiscardShown: () => void
@@ -135,8 +135,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ ...newState, previewResult: null })
   },
 
-  proceedToNextFloor: () => {
+  proceedToNextFloor: (rewardIndex: number) => {
     const state = get()
+    // TODO: Apply reward based on rewardIndex (1-4 task)
+    // rewardIndex: 0 = add-card, 1 = upgrade-card, 2 = remove-card, (3 = add-relic for future)
     const newState = advanceToNextFloor(state)
     set({ ...newState, previewResult: null })
   },
