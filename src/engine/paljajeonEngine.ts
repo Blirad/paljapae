@@ -9,7 +9,7 @@ import {
   GEUK_MAP,
   detectElementClash,
 } from './pokerHandJudge'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseMultiplier, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER } from './balance'
+import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER } from './balance'
 import { generateSajuDeck } from './deckGenerator'
 import { getFavorableElement } from './manseryeok'
 
@@ -723,9 +723,9 @@ export function getCondenseAvailability(
 }
 
 /**
- * 응축 확정판 적용 함수 (Phase 1.9.5 — 옹기가마 전용, % 방식)
+ * 응축 확정판 적용 함수 (T1 — 옹기가마 전용, 화/토 매트릭스)
  * - 공격 횟수 1회 소모 (playsLeft -1)
- * - 실제 피해 0, condensedMultiplier = 장수 비례 배율 설정
+ * - 실제 피해 0, condensedMultiplier = 화/토 조합 비례 배율 설정
  * - 중첩 불가 (이미 응축 활성 시 무시)
  * - 마지막 공격 기회(isLastAttack)에는 적용 불가
  */
@@ -737,14 +737,20 @@ export function applyCondense(state: GameState, cardIds: string[]): GameState {
   // 공격 횟수 없으면 불가
   if (state.playsLeft <= 0) return state
 
-  const multiplier = getCondenseMultiplier(cardIds.length)
-  if (multiplier === 0) return state  // 2장 미만 시 불가
-
-  const newPlaysLeft = state.playsLeft - 1
-
   // 카드 소진 + 리필 (공격과 동일)
   const condensedCards = state.hand.filter(c => cardIds.includes(c.id))
   const remainHand = state.hand.filter(c => !cardIds.includes(c.id))
+
+  // T1: 화/토 개수 계산
+  const hwaCount = condensedCards.filter(c => c.element === 'hwa').length
+  const toCount = condensedCards.filter(c => c.element === 'to').length
+  const bonusPercent = getCondenseBonus(hwaCount, toCount)
+  if (bonusPercent === 0) return state  // 유효한 조합 아님
+
+  // % 값을 배율로 변환 (120 → 1.2)
+  const multiplier = bonusPercent / 100
+
+  const newPlaysLeft = state.playsLeft - 1
 
   // 덱 부족 시 재순환
   const newDiscardPile = [...state.discardPile, ...condensedCards]

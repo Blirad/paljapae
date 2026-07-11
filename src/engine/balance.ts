@@ -160,20 +160,36 @@ export function findFusionCombo(el1: Element, el2: Element): FusionCombo | null 
 // --- 음양 조화 보너스
 export const EUMYANG_HARMONY_BONUS = 0.2  // +20%
 
-// --- 응축 (Phase 1.9.5 확정판 — 옹기가마 전용, % 방식)
-// 태운 장수 → 다음 공격에 (damage * condensedMultiplier) 추가
-export const CONDENSE_BY_CARD_COUNT: Record<number, number> = {
-  2: 1.2,   // +120%
-  3: 1.6,   // +160%
-  4: 2.0,   // +200%
-  5: 2.4,   // +240%
+// --- 응축 (T1 확정판 — 화/토 조합 매트릭스, +% 방식)
+// 옹기가마(화+토→토) 선택 시 화/토 개수별 보너스 % 적용
+// 다음 공격에 damage × (1 + bonusPercent/100) 적용
+//
+// 구조 (앵커만족):
+//  - 240%는 화2토3 유일 최대
+//  - 같은 장수에서 토 우세 > 화 우세
+//  - 화 몰빵 페널티: 화4토1 < 화2토2
+//  - 화1토1 = 120 = 최소
+
+export const CONDENSE_MATRIX: Record<number, Record<number, number>> = {
+  1: { 1: 120, 2: 150, 3: 185, 4: 215 },
+  2: { 1: 135, 2: 175, 3: 240 },
+  3: { 1: 145, 2: 205 },
+  4: { 1: 155 },
 }
 
-/** 장수 기반 응축 배율 계산 (2장 미만 → 0, 5장 초과 → 5장 배율 고정) */
+/** 화/토 개수 기반 응축 보너스 % 계산 */
+export function getCondenseBonus(hwaCount: number, toCount: number): number {
+  if (hwaCount < 1 || toCount < 1) return 0
+  const bonus = CONDENSE_MATRIX[hwaCount]?.[toCount]
+  return bonus ?? 0  // 정의되지 않은 조합 = 0%
+}
+
+/** @deprecated getCondenseBonus 사용. 기존 호환 함수 */
 export function getCondenseMultiplier(cardCount: number): number {
   if (cardCount < 2) return 0
   const clampedCount = Math.min(cardCount, 5)
-  return CONDENSE_BY_CARD_COUNT[clampedCount] ?? 0
+  // 레거시: 카드 수만 알 때는 토만 계산 (화 0으로 대체)
+  return CONDENSE_MATRIX[1]?.[clampedCount] ?? 0
 }
 
 // --- Phase 1.9.5: 10종 융합 특성 설정
