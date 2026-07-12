@@ -18,6 +18,7 @@ import {
   applyCondense,
   applyRewardOption,
 } from '../engine/paljajeonEngine'
+import { HAND_SIZE } from '../engine/balance'
 import { judgeHand } from '../engine/pokerHandJudge'
 import type { HandJudgeResult, Card, Element } from '../types/game'
 
@@ -156,7 +157,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   proceedToNextFloor: (rewardIndex: number) => {
     const state = get()
-    const REWARD_TYPES = ['add-card', 'upgrade-card', 'remove-card', 'add-relic']
+    const REWARD_TYPES = ['add-card', 'upgrade-card', 'remove-card']
     const rewardType = REWARD_TYPES[rewardIndex] || 'add-card'
 
     // 현재 덱 수집 (hand + deck + discardPile)
@@ -197,7 +198,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const newState = advanceToNextFloor(state)
 
     // 적용된 덱 설정 (분배는 advanceToNextFloor 이후)
-    const handSize = Math.min(5, updatedDeck.length)
+    const handSize = Math.min(HAND_SIZE, updatedDeck.length)
     set({
       ...newState,
       hand: updatedDeck.slice(0, handSize),
