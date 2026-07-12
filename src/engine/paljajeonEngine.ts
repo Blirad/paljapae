@@ -12,6 +12,8 @@ import {
 import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER, NOURISH_HEAL_PCT } from './balance'
 import { generateSajuDeck } from './deckGenerator'
 import { getFavorableElement } from './manseryeok'
+// T17: 가호(십성) 효과 반영
+import { PASSIVE_POOL } from '../types/passive'
 
 /**
  * C10(d): 오행 속성별 기믹 정의 (balance.ts 수치 변경 없이 새로운 로직 추가)
@@ -162,6 +164,8 @@ export function createInitialGameState(floorIndex = 0, heroProfile?: SavedHeroPr
     favorableElement,
     // Phase 1.9.6: 유물 시스템
     relics: [],
+    // T17: 가호(십성) 시스템
+    activePassiveIds: [],
   }
 }
 
@@ -312,6 +316,84 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
   // Phase 1.9.2 E-2: 자동 응축 폐지 — 구형 자동 응축 로직 제거
   const newCondenseActive = false  // deprecated 필드, 항상 false 유지
 
+  // T17: 가호(십성) 7종 효과 반영
+  // activePassiveIds 기반 패시브 적용 — 모든 패시브는 isBlocked가 아닐 때만 발동
+  let passiveHealBonus = 0  // 편재: 체력 회복 보너스
+  let passiveCounterReduction = 0  // 비견: 반격 피해 감소
+  if (!isBlocked) {
+    const activeIds = state.activePassiveIds ?? []
+    const activePassives = PASSIVE_POOL.filter(p => activeIds.includes(p.id))
+
+    for (const passive of activePassives) {
+      switch (passive.id) {
+        case 'sikshin': {
+          // 식신(食神): 낱장 조합(1장) 시 피해 +20%
+          if (playedCards.length === 1) {
+            damage = Math.round(damage * 1.2)
+          }
+          break
+        }
+        case 'bigyeon': {
+          // 비견(比肩): 같은 기운 모으기 3 이상 시 적 반격 -1
+          if (result.rank === 'gather' && playedCards.length >= 3) {
+            passiveCounterReduction += 1
+          }
+          break
+        }
+        case 'geoptae': {
+          // 겁재(劫財): 나무 기운 카드 포함 시 첫 공격 피해 +30%
+          // "첫 공격" = attackCount === 0
+          const hasMok = playedCards.some(c => c.element === 'mok')
+          if (hasMok && state.attackCount === 0) {
+            damage = Math.round(damage * 1.3)
+          }
+          break
+        }
+        case 'sanggwan': {
+          // 상관(傷官): 불 기운 카드 2장 이상 시 피해 ×1.5
+          const hwaCount = playedCards.filter(c => c.element === 'hwa').length
+          if (hwaCount >= 2) {
+            damage = Math.round(damage * 1.5)
+          }
+          break
+        }
+        case 'pyeonjae': {
+          // 편재(偏財): 쇠 기운으로 이기는 기운 발동 시 체력 3 회복
+          // 타격 원소가 金이고 극 유리(geuk)인 경우
+          const hasGeum = playedCards.some(c => c.element === 'geum')
+          const isGeukWin = hasGeum && SANG_MAP['geum'] !== floorEnemyEl && (
+            // 금이 극하는 원소: 목(木)
+            floorEnemyEl === 'mok'
+          )
+          if (isGeukWin) {
+            passiveHealBonus += 3
+          }
+          break
+        }
+        case 'jeongjae': {
+          // 정재(正財): 물 기운 5장 이상 시 오행연환 배율 +2
+          // 오행연환 발동 시 damage 보정 (이미 ×8 배율 적용된 후)
+          const suCount = playedCards.filter(c => c.element === 'su').length
+          if (result.rank === 'ohang-yeonhwan' && suCount >= 1) {
+            // 연환 배율 +2 = 현재 damage / 8 * 2 추가
+            const baseYeonhwan = Math.round(damage / 8)
+            damage += Math.round(baseYeonhwan * 2)
+          }
+          break
+        }
+        case 'pyeonin': {
+          // 편인(偏印): 흙 기운 결집 시 마지막 공격 피해 +50%
+          const hasTo = playedCards.some(c => c.element === 'to')
+          const isToGather = result.rank === 'gather' && hasTo
+          if (isToGather && state.isLastAttack) {
+            damage = Math.round(damage * 1.5)
+          }
+          break
+        }
+      }
+    }
+  }
+
   // Phase 1.9.5: 10종 융합 특성 발동 판정
   // 융합 조합인 경우만 특성 발동 (rank: fusion-birth or fusion-hone)
   const isFusion = result.rank === 'fusion-birth' || result.rank === 'fusion-hone'
@@ -353,6 +435,11 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
 
   const newEnemyHp = Math.min(state.enemyMaxHp, afterDamageHp + enemyHealAmount)
   let counterDamage = floorConfig.counterDamage
+
+  // T17: 비견(比肩) — 같은 기운 모으기 3 이상 시 반격 -1
+  if (passiveCounterReduction > 0) {
+    counterDamage = Math.max(0, counterDamage - passiveCounterReduction)
+  }
 
   // C10(d): 잔화령 — 반격 +50%
   const counterBoostGimmick = gimmicks.find(g => g.type === 'counter-boost')
@@ -527,6 +614,10 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
   if (isFusion && comboName && FUSION_TRAIT_MAP[comboName] === 'nourish' && !isBlocked) {
     // T19: 고정 8 → 최대 HP의 8% (반올림)
     finalPlayerHp = Math.min(state.playerMaxHp, finalPlayerHp + Math.round(state.playerMaxHp * NOURISH_HEAL_PCT))
+  }
+  // T17: 편재(偏財) 체력 회복 보너스
+  if (passiveHealBonus > 0) {
+    finalPlayerHp = Math.min(state.playerMaxHp, finalPlayerHp + passiveHealBonus)
   }
 
   // T22 진단 로그 — 출수 후 상태 (카드 총합 검증용)
@@ -731,6 +822,8 @@ export function advanceToNextFloor(state: GameState): GameState {
     favorableElement: state.favorableElement,
     // Phase 1.9.6: 유물 유지 (런 동안 누적)
     relics: state.relics,
+    // T17: 가호 유지 (런 동안 유지)
+    activePassiveIds: state.activePassiveIds ?? [],
   }
 }
 

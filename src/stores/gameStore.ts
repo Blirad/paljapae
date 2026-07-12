@@ -92,6 +92,8 @@ interface GameStore extends GameState {
   gainTalisman: (talismanId: string) => void
   // Phase 1.9.5: 응축 확정판 선택 적용 (장수 기반 % 배율)
   applyCondenseAction: (cardIds: string[]) => void
+  // T17: 가호(십성) 장착
+  setActivePassiveIds: (ids: string[]) => void
 }
 
 const INITIAL_BATTLE_STATS: BattleStats = {
@@ -241,5 +243,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const state = get()
     const newState = applyCondense(state, cardIds)
     set({ ...newState, previewResult: null, selectedCards: [] })
+  },
+  // T17: 가호(십성) 장착 — BattleScreen 진입 시 PassiveDraft 선택 결과 반영
+  setActivePassiveIds: (ids: string[]) => {
+    set({ activePassiveIds: ids })
   },
 }))

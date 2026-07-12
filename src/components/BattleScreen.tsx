@@ -1185,6 +1185,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     useHwanpae,
     useJeungpok,
     applyCondenseAction,
+    setActivePassiveIds,
   } = useGameStore()
 
   const { getCssDuration, getDuration, playbackSpeed, togglePlaybackSpeed } = useGameContext()
@@ -1492,6 +1493,12 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
       localStorage.setItem('paljajeon_games_played', String(current + 1))
     } catch { /* noop */ }
   }, [])
+
+  // T17: 가호(십성) 장착 — passives prop을 gameStore에 동기화 (마운트 1회)
+  useEffect(() => {
+    const ids = passives.map(p => p.id)
+    setActivePassiveIds(ids)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // BGM: BattleScreen 진입 시 재생, 언마운트 시 정지
   useEffect(() => {

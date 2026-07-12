@@ -121,6 +121,8 @@ export interface GameState {
   favorableElement?: Element              // 플레이어 용신 원소 (없으면 undefined)
   // Phase 1.9.6 신규 — 유물 시스템
   relics: Relic[]                         // 획득한 유물 목록 (런 한정 특수 효과)
+  // T17: 가호(십성) 시스템 — 선택된 패시브 ID 목록
+  activePassiveIds?: string[]             // 장착 가호 ID (런 내내 유지, 없으면 빈 배열)
 }
 
 export type FortuneLevel = 'daegil' | 'gil' | 'pyeong' | 'hyung' | 'daehyung'
