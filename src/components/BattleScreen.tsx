@@ -132,23 +132,15 @@ const ELEMENT_ANTI_REASON: Record<Element, string> = {
   su: '물이 불을 막는다',
 }
 
-// ─── 상생상극 매트릭스: 대표 원소 기준 상성 배율 계산 (소스 오브 트루스 = balance.ts) ──────
-/** 콤보 카드들의 대표 원소 판정 (다수결, 동수 시 마지막 카드) */
+// ─── 상생상극 매트릭스: 타격 속성(finishingElement) 기준 상성 배율 계산 (T14) ──────
+// T14: 다수결 로직 완전 제거 → ComboJudgeResult.finishingElement 기준 통일
+// - 융합(fusion-birth/fusion-hone): finishingElement = fusion.result (결과 기운)
+// - 기운 모으기: finishingElement = 모으는 기운
+// - 오행연환: finishingElement = 'mok' (임시 — 상성 중립 처리)
+// 이 함수는 기운 모으기 1장 낱장 처리용으로만 유지 (단일 원소 카드 집합)
 function getRepresentativeElement(cards: Array<{ element: Element }>): Element {
-  const counts: Record<string, number> = {}
-  for (const c of cards) {
-    counts[c.element] = (counts[c.element] ?? 0) + 1
-  }
-  let maxCount = 0
-  for (const cnt of Object.values(counts)) {
-    if (cnt > maxCount) maxCount = cnt
-  }
-  const maxEntries = Object.entries(counts).filter(([, cnt]) => cnt === maxCount)
-  if (maxEntries.length > 1) {
-    // 동수: 마지막 카드 원소
-    return cards[cards.length - 1].element
-  }
-  return maxEntries[0][0] as Element
+  // 단일 원소 집합인 경우 (기운 모으기) → 그 원소 반환
+  return cards[0]?.element ?? 'mok'
 }
 
 /** 상생상극 매트릭스 결과 타입 */
@@ -203,6 +195,8 @@ function buildPreviewText(
   isInvalidCombo?: boolean
   yongsinLabel?: string  // "용신 ×1.3" or "용신(연환) ×1.5"
   traitLine?: string  // T18: 융합 특성 1줄 미리보기
+  affinityLine?: string  // T14-A: 타격 원소 vs 적 원소 상성 배율 1줄
+  affinityLineColor?: string  // T14-A: 상성 배율 색상
 } | null {
   const { hasAllFive = false, condensedMultiplier = 0, favorableElement } = options ?? {}
 
@@ -253,8 +247,8 @@ function buildPreviewText(
     }
   }
 
-  // 상생상극 매트릭스: 대표 원소 기준
-  const repEl = getRepresentativeElement(cards)
+  // T14: 상성 판정 — 타격 속성(finishingElement) 기준 (다수결 완전 폐지)
+  const repEl = comboResult.finishingElement
   const affinity = calcAffinity(repEl, enemyElement)
   const affinityMult = getAffinityMultiplier(affinity)
 
@@ -297,12 +291,32 @@ function buildPreviewText(
     const toCount = cards.filter(c => c.element === 'to').length
     const bonusPercent = getCondenseBonus(hwaCount, toCount)
     const condensePercent = bonusPercent > 0 ? bonusPercent : 0
+    // T14-A: 타격 원소(土 계열) vs 적 원소 상성 1줄
+    let affinityLine: string | undefined
+    let affinityLineColor: string | undefined
+    if (affinity === 'geuk') {
+      const reason = ELEMENT_GEUK_REASON[fe] ?? `${feHanja}이 이긴다`
+      affinityLine = `${feHanja} → ${ELEMENT_LABELS[enemyElement]} ${reason} (+50%)`
+      affinityLineColor = '#4A9B6E'
+    } else if (affinity === 'saeng') {
+      affinityLine = `${feHanja} → ${ELEMENT_LABELS[enemyElement]} ${ELEMENT_KO[fe]}이 ${ELEMENT_KO[enemyElement]}을 먹인다 (-50%)`
+      affinityLineColor = '#D9A441'
+    } else if (affinity === 'anti-geuk') {
+      const reason = ELEMENT_ANTI_REASON[enemyElement] ?? '막힌다'
+      affinityLine = `${feHanja} → ${ELEMENT_LABELS[enemyElement]} ${reason} (-25%)`
+      affinityLineColor = '#C63D2F'
+    } else {
+      affinityLine = `${feHanja} → ${ELEMENT_LABELS[enemyElement]} 동기 (×1.0)`
+      affinityLineColor = '#8B9BB4'
+    }
     return {
       line1: '',
       line2: null,
       line1Color: '#FFFDF7',
       condenseInfo: { attack: finalDamage, type: condenseAvail, comboName: comboResult.name, condensePercent },
       traitLine: getFusionTraitLine(comboResult.name),  // T18: 옹기가마 특성 1줄
+      affinityLine,  // T14-A: 타격 원소 vs 적 원소 상성 배율
+      affinityLineColor,
     }
   }
 
@@ -3236,6 +3250,16 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                     </span>
                   )}
                 </div>
+                {/* T14-A: 타격 원소 vs 적 원소 상성 배율 1줄 */}
+                {preview.affinityLine && (
+                  <div style={{
+                    color: preview.affinityLineColor ?? '#8B9BB4', fontSize: '12px', width: '100%',
+                    textAlign: 'center', fontWeight: 600, paddingTop: '3px',
+                    borderTop: '1px solid rgba(216,204,180,0.12)',
+                  }}>
+                    {preview.affinityLine}
+                  </div>
+                )}
                 {/* T18: 옹기가마 특성 1줄 미리보기 */}
                 {preview.traitLine && (
                   <div style={{

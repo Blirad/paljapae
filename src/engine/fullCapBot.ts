@@ -47,25 +47,8 @@ function combinations<T>(arr: T[], k: number): T[][] {
   return [...withFirst, ...withoutFirst]
 }
 
-function getRepresentativeElement(cards: Card[]): Element {
-  const counts: Record<string, number> = {}
-  for (const c of cards) {
-    counts[c.element] = (counts[c.element] ?? 0) + 1
-  }
-  let maxCount = 0
-  let repCandidate: Element = cards[cards.length - 1].element
-  for (const [el, cnt] of Object.entries(counts)) {
-    if (cnt > maxCount) {
-      maxCount = cnt
-      repCandidate = el as Element
-    }
-  }
-  const maxEntries = Object.entries(counts).filter(([, cnt]) => cnt === maxCount)
-  if (maxEntries.length > 1) {
-    return cards[cards.length - 1].element
-  }
-  return repCandidate
-}
+// T14: 다수결(getRepresentativeElement) 제거 — judgeCombo finishingElement 기준으로 통일
+// 타격 속성(finishingElement)은 judgeCombo() 결과에서 직접 참조한다.
 
 function getAffinityMultiplier(repEl: Element, enemyEl: Element): number {
   if (GEUK_MAP[repEl] === enemyEl) return GEUK_BONUS_MULTIPLIER
@@ -78,6 +61,7 @@ function getAffinityMultiplier(repEl: Element, enemyEl: Element): number {
  * 풀능력 봇 — 예상 데미지 계산
  * affinityBot 대비 추가:
  *  - 용신 보너스 가중치
+ * T16-P2: amplifyActive 파라미터 추가 — 증폭부(×2) 효과 반영
  */
 export function fullCapCalcExpectedDamage(
   combo: Card[],
@@ -87,6 +71,7 @@ export function fullCapCalcExpectedDamage(
   yeonhwanUsed?: boolean,
   carryoverBurn?: number,
   favorableElement?: Element,
+  amplifyActive?: boolean,
 ): number {
   const result = judgeCombo(combo)
   let damage = result.totalScore
@@ -100,14 +85,19 @@ export function fullCapCalcExpectedDamage(
     damage = damage + carryoverBurn
   }
 
-  // 대표 원소 기반 상성 배율
-  const repEl = getRepresentativeElement(combo)
+  // T14: 타격 속성(finishingElement) 기준 상성 배율 — 다수결 제거
+  const repEl = result.finishingElement
   const affinityMult = getAffinityMultiplier(repEl, enemyPrimaryElement)
   damage = Math.round(damage * affinityMult)
 
   // 응축 % 방식 소모
   if (condensedMultiplier && condensedMultiplier > 0) {
     damage = Math.round(damage * (1 + condensedMultiplier))
+  }
+
+  // T16-P2: 증폭부(增幅符) 효과 반영 — amplifyActive 시 ×2 (실제 엔진과 동일)
+  if (amplifyActive) {
+    damage = damage * 2
   }
 
   // [신규 2-4] 용신 보너스 가중치 (엔진에서 실제 적용되는 보너스를 봇 평가에도 반영)
@@ -137,6 +127,7 @@ export interface FullCapPlayDecision {
 
 /**
  * 풀능력 봇 핸드 선택
+ * T16-P3: talismans 파라미터 추가 — 부적 효과를 카드 선택 평가에 반영
  */
 export function fullCapSelectCards(
   hand: Card[],
@@ -147,7 +138,10 @@ export function fullCapSelectCards(
   discardsLeft?: number,
   carryoverBurn?: number,
   favorableElement?: Element,
+  talismans?: string[],
 ): FullCapPlayDecision {
+  // T16-P3: talismans에서 amplifyActive 여부 추출 (증폭부 사용 가능 시 평가에 반영)
+  const amplifyActive = (talismans ?? []).includes('jeungpok')
   if (hand.length === 0) return { cardIds: [], shouldDiscard: false, bestAffinityMult: 1.0, bestDamage: 0 }
 
   let bestIds: string[] = []
@@ -184,7 +178,9 @@ export function fullCapSelectCards(
         }
       }
 
-      const repEl = getRepresentativeElement(evalCombo)
+      // T14: 타격 속성(finishingElement) 기준 — 다수결 제거
+      const evalResult = judgeCombo(evalCombo)
+      const repEl = evalResult.finishingElement
       const affinityMult = getAffinityMultiplier(repEl, enemyPrimaryElement)
 
       const score = fullCapCalcExpectedDamage(
@@ -195,6 +191,7 @@ export function fullCapSelectCards(
         yeonhwanUsed,
         carryoverBurn,
         favorableElement,
+        amplifyActive,  // T16-P2/P3: 증폭부 효과 반영
       )
 
       // 통합 최대화: 최종 기대 데미지(콤보 × 상성 × 용신 통합) 순수 최대화
@@ -237,6 +234,10 @@ export interface FullCapRunResult {
   fusionCount: number
   /** R10-5: 특성별 발동 횟수 */
   traitCounts?: Record<string, number>
+  /** R7-2: 4층 도달 여부 */
+  reachedFloor4: boolean
+  /** R7-2: 4층에서 플레이된 카드 원소 목록 */
+  floor4PlayedElements?: Element[]
 }
 
 function makeLcg(seed: number): () => number {
@@ -513,7 +514,8 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         playsLeft: floorConfig.maxPlays,
         playerHp,
         phase: 'select',
-        talismans: [],
+        // T16-P1: 층 전환 시 talismans 유지 — 런 동안 누적 (이전 talismans: [] 버그 수정)
+        talismans: state.talismans,
         amplifyActive: false,
         attackCount: 0,
         enemyPhaseSwitch: false,
@@ -580,19 +582,19 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
           deathFloor = floor
           floorStats.push({ floor, attackCount, cleared: false })
         }
-        return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts }
+        return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements }
       }
 
       if (state.playsLeft <= 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts }
+        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements }
       }
 
       if (state.playerHp <= 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts }
+        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements }
       }
 
       // 랜덤화된 층별 원소 사용 (작업 2) — R7-2 검증용 4층 강제 옵션 지원
@@ -619,12 +621,13 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         state.discardsLeft,
         state.carryoverBurn,
         resolvedFavorableElement,
+        state.talismans,  // T16-P3: 부적 효과 전달
       )
 
       if (decision.cardIds.length === 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts }
+        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements }
       }
 
       // 버리기 전략
@@ -698,6 +701,8 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
     condenseCount,
     fusionCount,
     traitCounts,
+    reachedFloor4: floor4PlayedElements.length > 0,
+    floor4PlayedElements,
   }
 }
 

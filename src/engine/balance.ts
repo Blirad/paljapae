@@ -184,12 +184,16 @@ export function getCondenseBonus(hwaCount: number, toCount: number): number {
   return bonus ?? 0  // 정의되지 않은 조합 = 0%
 }
 
-/** @deprecated getCondenseBonus 사용. 기존 호환 함수 */
+/**
+ * 레거시 응축 배율 함수 — 카드 장수만으로 배율(소수) 반환
+ * 고정 테이블: 2=1.2, 3=1.6, 4=2.0, 5=2.4, 5초과=2.4
+ * @deprecated getCondenseBonus 사용 권장. 기존 호환 함수
+ */
 export function getCondenseMultiplier(cardCount: number): number {
   if (cardCount < 2) return 0
   const clampedCount = Math.min(cardCount, 5)
-  // 레거시: 카드 수만 알 때는 토만 계산 (화 0으로 대체)
-  return CONDENSE_MATRIX[1]?.[clampedCount] ?? 0
+  const LEGACY_TABLE: Record<number, number> = { 2: 1.2, 3: 1.6, 4: 2.0, 5: 2.4 }
+  return LEGACY_TABLE[clampedCount] ?? 0
 }
 
 // --- Phase 1.9.5: 10종 융합 특성 설정

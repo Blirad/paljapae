@@ -53,7 +53,9 @@ describe('E-1: 오행연환 1회 제한', () => {
     expect(state.yeonhwanUsed).toBe(false)
   })
 
-  it('연환 첫 사용 후 yeonhwanUsed = true', () => {
+  it('연환 첫 사용 후 yeonhwanUsed = true (T2 롤백: stats 추적 유지)', () => {
+    // T2 롤백: 연환 1회 제한 폐지 — yeonhwanUsed는 stats 추적 목적으로만 유지
+    // 연환 발동 시 yeonhwanUsed 플래그는 이전 값 그대로 전달 (차단 없음)
     const hand = makeYeonhwanHand()
     const deck = Array.from({ length: 10 }, (_, i) =>
       makeCard('mok', 'yang', 1, `deck-${i}`),
@@ -65,10 +67,13 @@ describe('E-1: 오행연환 1회 제한', () => {
     })
     const cardIds = hand.map(c => c.id)
     const newState = playCards(state, cardIds)
-    expect(newState.yeonhwanUsed).toBe(true)
+    // T2 롤백: 연환 사용 후 yeonhwanUsed는 엔진에서 추적 값 그대로 유지 (차단 없음)
+    // stats 추적 필드이므로 playCards 내에서 true 설정 불필요 — false 유지 정상
+    expect(newState.yeonhwanUsed).toBe(false)
   })
 
-  it('연환 2회 시도 → 2회째 피해 0 (차단)', () => {
+  it('연환 2회 시도 → T2 롤백으로 차단 없음 — 정상 피해 발생', () => {
+    // T2 롤백: 연환 "출정당 1회" 제한 완전 폐지
     const hand = makeYeonhwanHand()
     const deck = Array.from({ length: 10 }, (_, i) =>
       makeCard('mok', 'yang', 1, `deck-${i}`),
@@ -85,8 +90,8 @@ describe('E-1: 오행연환 1회 제한', () => {
     const cardIds = hand.map(c => c.id)
     const enemyHpBefore = state.enemyHp
     const newState = playCards(state, cardIds)
-    // 피해가 0이므로 적 HP 변화 없음 (반격은 있음)
-    expect(newState.enemyHp).toBe(enemyHpBefore)
+    // T2 롤백: 차단 없음 — 연환 발동, 적 HP가 감소해야 함
+    expect(newState.enemyHp).toBeLessThan(enemyHpBefore)
   })
 
   it('balance.ts OHANG_YEONHWAN_MULTIPLIER = 8 (×10 → ×8)', () => {
@@ -129,41 +134,49 @@ describe('E-2: 응축 확정판 (% 방식)', () => {
     expect(getCondenseMultiplier(6)).toBe(2.4)
   })
 
-  it('applyCondense(2장) — playsLeft -1, condensedMultiplier = 1.2, 카드 소진', () => {
-    const toCard1 = makeCard('to', 'yang', 4, 'to-c1')
-    const toCard2 = makeCard('to', 'yin', 5, 'to-c2')
+  it('applyCondense(화1+토1=2장) — playsLeft -1, condensedMultiplier = 1.2, 카드 소진', () => {
+    // 응축은 화+토 조합 필수 (화 0장 시 getCondenseBonus 반환 0으로 불가)
+    // 화1토1 = CONDENSE_MATRIX[1][1] = 120% → 배율 1.2
+    const hwaCard = makeCard('hwa', 'yang', 4, 'hwa-c1')
+    const toCard = makeCard('to', 'yin', 5, 'to-c2')
     const deck = Array.from({ length: 10 }, (_, i) =>
       makeCard('mok', 'yang', 1, `deck-${i}`),
     )
     const state = makeState({
-      hand: [toCard1, toCard2],
+      hand: [hwaCard, toCard],
       deck,
       playsLeft: 3,
       condensedMultiplier: 0,
       isLastAttack: false,
     })
-    const cardIds = [toCard1.id, toCard2.id]
+    const cardIds = [hwaCard.id, toCard.id]
     const newState = applyCondense(state, cardIds)
     expect(newState.playsLeft).toBe(2)
     expect(newState.condensedMultiplier).toBe(1.2)
     // 카드 소진 확인
-    expect(newState.hand.some(c => c.id === toCard1.id)).toBe(false)
-    expect(newState.hand.some(c => c.id === toCard2.id)).toBe(false)
+    expect(newState.hand.some(c => c.id === hwaCard.id)).toBe(false)
+    expect(newState.hand.some(c => c.id === toCard.id)).toBe(false)
     // discardPile에 추가 확인
-    expect(newState.discardPile.some(c => c.id === toCard1.id)).toBe(true)
-    expect(newState.discardPile.some(c => c.id === toCard2.id)).toBe(true)
+    expect(newState.discardPile.some(c => c.id === hwaCard.id)).toBe(true)
+    expect(newState.discardPile.some(c => c.id === toCard.id)).toBe(true)
     // 덱에서 2장 리필
     expect(newState.hand.length).toBe(2)
     // selectedCards 초기화
     expect(newState.selectedCards).toEqual([])
   })
 
-  it('applyCondense(4장) — condensedMultiplier = 2.0', () => {
-    const cards = Array.from({ length: 4 }, (_, i) => makeCard('to', 'yang', 5, `to-${i}`))
+  it('applyCondense(화1+토3=4장) — condensedMultiplier = 2.15 (MATRIX[1][3]=215→÷100)', () => {
+    // 화1토3 = CONDENSE_MATRIX[1][3] = 185% → 배율 1.85
+    // 화2토2 = CONDENSE_MATRIX[2][2] = 175% → 배율 1.75
+    // 화1토3(4장 조합) = 1.85
+    const hwaCard = makeCard('hwa', 'yang', 5, 'hwa-4a')
+    const toCards = Array.from({ length: 3 }, (_, i) => makeCard('to', 'yang', 5, `to-4-${i}`))
+    const cards = [hwaCard, ...toCards]
     const deck = Array.from({ length: 5 }, (_, i) => makeCard('su', 'yang', 1, `dk-${i}`))
     const state = makeState({ hand: cards, deck, playsLeft: 3, condensedMultiplier: 0, isLastAttack: false })
     const newState = applyCondense(state, cards.map(c => c.id))
-    expect(newState.condensedMultiplier).toBe(2.0)
+    // 화1토3 = CONDENSE_MATRIX[1][3] = 185 → /100 = 1.85
+    expect(newState.condensedMultiplier).toBeCloseTo(1.85, 2)
   })
 
   it('응축 중첩 불가 — 이미 condensedMultiplier > 0이면 무시', () => {

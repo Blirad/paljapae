@@ -33,17 +33,21 @@ export default function FloorRewardScreen({ currentFloor, onProceed }: FloorRewa
   const isLastFloor = currentFloor >= 4
   const nextConfig = !isLastFloor ? FLOOR_CONFIGS[nextFloor - 1] : null
 
-  // 균등 확률로 4개 중 3개 선택 (randomize per floor, seed-based for reproducibility)
+  // 균등 확률로 3개 선택 (seed-based Fisher-Yates 셔플 — 모든 유형 공정 등장 보장)
   const REWARD_OPTIONS = useMemo(() => {
-    const seed = currentFloor * 12345  // 층별 고정 시드
+    // 층별 결정론적 LCG 난수 생성
+    let rng = currentFloor * 12345 + 6789
+    const nextRandom = () => {
+      rng = (rng * 1664525 + 1013904223) & 0xffffffff
+      return (rng >>> 0) / 0xffffffff
+    }
     const shuffled = [...ALL_REWARD_TYPES]
-      .sort((a, b) => {
-        const aHash = a.type.charCodeAt(0) + seed
-        const bHash = b.type.charCodeAt(0) + seed
-        return aHash - bHash
-      })
-      .slice(0, 3)
-    return shuffled
+    // Fisher-Yates 셔플
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(nextRandom() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+    }
+    return shuffled.slice(0, 3)
   }, [currentFloor])
 
   const handleChoose = (i: number) => {

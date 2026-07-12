@@ -216,29 +216,12 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     damage = Math.round(damage * 0.7)
   }
 
-  // 스펙 v2 — 상생상극 매트릭스: 콤보 대표 원소 판정
-  // 다수결: 가장 많이 등장한 원소. 동수 시: 마지막 카드의 원소
-  void result.finishingElement  // 마무리 기운 (포커핸드 판정 기준, UI는 repEl 기준)
-  const repEl: Element = (() => {
-    const counts: Record<string, number> = {}
-    for (const c of playedCards) {
-      counts[c.element] = (counts[c.element] ?? 0) + 1
-    }
-    let maxCount = 0
-    let repCandidate: Element = playedCards[playedCards.length - 1].element
-    for (const [el, cnt] of Object.entries(counts)) {
-      if (cnt > maxCount) {
-        maxCount = cnt
-        repCandidate = el as Element
-      }
-    }
-    // 동수 시: 마지막 카드 원소
-    const maxEntries = Object.entries(counts).filter(([, cnt]) => cnt === maxCount)
-    if (maxEntries.length > 1) {
-      return playedCards[playedCards.length - 1].element
-    }
-    return repCandidate
-  })()
+  // T14: 상성 판정 대표 원소 — 타격 속성(finishingElement) 기준
+  // 융합 조합(fusion-birth/fusion-hone): finishingElement = fusion.result (결과 기운)
+  // 기운 모으기: finishingElement = 모으는 기운 (단일 원소)
+  // 오행연환: finishingElement = 'mok' (임시 — 모든 기운이 관여, 상성 중립 처리)
+  // 다수결 로직 완전 제거
+  const repEl: Element = result.finishingElement
 
   // 상생상극 매트릭스 적용 (스펙 v2 — 유일한 원소 상성 배율)
   if (floorEnemyEl) {
@@ -788,7 +771,9 @@ export function advanceToNextFloor(state: GameState): GameState {
     return { ...state, phase: 'result', isVictory: true }
   }
   const floorConfig = FLOOR_CONFIGS[nextFloor - 1]
-  const deck = shuffleDeck(createFixedDeck())
+  // 영속 덱 유지: 기존 hand + deck + discardPile 전체를 셔플해 재배분
+  const allCards = [...state.hand, ...state.deck, ...state.discardPile]
+  const deck = shuffleDeck(allCards.length > 0 ? allCards : createFixedDeck())
   const hand = deck.slice(0, HAND_SIZE)
   const remainDeck = deck.slice(HAND_SIZE)
 

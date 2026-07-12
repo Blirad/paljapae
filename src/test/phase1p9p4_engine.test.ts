@@ -133,12 +133,15 @@ describe('수정 2: 응축 확정판 — condensedMultiplier % 방식', () => {
     expect(newState.selectedCards).toEqual([])
   })
 
-  it('applyCondense — 4장 선택 시 condensedMultiplier = 2.0', () => {
-    const cards = Array.from({ length: 4 }, (_, i) => makeCard('to', 'yang', 5, `to-${i}`))
+  it('applyCondense — 화2+토2=4장 선택 시 condensedMultiplier = 1.75 (MATRIX[2][2]=175÷100)', () => {
+    // 응축은 화+토 조합 필수. 화2+토2 = CONDENSE_MATRIX[2][2] = 175% → 배율 1.75
+    const hwaCards = [makeCard('hwa', 'yang', 5, 'hwa-4-0'), makeCard('hwa', 'yin', 5, 'hwa-4-1')]
+    const toCards = [makeCard('to', 'yang', 5, 'to-4-0'), makeCard('to', 'yin', 5, 'to-4-1')]
+    const cards = [...hwaCards, ...toCards]
     const deck = Array.from({ length: 5 }, (_, i) => makeCard('su', 'yang', 1, `dk-${i}`))
     const state = makeState({ hand: cards, deck, playsLeft: 3, isLastAttack: false, condensedMultiplier: 0 })
     const newState = applyCondense(state, cards.map(c => c.id))
-    expect(newState.condensedMultiplier).toBe(2.0)
+    expect(newState.condensedMultiplier).toBeCloseTo(1.75, 2)
   })
 
   it('applyCondense — 마지막 공격 시 응축 불가 (state 변경 없음)', () => {
@@ -207,16 +210,19 @@ describe('수정 3: 10종 융합 특성 발동', () => {
     expect(newState.lastTraitTriggered).toBe('mining')
   })
 
-  it('담금질(담금불) — 水+火 융합 후 손패 카드 값 +1', () => {
+  it('담금질(담금불) — 水+火 융합 후 쓴 카드 값 영구 +1', () => {
+    // 담금질(quench): "이번 공격에 쓴 카드들의 값이 1 영구히 오른다"
+    // su(value=3) + hwa(value=3) 사용 → discardPile에 su(4), hwa(4)로 저장됨
     const suCard = makeCard('su', 'yang', 3, 'su-q')
     const hwaCard = makeCard('hwa', 'yin', 3, 'hwa-q')
     const deck = Array.from({ length: 5 }, (_, i) => makeCard('geum', 'yang', 2, `dk-q-${i}`))
     const state = makeState({ hand: [suCard, hwaCard], deck, playsLeft: 3 })
     const newState = playCards(state, [suCard.id, hwaCard.id])
-    // 담금질: 손패 모든 카드 값 +1
-    // 리필된 덱 카드(geum, value=2) → +1 → 3
-    const hasBuffed = newState.hand.some(c => c.element === 'geum' && c.value === 3)
-    expect(hasBuffed).toBe(true)
+    // 담금질: 쓴 카드(su, hwa)가 discardPile에 value+1로 저장됨
+    const suInDiscard = newState.discardPile.find(c => c.id === 'su-q')
+    const hwaInDiscard = newState.discardPile.find(c => c.id === 'hwa-q')
+    expect(suInDiscard?.value).toBe(4)   // 3 → 4
+    expect(hwaInDiscard?.value).toBe(4)  // 3 → 4
     expect(newState.lastTraitTriggered).toBe('quench')
   })
 

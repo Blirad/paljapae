@@ -66,7 +66,7 @@ describe('작업 2 — SANG_MAP (상생 관계)', () => {
 })
 
 describe('작업 2 — 상생상극 배율 상수', () => {
-  it('극(剋) 배율 = 1.5', () => expect(GEUK_BONUS_MULTIPLIER).toBe(1.5))
+  it('극(剋) 배율 = 1.7 (R8 복원)', () => expect(GEUK_BONUS_MULTIPLIER).toBe(1.7))
   it('생(生) 페널티 = 0.5', () => expect(SANG_PENALTY_MULTIPLIER).toBe(0.5))
   it('역극 페널티 = 0.75', () => expect(ANTI_GEUK_PENALTY).toBe(0.75))
 })
