@@ -9,7 +9,7 @@ import {
   GEUK_MAP,
   detectElementClash,
 } from './pokerHandJudge'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER, NOURISH_HEAL_PCT } from './balance'
+import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, OHANG_YEONHWAN_MULTIPLIER } from './balance'
 import { generateSajuDeck } from './deckGenerator'
 import { getFavorableElement } from './manseryeok'
 // T17: 가호(십성) 효과 반영
@@ -195,7 +195,14 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
   const remainHand = state.hand.filter(c => !cardIds.includes(c.id))
 
   const result = judgeHand(playedCards)
-  let damage = result.totalScore
+
+  // T8 수정: 오색실 — 배율 전 baseScore에 +15 가산 (15×N 증폭 목적)
+  // 연환 발동 + 오색실 보유 시, totalScore를 (baseScore + 15) × 배율로 재계산
+  const hasOsakshilEarly = (state.relics ?? []).some(r => r.id === 'osakshil')
+  const isYeonhwanCombo = result.rank === 'ohang-yeonhwan'
+  let damage = (hasOsakshilEarly && isYeonhwanCombo)
+    ? Math.round((result.baseScore + OSAKSHIL_YEONHWAN_BONUS) * OHANG_YEONHWAN_MULTIPLIER)
+    : result.totalScore
 
   // R10: 3종 융합 특성 상태 (상성 계산·강공 계산보다 먼저 선언)
   let newPurifiedElements = state.purifiedElements ?? []
@@ -410,6 +417,16 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     damage = Math.round(damage * (1 - pct))
   }
 
+  // T8: 유물 — 오색실: 배율 전 baseScore 가산 처리는 상단(damage 초기화 시점)에서 완료됨
+
+  // T8: 유물 — 호리병: 내 HP 30 이하 시 콤보 배율 +1 (afterDamageHp 계산 전)
+  // 배율 +1 = baseScore × 1 추가 (단일 배율 단위)
+  const hasHorybyeong = (state.relics ?? []).some(r => r.id === 'horybyeong')
+  if (hasHorybyeong && state.playerHp <= HORYBYEONG_HP_THRESHOLD) {
+    const extraDamage = Math.round(result.baseScore * HORYBYEONG_MULTIPLIER_BONUS)
+    damage = damage + extraDamage
+  }
+
   // C10(d): 고목령 — 매 턴 체력 15 회복 (피해 적용 후, 생존 시에만)
   const healGimmick = gimmicks.find(g => g.type === 'heal')
   const afterDamageHp = Math.max(0, state.enemyHp - damage)
@@ -449,6 +466,12 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     : null
   if (rageEffect && state.enemyPhaseSwitch) {
     counterDamage = Math.round(counterDamage * rageEffect.counterMult)
+  }
+
+  // T8: 유물 — 해태상: 반격 피해 -3 (하한 0)
+  const hasHaetae = (state.relics ?? []).some(r => r.id === 'haetae')
+  if (hasHaetae) {
+    counterDamage = Math.max(0, counterDamage - HAETAE_COUNTER_REDUCTION)
   }
 
   // lifesteal: 출수한 카드 중 lifesteal 카드가 있으면 데미지의 30%를 HP 회복
@@ -677,7 +700,15 @@ export function discardCards(state: GameState, cardIds: string[]): GameState {
   const punishDamage = (punishGimmick && punishGimmick.type === 'discard-punish')
     ? punishGimmick.damage
     : 0
-  const newPlayerHp = Math.max(0, state.playerHp - punishDamage)
+
+  // T8: 유물 — 목탁: 버리기 사용 시 HP 2 회복
+  const hasMoktag = (state.relics ?? []).some(r => r.id === 'moktag')
+  const moktangHeal = hasMoktag ? MOKTAG_DISCARD_HEAL : 0
+
+  const newPlayerHp = Math.min(
+    state.playerMaxHp,
+    Math.max(0, state.playerHp - punishDamage + moktangHeal)
+  )
 
   return {
     ...state,
