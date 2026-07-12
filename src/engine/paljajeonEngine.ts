@@ -9,7 +9,7 @@ import {
   GEUK_MAP,
   detectElementClash,
 } from './pokerHandJudge'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER } from './balance'
+import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER, NOURISH_HEAL_PCT } from './balance'
 import { generateSajuDeck } from './deckGenerator'
 import { getFavorableElement } from './manseryeok'
 
@@ -172,6 +172,19 @@ export function isYeokgeuk(card: Card, enemyElement: Element): boolean {
 
 /** 출수 실행 → 새로운 GameState 반환 */
 export function playCards(state: GameState, cardIds: string[]): GameState {
+  // T22 진단 로그 — 덱 축소 원인 추적 (수정 금지, 진단 전용)
+  if (typeof window !== 'undefined') {
+    const turn = (state.playsLeft !== undefined) ? state.playsLeft : '?'
+    console.log(
+      `[T22-DIAG] 턴 ${turn} 출수 전` +
+      ` | 덱: ${state.deck.length}장` +
+      ` | 버린패: ${state.discardPile.length}장` +
+      ` | 소진더미: 0장` +
+      ` | 손패: ${state.hand.length}장` +
+      ` | selectedIds: ${cardIds.length}장`
+    )
+  }
+
   const floorConfig = FLOOR_CONFIGS[state.currentFloor - 1]
   const gimmicks = getFloorGimmicks(state.currentFloor)
   const playedCards = state.hand.filter(c => cardIds.includes(c.id))
@@ -260,13 +273,11 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     }
   }
 
-  // E-1: 연환 1회 제한 — 오행연환인데 이미 사용했으면 피해 0 (연환 차단)
-  const isYeonhwan = result.rank === 'ohang-yeonhwan'
-  if (isYeonhwan && state.yeonhwanUsed) {
-    damage = 0
-  }
-  const newYeonhwanUsed = state.yeonhwanUsed || isYeonhwan
-  const isBlocked = isYeonhwan && state.yeonhwanUsed  // 연환 차단 여부
+  // T2 롤백: 연환 "출정당 1회" 제한 제거 (E-1 폐지)
+  // 근거: T21 잭팟화(희귀화) 확보로 제한 없이도 밸런스 성립
+  // T21-b와 동일 커밋
+  const newYeonhwanUsed = state.yeonhwanUsed  // 추적 유지 (stats용), 차단 로직 제거
+  const isBlocked = false  // 연환 차단 없음 — 횟수 제한 폐지
 
   // Phase 1.6 B — 증폭부: 다음 공격 ×2
   if (state.amplifyActive && !isBlocked) {
@@ -514,7 +525,24 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
   // Phase 1.9.5: 자양(nourish) 체력 회복 — 피해 계산 후 적용
   let finalPlayerHp = newPlayerHp
   if (isFusion && comboName && FUSION_TRAIT_MAP[comboName] === 'nourish' && !isBlocked) {
-    finalPlayerHp = Math.min(state.playerMaxHp, finalPlayerHp + 8)
+    // T19: 고정 8 → 최대 HP의 8% (반올림)
+    finalPlayerHp = Math.min(state.playerMaxHp, finalPlayerHp + Math.round(state.playerMaxHp * NOURISH_HEAL_PCT))
+  }
+
+  // T22 진단 로그 — 출수 후 상태 (카드 총합 검증용)
+  if (typeof window !== 'undefined') {
+    const afterDeck = newDeck.length
+    const afterDiscard = reshuffled ? 0 : newDiscardPile.length
+    const afterHand = newHand.length
+    const total = afterDeck + afterDiscard + afterHand
+    console.log(
+      `[T22-DIAG] 출수 후` +
+      ` | 덱: ${afterDeck}장` +
+      ` | 버린패: ${afterDiscard}장` +
+      ` | 손패: ${afterHand}장` +
+      ` | 합계: ${total}장` +
+      (reshuffled ? ' [재순환 발동]' : '')
+    )
   }
 
   return {
@@ -736,6 +764,18 @@ export function applyCondense(state: GameState, cardIds: string[]): GameState {
   if ((state.condensedMultiplier ?? 0) > 0) return state
   // 공격 횟수 없으면 불가
   if (state.playsLeft <= 0) return state
+
+  // T22 진단 로그 — 응축 사용 시 카드 행방 추적
+  if (typeof window !== 'undefined') {
+    console.log(
+      `[T22-DIAG][응축] 사용 전` +
+      ` | 덱: ${state.deck.length}장` +
+      ` | 버린패: ${state.discardPile.length}장` +
+      ` | 손패: ${state.hand.length}장` +
+      ` | 응축대상: ${cardIds.length}장` +
+      ` → 향후전투 복귀(discardPile 경유 재순환)`
+    )
+  }
 
   // 카드 소진 + 리필 (공격과 동일)
   const condensedCards = state.hand.filter(c => cardIds.includes(c.id))

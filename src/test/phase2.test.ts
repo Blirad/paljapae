@@ -126,12 +126,17 @@ describe('사주 기반 덱 생성', () => {
     expect(deck.length).toBe(20)
   })
 
-  it('각 오행 최소 1장 보장', () => {
+  it('T21-a: 사주 0인 오행 = 덱 0장 (최소 1장 보장 폐지)', () => {
+    // 설계 의도: 부족 오행은 런 중 보상으로 수급
     const dist: Record<Element, number> = { mok: 5, hwa: 0, to: 0, geum: 0, su: 0 }
     const counts = distributeCards(dist, 20)
-    Object.values(counts).forEach(c => {
-      expect(c).toBeGreaterThanOrEqual(1)
-    })
+    // 0인 오행은 덱에도 0장
+    expect(counts['hwa']).toBe(0)
+    expect(counts['to']).toBe(0)
+    expect(counts['geum']).toBe(0)
+    expect(counts['su']).toBe(0)
+    // 유일하게 분포 있는 mok는 20장 전부
+    expect(counts['mok']).toBe(20)
   })
 
   it('배분 합산 = 20', () => {
@@ -156,13 +161,18 @@ describe('사주 기반 덱 생성', () => {
     Object.values(counts).forEach(c => expect(c).toBe(4))
   })
 
-  it('한 속성 5개 이상 극단 케이스', () => {
+  it('T21-a: 극단 케이스 — su=0이면 덱에도 su 0장, 합산 20 유지', () => {
     const dist: Record<Element, number> = { mok: 7, hwa: 1, to: 1, geum: 1, su: 0 }
     const counts = distributeCards(dist, 20)
     // mok이 가장 많아야 함
     expect(counts['mok']).toBeGreaterThan(counts['hwa'])
-    // 최소 1장 보장
-    Object.values(counts).forEach(c => expect(c).toBeGreaterThanOrEqual(1))
+    // T21-a: su는 0 (사주 0인 오행)
+    expect(counts['su']).toBe(0)
+    // 비율 있는 원소는 최소 1장
+    expect(counts['mok']).toBeGreaterThanOrEqual(1)
+    expect(counts['hwa']).toBeGreaterThanOrEqual(1)
+    expect(counts['to']).toBeGreaterThanOrEqual(1)
+    expect(counts['geum']).toBeGreaterThanOrEqual(1)
     const total = Object.values(counts).reduce((a, b) => a + b, 0)
     expect(total).toBe(20)
   })

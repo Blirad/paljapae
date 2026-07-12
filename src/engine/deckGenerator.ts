@@ -23,7 +23,11 @@ function makeLCG(seed: number) {
 }
 
 /**
- * 오행 분포 → 각 오행 카드 수 배분 (20장, 최소 1장 보장)
+ * 오행 분포 → 각 오행 카드 수 배분 (20장)
+ *
+ * T21-a 변경: 사주 오행이 0인 원소는 시작 덱에도 0장
+ * 설계 의도: "부족 오행은 런 중 보상으로 수급" — 사주 특색을 덱 구성에 직접 반영
+ * (이전: Math.max(1, ...) 최소 1장 보장 → 제거)
  */
 function distributeCards(
   elementDist: Record<Element, number>,
@@ -38,26 +42,28 @@ function distributeCards(
     return result
   }
 
-  // 비율 계산 후 반올림
+  // 비율 계산 후 반올림 (0인 오행은 그대로 0)
   const rawCounts: Record<Element, number> = {} as Record<Element, number>
   let assigned = 0
   ELEMENTS.forEach(el => {
     const raw = ((elementDist[el] ?? 0) / sum) * total
-    rawCounts[el] = Math.max(1, Math.round(raw))
+    // T21-a: 사주 0인 오행 = 덱 0장 (최소 1장 보장 폐지)
+    rawCounts[el] = (elementDist[el] ?? 0) === 0 ? 0 : Math.max(1, Math.round(raw))
     assigned += rawCounts[el]
   })
 
-  // 합산이 total과 다를 경우 조정 (가장 많은/적은 원소에 ±1)
+  // 합산이 total과 다를 경우 조정 (0이 아닌 원소 중 가장 많은/적은 원소에 ±1)
   let diff = total - assigned
-  while (diff !== 0) {
+  const nonZeroEls = ELEMENTS.filter(el => rawCounts[el] > 0)
+  while (diff !== 0 && nonZeroEls.length > 0) {
     if (diff > 0) {
-      // 가장 적은 원소 +1
-      const minEl = ELEMENTS.reduce((a, b) => rawCounts[a] <= rawCounts[b] ? a : b)
+      // 0이 아닌 원소 중 가장 적은 원소 +1
+      const minEl = nonZeroEls.reduce((a, b) => rawCounts[a] <= rawCounts[b] ? a : b)
       rawCounts[minEl]++
       diff--
     } else {
       // 2 이상인 가장 많은 원소 -1
-      const maxEl = ELEMENTS.reduce((a, b) => rawCounts[a] >= rawCounts[b] ? a : b)
+      const maxEl = nonZeroEls.reduce((a, b) => rawCounts[a] >= rawCounts[b] ? a : b)
       if (rawCounts[maxEl] > 1) {
         rawCounts[maxEl]--
         diff++

@@ -355,7 +355,7 @@ function TabYeonhwan() {
         borderRadius: '2px',
         marginBottom: '12px',
       }}>
-        <div style={{ color: '#FFD98A', fontSize: '13px', fontWeight: 700 }}>배율: ×8 (출정당 1회 한정)</div>
+        <div style={{ color: '#FFD98A', fontSize: '13px', fontWeight: 700 }}>배율: ×8</div>
         <div style={{ color: '#D8CCB4', fontSize: '12px', marginTop: '4px' }}>연출: 2.5초 상생 순환 애니메이션 전용 시퀀스</div>
       </div>
       <div style={{
@@ -433,7 +433,7 @@ function TabTraits() {
     { fusion: '들불', combo: '木+火', result: 'hwa', mult: '×3.0', trait: '번짐', effect: '피해의 30%가 다음 공격에 잔불로 이월', borderW: 3 },
     { fusion: '광맥', combo: '土+金', result: 'geum', mult: '×3.0', trait: '채굴', effect: '공격 후 덱에서 1장 추가 드로우', borderW: 3 },
     { fusion: '샘',   combo: '金+水', result: 'su',   mult: '×3.0', trait: '정화', effect: '공격 후 기세 죽음 1종 해제', borderW: 3 },
-    { fusion: '숲',   combo: '水+木', result: 'mok',  mult: '×3.0', trait: '자양', effect: '공격 후 체력 8 회복', borderW: 3 },
+    { fusion: '숲',   combo: '水+木', result: 'mok',  mult: '×3.0', trait: '자양', effect: '공격 후 최대 HP 8% 회복', borderW: 3 },
     { fusion: '옹기가마', combo: '火+土', result: 'to', mult: '×3.0', trait: '응축', effect: '다음 공격 +120~+240% (장수 비례)', borderW: 3 },
   ] as const
 

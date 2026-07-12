@@ -296,3 +296,69 @@ describe('R10 융합 특성 3종 구현 검증', () => {
     })
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T19: 숲(자양) 회복 — 고정 8 → 최대 HP의 8% (반올림)
+// ─────────────────────────────────────────────────────────────────────────────
+import { NOURISH_HEAL_PCT } from '../engine/balance'
+
+describe('T19 자양(숲) 회복 개편 — 최대 HP 8% 비례', () => {
+  // 공통 헬퍼: 반격 피해를 0으로 설정한 상태 생성 (자양 회복만 측정)
+  function makeNoCounterState(overrides: Partial<GameState> & { hand: Card[] }): GameState {
+    const base = createInitialGameState(0)
+    return {
+      ...base,
+      deck: [],
+      discardPile: [],
+      selectedCards: [],
+      playsLeft: 10,
+      discardsLeft: 3,
+      enemyHp: 200,
+      enemyMaxHp: 200,
+      attackCount: 0,
+      ...overrides,
+    }
+  }
+
+  it('playerMaxHp 100 기준 → 자양 회복 8 (8% 반올림)', () => {
+    // 수(水)+목(木) → 숲(木) 낳는 조합, 자양 특성 발동
+    const suCard = makeCard('s1', 'su', 5)
+    const mokCard = makeCard('m1', 'mok', 5)
+    const state = makeNoCounterState({
+      hand: [suCard, mokCard],
+      playerHp: 80,
+      playerMaxHp: 100,
+    })
+    const before = state.playerHp
+    const after = playCards(state, ['s1', 'm1'])
+    const expectedHeal = Math.round(100 * NOURISH_HEAL_PCT)  // 8
+
+    expect(after.lastTraitTriggered).toBe('nourish')
+    // 반격 피해를 제외한 순수 자양 회복분 검증: after.playerHp = before - counterDmg + heal
+    // counterDamage는 FLOOR_CONFIGS[0].counterDamage = 1
+    // 최소 기준: HP가 before - counterDamage + expectedHeal 이상이어야 함
+    const counterDmg = 1  // 1층 반격
+    const expectedHp = Math.min(100, before - counterDmg + expectedHeal)
+    expect(after.playerHp).toBe(expectedHp)
+  })
+
+  it('NOURISH_HEAL_PCT = 0.08 상수 검증', () => {
+    // 단위: 8%
+    expect(NOURISH_HEAL_PCT).toBe(0.08)
+    expect(Math.round(100 * NOURISH_HEAL_PCT)).toBe(8)  // HP 100 기준 회복 8 assert
+  })
+
+  it('최대 HP 초과 시 playerMaxHp 상한 적용', () => {
+    const suCard = makeCard('s3', 'su', 5)
+    const mokCard = makeCard('m3', 'mok', 5)
+    const state = makeNoCounterState({
+      hand: [suCard, mokCard],
+      playerHp: 100,
+      playerMaxHp: 100,
+    })
+    const after = playCards(state, ['s3', 'm3'])
+    // 반격 후 HP = 99, 자양 8 → 107 → 상한 100
+    expect(after.playerHp).toBeLessThanOrEqual(100)
+    expect(after.lastTraitTriggered).toBe('nourish')
+  })
+})

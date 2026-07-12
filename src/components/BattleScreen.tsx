@@ -26,7 +26,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useGameStore } from '../stores/gameStore'
-import { FLOOR_CONFIGS, GEUK_BONUS_MULTIPLIER, TRAIT_CONFIGS, SANG_MAP, SANG_PENALTY_MULTIPLIER, ANTI_GEUK_PENALTY, getCondenseBonus } from '../engine/balance'
+import { FLOOR_CONFIGS, GEUK_BONUS_MULTIPLIER, TRAIT_CONFIGS, FUSION_TRAIT_MAP, SANG_MAP, SANG_PENALTY_MULTIPLIER, ANTI_GEUK_PENALTY, getCondenseBonus } from '../engine/balance'
 // Phase 1.7: FLOOR_ENEMY_ELEMENTS는 floorConfig.enemyPrimaryElement로 대체됨
 import { useGameContext } from '../context/GameContext'
 import { audioManager } from '../services/audioManager'
@@ -172,6 +172,18 @@ function getAffinityMultiplier(affinity: AffinityResult): number {
   }
 }
 
+/**
+ * T18: 융합 조합명 → 특성 1줄 미리보기 텍스트
+ * 형식: "특성명 — 효과 설명"
+ */
+function getFusionTraitLine(comboName: string): string | undefined {
+  const traitId = FUSION_TRAIT_MAP[comboName]
+  if (!traitId) return undefined
+  const config = TRAIT_CONFIGS[traitId]
+  if (!config) return undefined
+  return `${config.name} — ${config.tooltipBody.split('.')[0]}`
+}
+
 function buildPreviewText(
   cards: Array<{ element: Element; value: number; polarity: string; id: string }>,
   enemyElement: Element,
@@ -190,6 +202,7 @@ function buildPreviewText(
   isYeonhwanReady?: boolean
   isInvalidCombo?: boolean
   yongsinLabel?: string  // "용신 ×1.3" or "용신(연환) ×1.5"
+  traitLine?: string  // T18: 융합 특성 1줄 미리보기
 } | null {
   const { hasAllFive = false, condensedMultiplier = 0, favorableElement } = options ?? {}
 
@@ -289,6 +302,7 @@ function buildPreviewText(
       line2: null,
       line1Color: '#FFFDF7',
       condenseInfo: { attack: finalDamage, type: condenseAvail, comboName: comboResult.name, condensePercent },
+      traitLine: getFusionTraitLine(comboResult.name),  // T18: 옹기가마 특성 1줄
     }
   }
 
@@ -344,8 +358,9 @@ function buildPreviewText(
 
   const line1 = `${comboName} (${feHanja})${geukSuffix} · 공격력 ${baseScore} × ${mult} = 예상 ${baseDamage}${finalDamageWithCondense !== null ? ` → 응축 후 ${finalDamageWithCondense}` : ''}`
   const line2 = geukMultLabel ? `기본 ${baseScore} × ${mult}(${typeLabel})${geukMultLabel} = ${baseDamage}` : null
+  const traitLine = getFusionTraitLine(comboName)  // T18: 융합 특성 1줄
 
-  return { line1, line2, line1Color, yongsinLabel }
+  return { line1, line2, line1Color, yongsinLabel, traitLine }
 }
 
 // ─── B-2: 이종 기운 3장 이상 차단 판정 ────────────────────────────────────
@@ -3193,23 +3208,36 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                 flexShrink: 0,
                 gap: '6px',
                 flexWrap: 'wrap',
+                flexDirection: 'column',
               }}>
-                <span style={{ fontSize: '13px', color: '#D9A441', fontWeight: 700 }}>{comboName} (土)</span>
-                <span style={{ fontSize: '13px', color: '#4A4540' }}>·</span>
-                <span style={{ fontSize: '13px', color: '#FFFDF7' }}>공격: 예상 {attack}</span>
-                <span style={{ fontSize: '13px', color: '#4A4540' }}>/</span>
-                {alreadyActive ? (
-                  <span style={{ fontSize: '13px', color: '#FFD98A', fontWeight: 600 }}>
-                    응축 대기 중 (+{Math.round((condensedMultiplier ?? 0) * 100)}%)
-                  </span>
-                ) : condensePercent > 0 ? (
-                  <span style={{ fontSize: '13px', color: '#FF8C40', fontWeight: 700 }}>
-                    대응축({selectedCards.length}장) +{condensePercent}% → 다음 공격 예상 {condensedDamage}
-                  </span>
-                ) : (
-                  <span style={{ fontSize: '13px', color: '#D9A441', fontWeight: 600 }}>
-                    대응축 — 옹기가마에 굽는다
-                  </span>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+                  <span style={{ fontSize: '13px', color: '#D9A441', fontWeight: 700 }}>{comboName} (土)</span>
+                  <span style={{ fontSize: '13px', color: '#4A4540' }}>·</span>
+                  <span style={{ fontSize: '13px', color: '#FFFDF7' }}>공격: 예상 {attack}</span>
+                  <span style={{ fontSize: '13px', color: '#4A4540' }}>/</span>
+                  {alreadyActive ? (
+                    <span style={{ fontSize: '13px', color: '#FFD98A', fontWeight: 600 }}>
+                      응축 대기 중 (+{Math.round((condensedMultiplier ?? 0) * 100)}%)
+                    </span>
+                  ) : condensePercent > 0 ? (
+                    <span style={{ fontSize: '13px', color: '#FF8C40', fontWeight: 700 }}>
+                      대응축({selectedCards.length}장) +{condensePercent}% → 다음 공격 예상 {condensedDamage}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '13px', color: '#D9A441', fontWeight: 600 }}>
+                      대응축 — 옹기가마에 굽는다
+                    </span>
+                  )}
+                </div>
+                {/* T18: 옹기가마 특성 1줄 미리보기 */}
+                {preview.traitLine && (
+                  <div style={{
+                    color: '#8FB8DE', fontSize: '11px', width: '100%',
+                    textAlign: 'center', opacity: 0.9, paddingTop: '3px',
+                    borderTop: '1px solid rgba(216,204,180,0.12)',
+                  }}>
+                    {preview.traitLine}
+                  </div>
                 )}
               </div>
             )
@@ -3268,6 +3296,18 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                   letterSpacing: '0.06em', textAlign: 'center',
                 }}>
                   {preview.yongsinLabel}
+                </div>
+              )}
+              {/* T18: 융합 특성 1줄 미리보기 */}
+              {preview.traitLine && (
+                <div style={{
+                  color: '#8FB8DE', fontSize: '11px',
+                  letterSpacing: '0.03em', textAlign: 'center', opacity: 0.9,
+                  borderTop: '1px solid rgba(216,204,180,0.12)',
+                  paddingTop: '3px',
+                  marginTop: '1px',
+                }}>
+                  {preview.traitLine}
                 </div>
               )}
             </div>

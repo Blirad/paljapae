@@ -241,9 +241,9 @@ export const TRAIT_CONFIGS: Record<string, TraitConfig> = {
   },
   nourish: {
     name: '자양',
-    bannerText: '자양 — 체력이 8 회복되었다',
+    bannerText: '자양 — 최대 HP의 8%가 회복되었다',
     tooltipTitle: '자양 (숲)',
-    tooltipBody: '숲이 품는다. 공격 후 체력을 8 회복한다. 꾸준히 싸울수록 오래 버틸 수 있다.',
+    tooltipBody: '숲이 품는다. 공격 후 최대 HP의 8%를 회복한다. 꾸준히 싸울수록 오래 버틸 수 있다.',
     element: 'mok',
     fusionType: 'birth',
     keyframe: 'leafRise',
@@ -369,6 +369,10 @@ export const ANTI_GEUK_PENALTY = 0.75     // ×0.75 (스펙 v2)
 // 하위 호환 — 극 판정 배율 (deprecated, GEUK_BONUS_MULTIPLIER로 통일)
 /** @deprecated GEUK_BONUS_MULTIPLIER 사용 */
 export const YEOKGEUK_PENALTY_OLD = 0.5
+
+// T19: 숲(자양) 회복 — 고정 8 → 최대 HP의 8% (반올림)
+// 설계 의도: HP가 높은 런일수록 회복도 비례 증가, 저HP 런에서의 과잉 회복 방지
+export const NOURISH_HEAL_PCT = 0.08  // 8% of playerMaxHp
 
 /**
  * 밸런스 튜닝 v9.0 (2026-07-11) — Phase 1.9.4 역산 재수행: 저장형 응축 + 덱 재순환 반영
