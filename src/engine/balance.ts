@@ -422,7 +422,7 @@ export const FLOOR_CONFIGS: FloorConfig[] = [
   {
     floor: 2,
     enemyName: '변질 오행 혼성',
-    enemyHp: 400,
+    enemyHp: 430,  // R10: 400→430
     counterDamage: 1,
     maxPlays: 4,
     enemyPrimaryElement: 'hwa',

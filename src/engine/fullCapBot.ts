@@ -525,6 +525,8 @@ function createDeterministicState(
     sanggwanUsed: 0,
     // sikshin D안: 초기화
     sikshinDiscardBonus: false,
+    // R10: 겁재 출정당 1회 제한 — 런 시작 시 초기화
+    geoptaeUsed: false,
   }
 }
 
@@ -602,6 +604,8 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         sanggwanUsed: state.sanggwanUsed ?? 0,
         // sikshin D안: 층 전환 시 리셋
         sikshinDiscardBonus: false,
+        // R10: 겁재 발동 여부 — 출정(런) 전체 기준, 층 전환 시 리셋 금지
+        geoptaeUsed: state.geoptaeUsed ?? false,
       }
     } else {
       state = { ...state, playerHp }
@@ -784,7 +788,7 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         if (activeIds.includes('bigyeon') && comboResult.type === 'gather' && selectedCards.length >= 3) {
           traitCounts['passive_bigyeon'] = (traitCounts['passive_bigyeon'] ?? 0) + 1
         }
-        if (activeIds.includes('geoptae') && selectedCards.some(c => c.element === 'mok') && state.attackCount === 0) {
+        if (activeIds.includes('geoptae') && selectedCards.some(c => c.element === 'mok') && !(state.geoptaeUsed ?? false)) {
           traitCounts['passive_geoptae'] = (traitCounts['passive_geoptae'] ?? 0) + 1
         }
         if (activeIds.includes('sanggwan') && selectedCards.filter(c => c.element === 'hwa').length >= 3 && (state.sanggwanUsed ?? 0) < SANGGWAN_MAX_PER_RUN) {

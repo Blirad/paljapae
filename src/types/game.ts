@@ -127,6 +127,8 @@ export interface GameState {
   sanggwanUsed?: number                   // 현재 출정에서 상관 발동 횟수 (층 전환 시 리셋)
   // sikshin D안: 버리기 사용 시 다음 공격 +15% (1회 소모, 스택 불가 갱신 가능)
   sikshinDiscardBonus?: boolean           // true = 다음 공격에 ×1.15 적용 후 false로 리셋
+  // R10: 겁재(劫財) 출정당 1회 제한 추적
+  geoptaeUsed?: boolean                   // true = 이미 발동됨 (런 내내 유지, 층 전환 시 리셋 금지)
 }
 
 export type FortuneLevel = 'daegil' | 'gil' | 'pyeong' | 'hyung' | 'daehyung'

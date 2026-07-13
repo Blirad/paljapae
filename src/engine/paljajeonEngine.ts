@@ -170,6 +170,8 @@ export function createInitialGameState(floorIndex = 0, heroProfile?: SavedHeroPr
     activePassiveIds: [],
     // sikshin D안: 초기화
     sikshinDiscardBonus: false,
+    // R10: 겁재 출정당 1회 제한 — 런 시작 시 초기화
+    geoptaeUsed: false,
   }
 }
 
@@ -316,6 +318,8 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
   let passiveCounterReduction = 0  // 비견: 반격 피해 감소
   // R4: 상관 발동 횟수 추적 (출정당 최대 SANGGWAN_MAX_PER_RUN회)
   let newSanggwanUsed = state.sanggwanUsed ?? 0
+  // R10: 겁재 출정당 1회 제한 추적
+  let newGeoptaeUsed = state.geoptaeUsed ?? false
   if (!isBlocked) {
     const activeIds = state.activePassiveIds ?? []
     const activePassives = PASSIVE_POOL.filter(p => activeIds.includes(p.id))
@@ -342,10 +346,11 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
         }
         case 'geoptae': {
           // 겁재(劫財): 나무 기운 카드 포함 시 첫 공격 피해 +30%
-          // "첫 공격" = attackCount === 0
+          // R10: "첫 공격" = 출정 전체(런) 기준 1회만 — geoptaeUsed로 추적
           const hasMok = playedCards.some(c => c.element === 'mok')
-          if (hasMok && state.attackCount === 0) {
+          if (hasMok && !newGeoptaeUsed) {
             damage = Math.round(damage * 1.3)
+            newGeoptaeUsed = true
           }
           break
         }
@@ -685,6 +690,8 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     sanggwanUsed: newSanggwanUsed,
     // sikshin D안: 공격 후 버리기 보너스 소멸
     sikshinDiscardBonus: false,
+    // R10: 겁재 발동 여부 업데이트 (출정당 1회 유지)
+    geoptaeUsed: newGeoptaeUsed,
   }
 }
 
@@ -849,6 +856,8 @@ export function advanceToNextFloor(state: GameState): GameState {
     yeonhwanUsed: false,
     // R4: 상관 발동 횟수 — 출정(런) 전체 기준이므로 층 전환 시 유지
     sanggwanUsed: state.sanggwanUsed ?? 0,
+    // R10: 겁재 발동 여부 — 출정(런) 전체 기준이므로 층 전환 시 리셋 금지
+    geoptaeUsed: state.geoptaeUsed ?? false,
     condensedMultiplier: 0,
     isLastAttack: floorConfig.maxPlays === 1,
     lastTraitTriggered: undefined,
