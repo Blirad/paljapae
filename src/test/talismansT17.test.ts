@@ -116,8 +116,8 @@ describe('T17 가호(십성) 엔진 — 7종 발동 유닛 테스트', () => {
     })
   })
 
-  describe('상관(傷官): 불 기운 카드 3장 이상 시 피해 ×1.3 (R7: 조건 2→3장)', () => {
-    it('불 3장 조합 시 damage ×1.3 적용 — R7 핵심 스펙', () => {
+  describe('상관(傷官): 불 기운 카드 3장 이상 시 피해 ×1.25 (R8: 배율 1.3→1.25)', () => {
+    it('불 3장 조합 시 damage ×1.25 적용 — R8 핵심 스펙', () => {
       // currentFloor:2 (2층=잔화령, heal gimmick 없음, floorEnemyEl='hwa')
       // hwa 3장 gather, 동기(同氣) → 상성 배율 없음
       const h1 = makeCard('h1', 'hwa', 5)
@@ -129,8 +129,8 @@ describe('T17 가호(십성) 엔진 — 7종 발동 유닛 테스트', () => {
       const afterNo = playCards(stateNo, ['n1', 'n2', 'n3'])
       const dmgWith = stateWith.enemyHp - afterWith.enemyHp
       const dmgNo = stateNo.enemyHp - afterNo.enemyHp
-      // 상관 장착 시 피해 ×1.3
-      expect(dmgWith).toBe(Math.round(dmgNo * 1.3))
+      // 상관 장착 시 피해 ×1.25
+      expect(dmgWith).toBe(Math.round(dmgNo * 1.25))
     })
 
     it('불 2장만 있을 때는 상관 미발동 (R7: 조건 3장+, 2장은 발동 안됨)', () => {

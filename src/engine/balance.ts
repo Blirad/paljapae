@@ -432,7 +432,7 @@ export const FLOOR_CONFIGS: FloorConfig[] = [
   {
     floor: 3,
     enemyName: '정예: 고신',
-    enemyHp: 660,  // R7: 620→660
+    enemyHp: 680,  // R8: 660→680
     counterDamage: 2,
     maxPlays: 5,
     enemyPrimaryElement: 'to',

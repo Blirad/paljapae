@@ -52,7 +52,7 @@ export const PASSIVE_POOL: Passive[] = [
   {
     id: 'sanggwan',
     name: '상관(傷官)',
-    effect: '불 기운 카드 2장 이상 시 피해 ×1.5',
+    effect: '불 기운 카드 3장 이상 시 피해 ×1.25',
     rarity: 'rare',
     element: 'hwa',
     sipsong: 'sanggwan',
