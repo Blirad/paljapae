@@ -350,9 +350,9 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
           break
         }
         case 'sanggwan': {
-          // 상관(傷官): 불 기운 카드 2장 이상 시 피해 ×1.3 (출정당 최대 SANGGWAN_MAX_PER_RUN회)
+          // 상관(傷官): 불 기운 카드 3장 이상 시 피해 ×1.3 (출정당 최대 SANGGWAN_MAX_PER_RUN회)
           const hwaCount = playedCards.filter(c => c.element === 'hwa').length
-          if (hwaCount >= 2 && (state.sanggwanUsed ?? 0) < SANGGWAN_MAX_PER_RUN) {
+          if (hwaCount >= 3 && (state.sanggwanUsed ?? 0) < SANGGWAN_MAX_PER_RUN) {
             damage = Math.round(damage * 1.3)
             newSanggwanUsed = (state.sanggwanUsed ?? 0) + 1
           }
