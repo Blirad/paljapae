@@ -116,10 +116,25 @@ describe('T17 가호(십성) 엔진 — 7종 발동 유닛 테스트', () => {
     })
   })
 
-  describe('상관(傷官): 불 기운 카드 2장 이상 시 피해 ×1.5', () => {
-    it('불 2장 조합 시 damage ×1.5 적용 — T17 핵심 스펙', () => {
+  describe('상관(傷官): 불 기운 카드 3장 이상 시 피해 ×1.3 (R7: 조건 2→3장)', () => {
+    it('불 3장 조합 시 damage ×1.3 적용 — R7 핵심 스펙', () => {
       // currentFloor:2 (2층=잔화령, heal gimmick 없음, floorEnemyEl='hwa')
-      // hwa 2장 gather, 동기(同氣) → 상성 배율 없음
+      // hwa 3장 gather, 동기(同氣) → 상성 배율 없음
+      const h1 = makeCard('h1', 'hwa', 5)
+      const h2 = makeCard('h2', 'hwa', 5)
+      const h3 = makeCard('h3', 'hwa', 5)
+      const stateWith = makeStateWithPassives({ hand: [h1, h2, h3], currentFloor: 2 }, ['sanggwan'])
+      const stateNo = makeStateWithPassives({ hand: [makeCard('n1', 'hwa', 5), makeCard('n2', 'hwa', 5), makeCard('n3', 'hwa', 5)], currentFloor: 2 }, [])
+      const afterWith = playCards(stateWith, ['h1', 'h2', 'h3'])
+      const afterNo = playCards(stateNo, ['n1', 'n2', 'n3'])
+      const dmgWith = stateWith.enemyHp - afterWith.enemyHp
+      const dmgNo = stateNo.enemyHp - afterNo.enemyHp
+      // 상관 장착 시 피해 ×1.3
+      expect(dmgWith).toBe(Math.round(dmgNo * 1.3))
+    })
+
+    it('불 2장만 있을 때는 상관 미발동 (R7: 조건 3장+, 2장은 발동 안됨)', () => {
+      // currentFloor:2, hwa 2장 → 3장 미만이므로 미발동
       const h1 = makeCard('h1', 'hwa', 5)
       const h2 = makeCard('h2', 'hwa', 5)
       const stateWith = makeStateWithPassives({ hand: [h1, h2], currentFloor: 2 }, ['sanggwan'])
@@ -128,8 +143,7 @@ describe('T17 가호(십성) 엔진 — 7종 발동 유닛 테스트', () => {
       const afterNo = playCards(stateNo, ['n1', 'n2'])
       const dmgWith = stateWith.enemyHp - afterWith.enemyHp
       const dmgNo = stateNo.enemyHp - afterNo.enemyHp
-      // 상관 장착 시 피해 ×1.5
-      expect(dmgWith).toBe(Math.round(dmgNo * 1.5))
+      expect(dmgWith).toBe(dmgNo)
     })
 
     it('불 1장만 있을 때는 상관 미발동', () => {

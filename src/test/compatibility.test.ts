@@ -211,7 +211,7 @@ describe('T14 — 엔진 융합 타격 속성 기준 상성 배율', () => {
   })
 })
 
-// ── 5. Phase 1.9.5 재작업 — 상관 패시브 ×1.5 및 upgrade-card 등장 보장 ──────
+// ── 5. Phase 1.9.5 재작업 — 상관 패시브 ×1.3 및 upgrade-card 등장 보장 ──────
 
 import type { GameState } from '../types/game'
 import { advanceToNextFloor } from '../engine/paljajeonEngine'
@@ -239,8 +239,23 @@ function makeStateWithPassivesLocal(
   }
 }
 
-describe('Phase 1.9.5 재작업 — 상관(傷官) 패시브 ×1.5 엔진 연동', () => {
-  it('화 2장 + 상관 패시브 → 데미지 ×1.5 적용', () => {
+describe('Phase 1.9.5 재작업 — 상관(傷官) 패시브 ×1.3 엔진 연동 (R7: 발동조건 3장+)', () => {
+  it('화 3장 + 상관 패시브 → 데미지 ×1.3 적용', () => {
+    const h1 = makeCard('hwa', 8, 'compat-hwa-a')
+    const h2 = makeCard('hwa', 8, 'compat-hwa-b')
+    const h3 = makeCard('hwa', 8, 'compat-hwa-e')
+    const stateWith = makeStateWithPassivesLocal({ hand: [h1, h2, h3], currentFloor: 2 }, ['sanggwan'])
+    const stateNo = makeStateWithPassivesLocal(
+      { hand: [makeCard('hwa', 8, 'compat-hwa-c'), makeCard('hwa', 8, 'compat-hwa-d'), makeCard('hwa', 8, 'compat-hwa-f')], currentFloor: 2 },
+      [],
+    )
+    const dmgWith = stateWith.enemyHp - playCards(stateWith, ['compat-hwa-a', 'compat-hwa-b', 'compat-hwa-e']).enemyHp
+    const dmgNo = stateNo.enemyHp - playCards(stateNo, ['compat-hwa-c', 'compat-hwa-d', 'compat-hwa-f']).enemyHp
+    expect(dmgWith).toBeGreaterThan(dmgNo)
+    expect(dmgWith).toBe(Math.round(dmgNo * 1.3))
+  })
+
+  it('화 2장 + 상관 패시브 → ×1.3 미적용 (R7: 3장 미만)', () => {
     const h1 = makeCard('hwa', 8, 'compat-hwa-a')
     const h2 = makeCard('hwa', 8, 'compat-hwa-b')
     const stateWith = makeStateWithPassivesLocal({ hand: [h1, h2], currentFloor: 2 }, ['sanggwan'])
@@ -250,11 +265,10 @@ describe('Phase 1.9.5 재작업 — 상관(傷官) 패시브 ×1.5 엔진 연동
     )
     const dmgWith = stateWith.enemyHp - playCards(stateWith, ['compat-hwa-a', 'compat-hwa-b']).enemyHp
     const dmgNo = stateNo.enemyHp - playCards(stateNo, ['compat-hwa-c', 'compat-hwa-d']).enemyHp
-    expect(dmgWith).toBeGreaterThan(dmgNo)
-    expect(dmgWith).toBe(Math.round(dmgNo * 1.5))
+    expect(dmgWith).toBe(dmgNo)
   })
 
-  it('화 1장 + 상관 패시브 → ×1.5 미적용', () => {
+  it('화 1장 + 상관 패시브 → ×1.3 미적용', () => {
     const h1 = makeCard('hwa', 8, 'compat-hwa-1')
     const stateWith = makeStateWithPassivesLocal({ hand: [h1], currentFloor: 2 }, ['sanggwan'])
     const stateNo = makeStateWithPassivesLocal({ hand: [makeCard('hwa', 8, 'compat-hwa-2')], currentFloor: 2 }, [])

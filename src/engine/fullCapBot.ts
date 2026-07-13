@@ -787,7 +787,7 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         if (activeIds.includes('geoptae') && selectedCards.some(c => c.element === 'mok') && state.attackCount === 0) {
           traitCounts['passive_geoptae'] = (traitCounts['passive_geoptae'] ?? 0) + 1
         }
-        if (activeIds.includes('sanggwan') && selectedCards.filter(c => c.element === 'hwa').length >= 2 && (state.sanggwanUsed ?? 0) < SANGGWAN_MAX_PER_RUN) {
+        if (activeIds.includes('sanggwan') && selectedCards.filter(c => c.element === 'hwa').length >= 3 && (state.sanggwanUsed ?? 0) < SANGGWAN_MAX_PER_RUN) {
           traitCounts['passive_sanggwan'] = (traitCounts['passive_sanggwan'] ?? 0) + 1
         }
         if (activeIds.includes('pyeonjae')) {
