@@ -35,6 +35,14 @@ import {
   YONGSIN_BONUS_MULTIPLIER,
   YONGSIN_CHAIN_MULTIPLIER,
   getRandomFloorElements,
+  SIKSHIN_BASE_SCORE,
+  BIGYEON_ELEMENT_WEIGHT,
+  GEOPTAE_MOK_WEIGHT,
+  SANGGWAN_HWA_WEIGHT,
+  SANGGWAN_MAX_PER_RUN,
+  PYEONJAE_GEUM_WEIGHT,
+  JEONGJAE_SU_WEIGHT,
+  PYEONIN_TO_WEIGHT,
 } from './balance'
 import { getFavorableElement } from './manseryeok'
 
@@ -139,9 +147,12 @@ export function fullCapSelectCards(
   carryoverBurn?: number,
   favorableElement?: Element,
   talismans?: string[],
+  activePassiveIds?: string[],
 ): FullCapPlayDecision {
   // T16-P3: talismans에서 amplifyActive 여부 추출 (증폭부 사용 가능 시 평가에 반영)
   const amplifyActive = (talismans ?? []).includes('jeungpok')
+  // sikshin(식신) 장착 여부 — 낱장 후보를 유효 선택지로 평가할지 결정
+  const hasSikshin = (activePassiveIds ?? []).includes('sikshin')
   if (hand.length === 0) return { cardIds: [], shouldDiscard: false, bestAffinityMult: 1.0, bestDamage: 0 }
 
   let bestIds: string[] = []
@@ -153,6 +164,53 @@ export function fullCapSelectCards(
     const combos = combinations(hand, k)
     for (const combo of combos) {
       const result = judgeCombo(combo)
+
+      // sikshin A안: 낱장(k=1)이고 sikshin 장착 시 — 직접 기대 데미지 계산
+      // judgeCombo가 'none'을 반환해도 낱장은 유효 선택지로 평가한다.
+      // 우대 가중치 없음 — sikshin +20% 보너스만 기대 데미지에 반영.
+      if (result.type === 'none' && k === 1 && hasSikshin) {
+        const card = combo[0]
+        // 낱장 기본 점수: 카드값 × sikshin 보너스(×1.2)
+        let baseScore = card.value * 1.2
+        // 상성 배율 적용 (enemyPrimaryElement 기준)
+        const repEl = card.element
+        const affinityMult = enemyPrimaryElement
+          ? getAffinityMultiplier(repEl, enemyPrimaryElement)
+          : 1.0
+        baseScore = Math.round(baseScore * affinityMult)
+        // 응축 배율 적용
+        if (condensedMultiplier && condensedMultiplier > 0) {
+          baseScore = Math.round(baseScore * (1 + condensedMultiplier))
+        }
+        // 증폭부 적용
+        if (amplifyActive) {
+          baseScore = baseScore * 2
+        }
+        // 용신 보너스 적용
+        if (favorableElement && card.element === favorableElement) {
+          baseScore = Math.round(baseScore * YONGSIN_BONUS_MULTIPLIER)
+        }
+        // 번짐 이월 피해 가산
+        if (carryoverBurn && carryoverBurn > 0) {
+          baseScore = baseScore + carryoverBurn
+        }
+        if (!enemyPrimaryElement) {
+          if (baseScore > bestScore || (baseScore === bestScore && combo.length < bestIds.length)) {
+            bestScore = baseScore
+            bestIds = combo.map(c => c.id)
+            bestAffinityMult = 1.0
+          }
+        } else {
+          const isBetter = baseScore > bestScore || (baseScore === bestScore && combo.length < bestIds.length)
+          if (isBetter) {
+            bestScore = baseScore
+            bestIds = combo.map(c => c.id)
+            bestAffinityMult = affinityMult
+          }
+        }
+        continue
+      }
+
       if (result.type === 'none') continue
       if (result.type === 'ohang-yeonhwan' && yeonhwanUsed) continue
 
@@ -280,6 +338,11 @@ export interface FullCapSimOptions {
   disableYongsinScoring?: boolean
   /** R10-5 어블레이션: 비활성화할 특성 ID 목록 (예: ['quench']) */
   disabledTraits?: string[]
+  /**
+   * T13: 사주 기반 가호 장착 목록
+   * selectTalismanBySaju() 결과를 전달하면 시뮬에서 런 내내 유지됨
+   */
+  activePassiveIds?: string[]
 }
 
 /**
@@ -456,6 +519,12 @@ function createDeterministicState(
     reshuffled: false,
     favorableElement: opts?.favorableElement,
     disabledTraits: opts?.disabledTraits,
+    // T13: 사주 기반 가호 장착 — 런 시작 시 activePassiveIds 주입
+    activePassiveIds: opts?.activePassiveIds ?? [],
+    // R4: 상관 발동 횟수 초기화
+    sanggwanUsed: 0,
+    // sikshin D안: 초기화
+    sikshinDiscardBonus: false,
   }
 }
 
@@ -527,6 +596,12 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         carryoverBurn: 0,
         reshuffled: false,
         favorableElement: resolvedFavorableElement,
+        // T13: 층 전환 시 activePassiveIds(가호) 유지 — 런 내내 유지
+        activePassiveIds: state.activePassiveIds ?? opts?.activePassiveIds ?? [],
+        // R4: 상관 발동 횟수 — 출정(런) 전체 기준, 층 전환 시 유지
+        sanggwanUsed: state.sanggwanUsed ?? 0,
+        // sikshin D안: 층 전환 시 리셋
+        sikshinDiscardBonus: false,
       }
     } else {
       state = { ...state, playerHp }
@@ -622,6 +697,7 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         state.carryoverBurn,
         resolvedFavorableElement,
         state.talismans,  // T16-P3: 부적 효과 전달
+        state.activePassiveIds,  // sikshin A안: 낱장 후보 평가
       )
 
       if (decision.cardIds.length === 0) {
@@ -634,6 +710,10 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
       if (decision.shouldDiscard && state.discardsLeft > 0) {
         state = discardCards(state, decision.cardIds)
         discardCount++
+        // sikshin D안: 버리기 후 보너스 설정 횟수 추적 (activePassiveIds에 sikshin 있을 때)
+        if ((state.activePassiveIds ?? []).includes('sikshin') && state.sikshinDiscardBonus === true) {
+          traitCounts['passive_sikshin_discard'] = (traitCounts['passive_sikshin_discard'] ?? 0) + 1
+        }
         continue
       }
 
@@ -675,6 +755,56 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
       const comboResult = judgeCombo(selectedCards)
       if (comboResult.type === 'fusion-birth' || comboResult.type === 'fusion-hone') {
         fusionCount++
+      }
+
+      // T13-R2: 연환 발생 추적 (comboResult.type 기준)
+      if (comboResult.type === 'ohang-yeonhwan') {
+        traitCounts['ohang-yeonhwan'] = (traitCounts['ohang-yeonhwan'] ?? 0) + 1
+      }
+
+      // T13-R2: 모으기 장수 분포 추적 (gather 유형 + 장수)
+      if (comboResult.type === 'gather') {
+        const gatherKey = `gather${selectedCards.length}`
+        traitCounts[gatherKey] = (traitCounts[gatherKey] ?? 0) + 1
+      }
+
+      // T13-R2: 가호 기여도 추적 — activePassiveIds 기반 발동 조건 사전 판정
+      // 가호 발동 여부를 comboResult + state 조건으로 직접 평가
+      {
+        const activeIds = state.activePassiveIds ?? []
+        const floorIdx2 = state.currentFloor - 1
+        const floorConf2 = FLOOR_CONFIGS[floorIdx2]
+        const basePrimary2 = floorElements[floorIdx2]?.primaryElement ?? floorConf2.enemyPrimaryElement
+        const baseSub2 = floorElements[floorIdx2]?.subElement ?? floorConf2.enemySubElement
+        const curPrimEl = state.enemyPhaseSwitch ? baseSub2 : basePrimary2
+
+        if (activeIds.includes('sikshin') && selectedCards.length === 1) {
+          traitCounts['passive_sikshin'] = (traitCounts['passive_sikshin'] ?? 0) + 1
+        }
+        if (activeIds.includes('bigyeon') && comboResult.type === 'gather' && selectedCards.length >= 3) {
+          traitCounts['passive_bigyeon'] = (traitCounts['passive_bigyeon'] ?? 0) + 1
+        }
+        if (activeIds.includes('geoptae') && selectedCards.some(c => c.element === 'mok') && state.attackCount === 0) {
+          traitCounts['passive_geoptae'] = (traitCounts['passive_geoptae'] ?? 0) + 1
+        }
+        if (activeIds.includes('sanggwan') && selectedCards.filter(c => c.element === 'hwa').length >= 2 && (state.sanggwanUsed ?? 0) < SANGGWAN_MAX_PER_RUN) {
+          traitCounts['passive_sanggwan'] = (traitCounts['passive_sanggwan'] ?? 0) + 1
+        }
+        if (activeIds.includes('pyeonjae')) {
+          const hasGeum = selectedCards.some(c => c.element === 'geum')
+          if (hasGeum && curPrimEl === 'mok') {
+            traitCounts['passive_pyeonjae'] = (traitCounts['passive_pyeonjae'] ?? 0) + 1
+          }
+        }
+        if (activeIds.includes('jeongjae') && comboResult.type === 'ohang-yeonhwan' && selectedCards.some(c => c.element === 'su')) {
+          traitCounts['passive_jeongjae'] = (traitCounts['passive_jeongjae'] ?? 0) + 1
+        }
+        if (activeIds.includes('pyeonin')) {
+          const hasTo = selectedCards.some(c => c.element === 'to')
+          if (hasTo && comboResult.type === 'gather' && state.isLastAttack) {
+            traitCounts['passive_pyeonin'] = (traitCounts['passive_pyeonin'] ?? 0) + 1
+          }
+        }
       }
 
       // [R7-2] 4층 플레이 카드 원소 기록
@@ -772,4 +902,73 @@ export function runFullCapSimulation(runs = 1000, opts?: FullCapSimOptions): Ful
     victories,
     floorAttackStats,
   }
+}
+
+// ─── T13: 사주 기반 가호 장착 선택 ────────────────────────────────────────────
+
+/**
+ * 가호(십성) 후보 목록 — 7종 전부
+ * (PASSIVE_POOL의 id 기준, balance.ts 상수와 대응)
+ */
+const ALL_TALISMAN_IDS = [
+  'sikshin',    // 식신: 낱장 +20% (범용)
+  'bigyeon',    // 비견: 모으기 3+ 반격 감소 (주력 원소 집중 보상)
+  'geoptae',    // 겁재: 목 포함 첫 공격 +30%
+  'sanggwan',   // 상관: 화 2장 이상 ×1.5
+  'pyeonjae',   // 편재: 금 극 시 HP +3
+  'jeongjae',   // 정재: 수 포함 연환 배율 +2
+  'pyeonin',    // 편인: 토 모으기 마지막 공격 +50%
+] as const
+
+/**
+ * T13: 사주 기반 가호 2종 선택
+ *
+ * elementDist 기반 "기대 데미지 기여 최대" 2종을 반환한다.
+ *
+ * 점수 계산 기준:
+ *  - sikshin: SIKSHIN_BASE_SCORE (범용, 원소 비율 무관)
+ *  - bigyeon: BIGYEON_ELEMENT_WEIGHT × max(elementDist 비율)
+ *      → 주력 원소가 집중될수록 모으기 3+ 발동 확률 상승
+ *  - geoptae: GEOPTAE_MOK_WEIGHT × elementDist.mok 비율
+ *  - sanggwan: SANGGWAN_HWA_WEIGHT × elementDist.hwa 비율
+ *  - pyeonjae: PYEONJAE_GEUM_WEIGHT × elementDist.geum 비율
+ *  - jeongjae: JEONGJAE_SU_WEIGHT × elementDist.su 비율
+ *  - pyeonin:  PYEONIN_TO_WEIGHT × elementDist.to 비율
+ *
+ * @param elementDist 사주 오행 분포 (합계가 0이면 균등 분포로 대체)
+ * @param availableTalismans 선택 가능한 가호 id 목록 (없으면 전 7종)
+ * @returns 기대 데미지 기여 상위 2종의 id 배열 (내림차순)
+ */
+export function selectTalismanBySaju(
+  elementDist: Record<Element, number>,
+  availableTalismans?: string[],
+): string[] {
+  const pool = availableTalismans ?? [...ALL_TALISMAN_IDS]
+
+  // 오행 분포 정규화 (합계 기준 비율 계산)
+  const total = Object.values(elementDist).reduce((s, v) => s + v, 0)
+  const norm = (el: Element): number =>
+    total > 0 ? (elementDist[el] ?? 0) / total : 0.2  // 합계 0이면 균등(20%)
+
+  // 주력 원소 비율 (bigyeon 계산용)
+  const maxRatio = Math.max(
+    norm('mok'), norm('hwa'), norm('to'), norm('geum'), norm('su'),
+  )
+
+  // 가호별 기대 데미지 기여 점수 계산
+  const scores: Record<string, number> = {
+    sikshin:  SIKSHIN_BASE_SCORE,
+    bigyeon:  BIGYEON_ELEMENT_WEIGHT * maxRatio,
+    geoptae:  GEOPTAE_MOK_WEIGHT * norm('mok'),
+    sanggwan: SANGGWAN_HWA_WEIGHT * norm('hwa'),
+    pyeonjae: PYEONJAE_GEUM_WEIGHT * norm('geum'),
+    jeongjae: JEONGJAE_SU_WEIGHT * norm('su'),
+    pyeonin:  PYEONIN_TO_WEIGHT * norm('to'),
+  }
+
+  // pool에 있는 가호만 필터링 → 점수 내림차순 정렬 → 상위 2종 반환
+  return pool
+    .filter(id => id in scores)
+    .sort((a, b) => (scores[b] ?? 0) - (scores[a] ?? 0))
+    .slice(0, 2)
 }

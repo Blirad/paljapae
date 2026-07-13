@@ -9,7 +9,7 @@ import {
   GEUK_MAP,
   detectElementClash,
 } from './pokerHandJudge'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, OHANG_YEONHWAN_MULTIPLIER } from './balance'
+import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, OHANG_YEONHWAN_MULTIPLIER, SANGGWAN_MAX_PER_RUN } from './balance'
 import { generateSajuDeck } from './deckGenerator'
 import { getFavorableElement } from './manseryeok'
 // T17: 가호(십성) 효과 반영
@@ -149,6 +149,8 @@ export function createInitialGameState(floorIndex = 0, heroProfile?: SavedHeroPr
     condenseActive: false,         // 하위 호환 (deprecated)
     // Phase 1.9.2 신규 필드 초기화
     yeonhwanUsed: false,
+    // R4: 상관 출정당 발동 횟수 초기화
+    sanggwanUsed: 0,
     // Phase 1.9.5: 응축 확정판 (% 방식)
     condensedMultiplier: 0,
     isLastAttack: floorConfig.maxPlays === 1,
@@ -166,6 +168,8 @@ export function createInitialGameState(floorIndex = 0, heroProfile?: SavedHeroPr
     relics: [],
     // T17: 가호(십성) 시스템
     activePassiveIds: [],
+    // sikshin D안: 초기화
+    sikshinDiscardBonus: false,
   }
 }
 
@@ -310,6 +314,8 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
   // activePassiveIds 기반 패시브 적용 — 모든 패시브는 isBlocked가 아닐 때만 발동
   let passiveHealBonus = 0  // 편재: 체력 회복 보너스
   let passiveCounterReduction = 0  // 비견: 반격 피해 감소
+  // R4: 상관 발동 횟수 추적 (출정당 최대 SANGGWAN_MAX_PER_RUN회)
+  let newSanggwanUsed = state.sanggwanUsed ?? 0
   if (!isBlocked) {
     const activeIds = state.activePassiveIds ?? []
     const activePassives = PASSIVE_POOL.filter(p => activeIds.includes(p.id))
@@ -317,9 +323,13 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     for (const passive of activePassives) {
       switch (passive.id) {
         case 'sikshin': {
-          // 식신(食神): 낱장 조합(1장) 시 피해 +20%
+          // 식신(食神): 낱장 조합(1장) 시 피해 +20% (기존 조건 유지)
           if (playedCards.length === 1) {
             damage = Math.round(damage * 1.2)
+          }
+          // sikshin D안: 버리기 후 다음 공격 +15% (1회 소모, 낱장 조건과 독립)
+          if (state.sikshinDiscardBonus === true) {
+            damage = Math.round(damage * 1.15)
           }
           break
         }
@@ -340,10 +350,11 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
           break
         }
         case 'sanggwan': {
-          // 상관(傷官): 불 기운 카드 2장 이상 시 피해 ×1.5
+          // 상관(傷官): 불 기운 카드 2장 이상 시 피해 ×1.3 (출정당 최대 SANGGWAN_MAX_PER_RUN회)
           const hwaCount = playedCards.filter(c => c.element === 'hwa').length
-          if (hwaCount >= 2) {
-            damage = Math.round(damage * 1.5)
+          if (hwaCount >= 2 && (state.sanggwanUsed ?? 0) < SANGGWAN_MAX_PER_RUN) {
+            damage = Math.round(damage * 1.3)
+            newSanggwanUsed = (state.sanggwanUsed ?? 0) + 1
           }
           break
         }
@@ -670,6 +681,10 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     mirrorShieldActive: newMirrorShieldActive,
     // Phase 1.9.4: 덱 재순환 배너용 플래그
     reshuffled,
+    // R4: 상관 발동 횟수 업데이트
+    sanggwanUsed: newSanggwanUsed,
+    // sikshin D안: 공격 후 버리기 보너스 소멸
+    sikshinDiscardBonus: false,
   }
 }
 
@@ -710,6 +725,12 @@ export function discardCards(state: GameState, cardIds: string[]): GameState {
     Math.max(0, state.playerHp - punishDamage + moktangHeal)
   )
 
+  // sikshin D안: 버리기 사용 시 sikshinDiscardBonus 활성화 (장착 시에만)
+  const activeIds = state.activePassiveIds ?? []
+  const newSikshinDiscardBonus = activeIds.includes('sikshin')
+    ? true
+    : (state.sikshinDiscardBonus ?? false)
+
   return {
     ...state,
     hand: [...remainHand, ...drawnCards],
@@ -719,6 +740,7 @@ export function discardCards(state: GameState, cardIds: string[]): GameState {
     discardsLeft: state.discardsLeft - 1,
     playerHp: newPlayerHp,
     reshuffled,
+    sikshinDiscardBonus: newSikshinDiscardBonus,
   }
 }
 
@@ -823,8 +845,10 @@ export function advanceToNextFloor(state: GameState): GameState {
     attackCount: 0,
     enemyPhaseSwitch: false,
     condenseActive: false,
-    // Phase 1.9.5: 층 전환 시 리��
+    // Phase 1.9.5: 층 전환 시 리셋
     yeonhwanUsed: false,
+    // R4: 상관 발동 횟수 — 출정(런) 전체 기준이므로 층 전환 시 유지
+    sanggwanUsed: state.sanggwanUsed ?? 0,
     condensedMultiplier: 0,
     isLastAttack: floorConfig.maxPlays === 1,
     lastTraitTriggered: undefined,
@@ -840,6 +864,8 @@ export function advanceToNextFloor(state: GameState): GameState {
     relics: state.relics,
     // T17: 가호 유지 (런 동안 유지)
     activePassiveIds: state.activePassiveIds ?? [],
+    // sikshin D안: 층 전환 시 리셋 (출수 시 소멸과 동일)
+    sikshinDiscardBonus: false,
   }
 }
 

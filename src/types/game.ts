@@ -123,6 +123,10 @@ export interface GameState {
   relics: Relic[]                         // 획득한 유물 목록 (런 한정 특수 효과)
   // T17: 가호(십성) 시스템 — 선택된 패시브 ID 목록
   activePassiveIds?: string[]             // 장착 가호 ID (런 내내 유지, 없으면 빈 배열)
+  // R4: 상관(傷官) 출정당 발동 횟수 추적
+  sanggwanUsed?: number                   // 현재 출정에서 상관 발동 횟수 (층 전환 시 리셋)
+  // sikshin D안: 버리기 사용 시 다음 공격 +15% (1회 소모, 스택 불가 갱신 가능)
+  sikshinDiscardBonus?: boolean           // true = 다음 공격에 ×1.15 적용 후 false로 리셋
 }
 
 export type FortuneLevel = 'daegil' | 'gil' | 'pyeong' | 'hyung' | 'daehyung'
