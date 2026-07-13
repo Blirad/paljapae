@@ -329,7 +329,7 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
           }
           // sikshin D안: 버리기 후 다음 공격 +15% (1회 소모, 낱장 조건과 독립)
           if (state.sikshinDiscardBonus === true) {
-            damage = Math.round(damage * 1.15)
+            damage = Math.round(damage * 1.10)
           }
           break
         }

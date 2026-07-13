@@ -432,7 +432,7 @@ export const FLOOR_CONFIGS: FloorConfig[] = [
   {
     floor: 3,
     enemyName: '정예: 고신',
-    enemyHp: 580,  // R11: 680→580 (밸런스 라운드 확정)
+    enemyHp: 620,  // R13: 580→620 (이원 처방 기저 조정)
     counterDamage: 2,
     maxPlays: 5,
     enemyPrimaryElement: 'to',
@@ -458,6 +458,64 @@ export const FLOOR_CONFIGS: FloorConfig[] = [
   },
 ]
 
+// ─── T8: 유물 4종 정의 ───────────────────────────────────────────────────────
+
+export type RelicId = 'haetae' | 'osakshil' | 'horybyeong' | 'moktag'
+
+export interface RelicDef {
+  id: RelicId
+  name: string
+  description: string
+  icon: string  // 이모지 아이콘
+}
+
+/**
+ * 유물 4종 정의 (balance.ts 단일 출처)
+ * - 해태상: 적 반격 피해 -3 (하한 0)
+ * - 오색실: 오행연환 성립 시 기본 피해 +15
+ * - 호리병: 내 HP 30 이하 시 콤보 배율 +1
+ * - 목탁: 버리기 사용 시 HP 2 회복
+ */
+export const RELIC_DEFS: Record<RelicId, RelicDef> = {
+  haetae: {
+    id: 'haetae',
+    name: '해태상',
+    description: '적의 반격 피해 -3 (최소 0)',
+    icon: '🦁',
+  },
+  osakshil: {
+    id: 'osakshil',
+    name: '오색실',
+    description: '오행연환 성립 시 기본 피해 +15',
+    icon: '🧵',
+  },
+  horybyeong: {
+    id: 'horybyeong',
+    name: '호리병',
+    description: 'HP 30 이하 시 콤보 배율 +1',
+    icon: '🏺',
+  },
+  moktag: {
+    id: 'moktag',
+    name: '목탁',
+    description: '버리기 사용 시 HP 2 회복',
+    icon: '🪘',
+  },
+}
+
+export const ALL_RELIC_IDS: RelicId[] = ['haetae', 'osakshil', 'horybyeong', 'moktag']
+
+/** 해태상: 반격 피해 감소량 */
+export const HAETAE_COUNTER_REDUCTION = 3
+/** 오색실: 연환 시 기본 피해 보너스 */
+export const OSAKSHIL_YEONHWAN_BONUS = 15
+/** 호리병: 발동 HP 임계값 */
+export const HORYBYEONG_HP_THRESHOLD = 30
+/** 호리병: 콤보 배율 추가 */
+export const HORYBYEONG_MULTIPLIER_BONUS = 1
+/** 목탁: 버리기 HP 회복량 */
+export const MOKTAG_DISCARD_HEAL = 2
+
 export const PLAYER_BASE_HP = 100
 export const HAND_SIZE = 8
 export const BASE_DISCARDS = 3
@@ -475,6 +533,40 @@ export const SUB_GEUK_BONUS = 1.25
 export const YONGSIN_BONUS_MULTIPLIER = 1.3
 /** 연환 3장 이상, 마지막 카드가 용신 원소 시 배율 (×1.3 대체) */
 export const YONGSIN_CHAIN_MULTIPLIER = 1.5
+
+// --- T13: 가호(십성) 기대 데미지 가중치 상수 (balance.ts 단일 출처)
+//
+// 각 가호의 "기대 데미지 기여" 점수를 elementDist 기반으로 추산하기 위한 기준값.
+// selectTalismanBySaju() 함수가 이 상수를 참조한다.
+//
+// 설계 원칙:
+//  - 원소 친화 가호: elementDist의 해당 원소 비율 × 기여 계수
+//  - 범용 가호: 고정 기여 점수 (원소 비율 무관)
+//  - 수치는 1000판 시뮬 기반 추정치 (실측 후 튜닝 가능)
+
+/** 식신(食神): 낱장 공격 +20% — 원소 무관, 범용 보너스 */
+export const SIKSHIN_BASE_SCORE = 18.0
+
+/** 비견(比肩): 같은 기운 모으기 3+ 시 반격 감소 — 주력 원소 집중도에 비례 */
+export const BIGYEON_ELEMENT_WEIGHT = 22.0
+
+/** 겁재(劫財): 나무 카드 포함 첫 공격 +30% — 목(木) 원소 비율 비례 */
+export const GEOPTAE_MOK_WEIGHT = 28.0
+
+/** 상관(傷官): 불 카드 2장 이상 × 1.5 — 화(火) 원소 비율 비례 */
+export const SANGGWAN_HWA_WEIGHT = 30.0
+
+/** 상관(傷官): 출정당 최대 발동 횟수 */
+export const SANGGWAN_MAX_PER_RUN = 2
+
+/** 편재(偏財): 금 카드로 극 시 HP 3 회복 — 금(金) 원소 비율 비례 */
+export const PYEONJAE_GEUM_WEIGHT = 20.0
+
+/** 정재(正財): 물 카드 포함 연환 배율 +2 — 수(水) 원소 비율 비례 */
+export const JEONGJAE_SU_WEIGHT = 24.0
+
+/** 편인(偏印): 흙 모으기 마지막 공격 +50% — 토(土) 원소 비율 비례 */
+export const PYEONIN_TO_WEIGHT = 26.0
 
 // --- 4층 적 원소 생성 (R7-2용)
 /**
