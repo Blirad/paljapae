@@ -544,8 +544,14 @@ export const YONGSIN_CHAIN_MULTIPLIER = 1.5
 //  - 범용 가호: 고정 기여 점수 (원소 비율 무관)
 //  - 수치는 1000판 시뮬 기반 추정치 (실측 후 튜닝 가능)
 
-/** 식신(食神): 낱장 공격 +20% — 원소 무관, 범용 보너스 */
-export const SIKSHIN_BASE_SCORE = 18.0
+/** 식신(食神): 낱장 공격 +20% — 원소 무관, 범용 보너스
+ *  R9 재산정: 작업 1 A/B 어블레이션 실측 (목화 1000판)
+ *   - sikshin 단독 기여 Δ = +2.30%p (CI 교차, 보수 추정)
+ *   - sanggwan 목화 점수 = 30.0 × (4/14) = 8.571
+ *   - sanggwan 기여 추정 = 5%p (R5→R8 합산 계수 기반)
+ *   - 재산정: 8.571 × (2.30 / 5.0) = 3.94 → 3.9 (최솟값 0.5 적용)
+ */
+export const SIKSHIN_BASE_SCORE = 3.9
 
 /** 비견(比肩): 같은 기운 모으기 3+ 시 반격 감소 — 주력 원소 집중도에 비례 */
 export const BIGYEON_ELEMENT_WEIGHT = 22.0
