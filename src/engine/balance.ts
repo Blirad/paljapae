@@ -29,7 +29,7 @@ import type { FloorConfig, Element } from '../types/game'
 export const GATHER_MULTIPLIERS: Record<number, number> = {
   2: 1.5,
   3: 2.5,
-  4: 3.5,
+  4: 4.0,   // B1-6: 벼리는(×3.5) 동률 해소
   5: 5.0,
 }
 
@@ -519,6 +519,18 @@ export const MOKTAG_DISCARD_HEAL = 2
 export const PLAYER_BASE_HP = 100
 export const HAND_SIZE = 8
 export const BASE_DISCARDS = 3
+export const MAX_DISCARD_PER_USE = 3  // B1-4: 버리기 1회당 최대 3장
+
+// --- B1-1/B1-2: 낳는 양자택일 효과 상수
+export const NOURISH_EFFECT_COEFF = 2.5    // 자양 [효과]: HP 회복 = 투입값 × 2.5
+export const PURIFICATION_THRESHOLD = 10   // 정화 [효과]: 투입값 ≥ 10 → 전해제+면역
+export const MINING_DRAW_DIVISOR = 5       // 채굴 [효과]: 드로우 = floor(투입값/5)
+export const MINING_MAX_DRAW = 3           // 채굴 [효과]: 최대 3장
+export const EMBER_DURATION = 3            // 잔불 [효과]: 지속 턴 수
+export const EMBER_MULTIPLIER = 1.0        // 잔불 [효과]: 턴당 피해 = 투입값 × 계수
+export const EMBER_BOT_MULTIPLIER = 2.2    // 잔불 [봇 기대값]: baseValue × 2.2 (R2: 3.0→2.2, 나쁜 상성 탈출구로 역할)
+export const CONDENSE_SCALE_BASE = 10      // 응축 값 스케일 기준값 (R2: 15→10, 저투입 효율 상향)
+export const CONDENSE_SCALE_MIN = 0.6      // 응축 값 스케일 하한 (R2: 0.4→0.6, 저치 착취 차단 강화)
 export const BASE_PLAYS = 4
 export const BOSS_FLOOR = 4
 

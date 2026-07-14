@@ -43,6 +43,15 @@ import {
   PYEONJAE_GEUM_WEIGHT,
   JEONGJAE_SU_WEIGHT,
   PYEONIN_TO_WEIGHT,
+  FUSION_TRAIT_MAP,
+  NOURISH_EFFECT_COEFF,
+  PURIFICATION_THRESHOLD,
+  MINING_DRAW_DIVISOR,
+  MINING_MAX_DRAW,
+  EMBER_MULTIPLIER,
+  EMBER_DURATION,
+  EMBER_BOT_MULTIPLIER,
+  MAX_DISCARD_PER_USE,
 } from './balance'
 import { getFavorableElement } from './manseryeok'
 
@@ -131,6 +140,89 @@ export interface FullCapPlayDecision {
   shouldDiscard: boolean
   bestAffinityMult: number
   bestDamage: number
+  effectMode?: boolean  // B1-1: fusion-birth 양자택일 선택
+}
+
+/**
+ * V3 작업 3 — 효과 기대값 닫힌 수식 4종
+ *
+ * 원칙: 우대 가중치(bias/boost) 절대 금지.
+ * 공격 기대 데미지와 동일 척도(데미지 환산)로 비교만 수행.
+ *
+ * @param traitId      특성 ID (nourish / wildfire / mining / yonggigama)
+ * @param baseValue    투입 카드 value 합계
+ * @param attackDamage 공격 시 기대 데미지 (비교 기준)
+ * @param hand         현재 핸드 전체 (채굴 핸드평균값 계산용)
+ * @param playerHp     현재 플레이어 HP (자양 HP위험 가중치용)
+ * @param condensedMultiplier 현재 응축 배율 (응축 기대값 계산용)
+ * @param enemyPrimaryElement 적 주 원소 (잔불 상성 배율용)
+ * @param comboResult  judgeCombo 결과 (잔불 상성 배율용)
+ * @returns 효과 기대값 (데미지 환산). attackDamage 초과 시 효과 선택.
+ */
+function scoreEffectForTrait(
+  traitId: string,
+  baseValue: number,
+  attackDamage: number,
+  hand: Card[],
+  playerHp: number | undefined,
+  condensedMultiplier: number | undefined,
+  enemyPrimaryElement: Element | undefined,
+  comboResult: ReturnType<typeof judgeCombo>,
+): number {
+  const maxHp = PLAYER_BASE_HP
+  const curHp = playerHp ?? maxHp
+
+  switch (traitId) {
+    case 'nourish': {
+      // 자양: min(기본치×2.5, maxHP - HP) × HP위험 가중치
+      // HP위험 가중치: HP≤30% → ×2.0, HP≤50% → ×1.5, else → ×1.0
+      const rawHeal = Math.min(
+        Math.round(baseValue * NOURISH_EFFECT_COEFF),
+        Math.max(0, maxHp - curHp),
+      )
+      const hpRatio = curHp / maxHp
+      const hpWeight = hpRatio <= 0.3 ? 2.0 : hpRatio <= 0.5 ? 1.5 : 1.0
+      return Math.round(rawHeal * hpWeight)
+    }
+
+    case 'wildfire': {
+      // 잔불(ember): max(기본치×3, 즉발데미지 × EMBER_MULTIPLIER × 상성배율)
+      // 즉발데미지 = attackDamage (현재 핸드 최고 공격 조합 점수)
+      const affinityMult = enemyPrimaryElement
+        ? getAffinityMultiplier(comboResult.finishingElement, enemyPrimaryElement)
+        : 1.0
+      const emberVal = Math.max(
+        baseValue * EMBER_BOT_MULTIPLIER,  // R2: ×3.0(EMBER_DURATION) → ×2.2(EMBER_BOT_MULTIPLIER)
+        Math.round(attackDamage * EMBER_MULTIPLIER * affinityMult),
+      )
+      return emberVal
+    }
+
+    case 'mining': {
+      // 채굴: 드로우장수 × 핸드평균값
+      // 드로우장수 = min(MINING_MAX_DRAW, floor(투입값/MINING_DRAW_DIVISOR))
+      // 투입값 = baseValue (엔진 구현과 동일 — hand.length가 아닌 카드값 합계 기준)
+      // 핸드평균값 = sum(card.value) / hand.length
+      const drawCount = Math.min(
+        MINING_MAX_DRAW,
+        Math.floor(baseValue / MINING_DRAW_DIVISOR),
+      )
+      const handAvg = hand.length > 0
+        ? hand.reduce((s, c) => s + c.value, 0) / hand.length
+        : 0
+      return Math.round(drawCount * handAvg)
+    }
+
+    case 'yonggigama': {
+      // 응축(옹기가마): effectMode 경로가 아닌 별도 applyCondense 경로로 처리됨
+      // 봇 루프에서 getCondenseAvailability → applyCondense 직접 호출하므로
+      // effectMode 경로에서는 0 반환 (이중 처리 방지)
+      return 0
+    }
+
+    default:
+      return 0  // 미정의 특성 → 0 (효과 미채택)
+  }
 }
 
 /**
@@ -148,6 +240,8 @@ export function fullCapSelectCards(
   favorableElement?: Element,
   talismans?: string[],
   activePassiveIds?: string[],
+  playerHp?: number,          // B1-1: 추가
+  enableEffectMode?: boolean, // B1-1: 추가
 ): FullCapPlayDecision {
   // T16-P3: talismans에서 amplifyActive 여부 추출 (증폭부 사용 가능 시 평가에 반영)
   const amplifyActive = (talismans ?? []).includes('jeungpok')
@@ -158,6 +252,7 @@ export function fullCapSelectCards(
   let bestIds: string[] = []
   let bestScore = -1
   let bestAffinityMult = 0
+  let bestEffectMode = false  // B1-1: fusion-birth 효과 선택 여부
 
   const maxCards = Math.min(5, hand.length)
   for (let k = 1; k <= maxCards; k++) {
@@ -212,6 +307,9 @@ export function fullCapSelectCards(
       }
 
       if (result.type === 'none') continue
+
+      // B1-1: fusion-birth는 일반 콤보 평가만 수행 (양자택일은 최종 선택 후 평가)
+
       if (result.type === 'ohang-yeonhwan' && yeonhwanUsed) continue
 
       if (!enemyPrimaryElement) {
@@ -220,6 +318,7 @@ export function fullCapSelectCards(
           bestScore = score
           bestIds = combo.map(c => c.id)
           bestAffinityMult = 1.0
+          bestEffectMode = false
         }
         continue
       }
@@ -261,6 +360,7 @@ export function fullCapSelectCards(
         bestScore = score
         bestIds = evalCombo.map(c => c.id)
         bestAffinityMult = affinityMult
+        bestEffectMode = false
       }
     }
   }
@@ -270,6 +370,32 @@ export function fullCapSelectCards(
     bestAffinityMult = 1.0
   }
 
+  // B1-1: 최종 선택 콤보가 fusion-birth일 때만 양자택일 평가 (성능 최적화)
+  if (enableEffectMode && bestIds.length > 0 && bestIds.length <= 5) {
+    const bestCombo = hand.filter(c => bestIds.includes(c.id))
+    if (bestCombo.length > 0) {
+      const result = judgeCombo(bestCombo)
+      if (result.type === 'fusion-birth') {
+        const traitId = FUSION_TRAIT_MAP[result.name] ?? ''
+        const baseValue = bestCombo.reduce((sum, c) => sum + c.value, 0)
+        const attackDamage = enemyPrimaryElement
+          ? fullCapCalcExpectedDamage(bestCombo, enemyPrimaryElement, enemySubElement, condensedMultiplier, yeonhwanUsed, carryoverBurn, favorableElement, amplifyActive)
+          : result.totalScore
+
+        // V3 작업 3: 효과 기대값 닫힌 수식 4종
+        // 원칙: 우대 가중치 없음 — 공격 기대 데미지 vs 효과 기대값 동일 척도(데미지 환산) 비교
+        const effectValue = scoreEffectForTrait(traitId, baseValue, attackDamage, hand, playerHp, condensedMultiplier, enemyPrimaryElement, result)
+
+        // 효과 선택 여부 결정: 효과 기대값 > 공격 기대 데미지일 때만 선택
+        if (effectValue > attackDamage) {
+          bestEffectMode = true
+        } else {
+          bestEffectMode = false
+        }
+      }
+    }
+  }
+
   // 버리기 판단: 생(×0.5) 수준일 때만 버리기 (affinityBot 동일)
   const shouldDiscard =
     enemyPrimaryElement !== undefined &&
@@ -277,7 +403,7 @@ export function fullCapSelectCards(
     (discardsLeft ?? 0) > 0 &&
     bestIds.length > 0
 
-  return { cardIds: bestIds, shouldDiscard, bestAffinityMult, bestDamage: bestScore }
+  return { cardIds: bestIds, shouldDiscard, bestAffinityMult, bestDamage: bestScore, effectMode: bestEffectMode }
 }
 
 // --- 시뮬레이션 ---
@@ -343,6 +469,12 @@ export interface FullCapSimOptions {
    * selectTalismanBySaju() 결과를 전달하면 시뮬에서 런 내내 유지됨
    */
   activePassiveIds?: string[]
+  /**
+   * B1-1: 양자택일 효과 선택 활성화 여부 (A/B 테스트용)
+   * false(기본): 항상 공격 모드 (이전 동작 유지)
+   * true: trait별 기대값 비교 후 효과/공격 선택
+   */
+  enableEffectMode?: boolean
 }
 
 /**
@@ -702,6 +834,8 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         resolvedFavorableElement,
         state.talismans,  // T16-P3: 부적 효과 전달
         state.activePassiveIds,  // sikshin A안: 낱장 후보 평가
+        state.playerHp,          // B1-1: 추가
+        opts?.enableEffectMode,  // B1-1: 추가
       )
 
       if (decision.cardIds.length === 0) {
@@ -710,9 +844,21 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements }
       }
 
-      // 버리기 전략
+      // 버리기 전략 — B1-4: discardCards는 MAX_DISCARD_PER_USE(3)장 초과 리젝 → 슬라이스로 무한루프 방지
       if (decision.shouldDiscard && state.discardsLeft > 0) {
-        state = discardCards(state, decision.cardIds)
+        const discardIds = decision.cardIds.slice(0, MAX_DISCARD_PER_USE)
+        const prevDiscard = state
+        state = discardCards(state, discardIds)
+        // V3 무한루프 픽스: discardCards 리젝 감지
+        if (
+          state.hand.length === prevDiscard.hand.length &&
+          state.discardsLeft === prevDiscard.discardsLeft &&
+          state.deck.length === prevDiscard.deck.length
+        ) {
+          throw new Error(
+            `[V3-무한루프-픽스] discardCards 리젝 감지 — floor=${floor} discardIds=${JSON.stringify(discardIds)}`
+          )
+        }
         discardCount++
         // sikshin D안: 버리기 후 보너스 설정 횟수 추적 (activePassiveIds에 sikshin 있을 때)
         if ((state.activePassiveIds ?? []).includes('sikshin') && state.sikshinDiscardBonus === true) {
@@ -759,6 +905,17 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
       const comboResult = judgeCombo(selectedCards)
       if (comboResult.type === 'fusion-birth' || comboResult.type === 'fusion-hone') {
         fusionCount++
+      }
+
+      // B1-1: 효과 채택률 추적
+      if (decision.effectMode && comboResult.type === 'fusion-birth') {
+        const traitId = FUSION_TRAIT_MAP[comboResult.name] ?? 'unknown'
+        const key = `effect_${traitId}_used`
+        traitCounts[key] = (traitCounts[key] ?? 0) + 1
+      } else if (comboResult.type === 'fusion-birth' && !decision.effectMode) {
+        const traitId = FUSION_TRAIT_MAP[comboResult.name] ?? 'unknown'
+        const key = `attack_${traitId}_used`
+        traitCounts[key] = (traitCounts[key] ?? 0) + 1
       }
 
       // T13-R2: 연환 발생 추적 (comboResult.type 기준)
@@ -816,7 +973,20 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         selectedCards.forEach(card => floor4PlayedElements.push(card.element))
       }
 
-      state = playCards(state, decision.cardIds)
+      const prevState = state
+      state = playCards(state, decision.cardIds, decision.effectMode)
+      // V3 무한루프 픽스: 리젝 판별 — 모든 상태 동일 = 리젝 = throw
+      if (
+        state.hp === prevState.hp &&
+        state.enemyHp === prevState.enemyHp &&
+        state.playsLeft === prevState.playsLeft &&
+        state.hand.length === prevState.hand.length &&
+        state.discardsLeft === prevState.discardsLeft
+      ) {
+        throw new Error(
+          `[V3-무한루프-픽스] playCards 리젝 감지 — floor=${floor} cardIds=${JSON.stringify(decision.cardIds)} phase=${state.phase}`
+        )
+      }
       // R10-5: 특성 발동 추적
       if (state.lastTraitTriggered) {
         traitCounts[state.lastTraitTriggered] = (traitCounts[state.lastTraitTriggered] ?? 0) + 1
