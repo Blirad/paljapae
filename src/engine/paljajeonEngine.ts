@@ -9,7 +9,7 @@ import {
   GEUK_MAP,
   detectElementClash,
 } from './pokerHandJudge'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, OHANG_YEONHWAN_MULTIPLIER, SANGGWAN_MAX_PER_RUN } from './balance'
+import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, MAX_DISCARD_PER_USE, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, OHANG_YEONHWAN_MULTIPLIER, SANGGWAN_MAX_PER_RUN, NOURISH_EFFECT_COEFF, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, EMBER_DURATION, EMBER_MULTIPLIER, CONDENSE_SCALE_BASE, CONDENSE_SCALE_MIN, BASE_PURIFICATION_DAMAGE } from './balance'
 import { generateSajuDeck } from './deckGenerator'
 import { getFavorableElement } from './manseryeok'
 // T17: 가호(십성) 효과 반영
@@ -180,8 +180,14 @@ export function isYeokgeuk(card: Card, enemyElement: Element): boolean {
   return GEUK_MAP[enemyElement] === card.element
 }
 
-/** 출수 실행 → 새로운 GameState 반환 */
-export function playCards(state: GameState, cardIds: string[]): GameState {
+/**
+ * 출수 실행 → 새로운 GameState 반환
+ *
+ * @param state       현재 게임 상태
+ * @param cardIds     출수할 카드 ID 목록
+ * @param effectMode  true이면 fusion-birth 조합에서 공격 데미지 = 0, 효과만 발동 (B1-1 양자택일)
+ */
+export function playCards(state: GameState, cardIds: string[], effectMode?: boolean): GameState {
   // T22 진단 로그 — 덱 축소 원인 추적 (수정 금지, 진단 전용)
   if (typeof window !== 'undefined') {
     const turn = (state.playsLeft !== undefined) ? state.playsLeft : '?'
@@ -287,6 +293,15 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
   // 스펙 v2 — 용신 보너스
   // 콤보에 플레이어 용신 원소 카드가 포함되어 있으면 ×1.3
   // 연환 3장 이상이고 마지막 카드가 용신 원소이면 ×1.5 (×1.3 대체)
+  //
+  // v3.1 §3 개정 (R5): 효과 = rawBase가 아니라 용신·가호 시너지를 받는 값.
+  // 공격과의 차이는 상성 축뿐.
+  //
+  // R5 (balance-v3 §3): 용신·가호 시너지 배율을 효과에도 동일하게 적용한다.
+  // 공격과의 차이는 상성 축뿐 — 효과는 상성 배율을 받지 않는다.
+  // synergyMultiplier = 용신 배율 × 가호 배율 (시너지 합산)
+  let synergyMultiplier = 1.0  // 공격·효과 공통 시너지 배율
+
   if (state.favorableElement && !isBlocked) {
     const favEl = state.favorableElement
     const hasYongsin = playedCards.some(c => c.element === favEl)
@@ -296,8 +311,10 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
       const lastIsYongsin = lastCard?.element === favEl
       if (isChain3Plus && lastIsYongsin) {
         damage = Math.round(damage * YONGSIN_CHAIN_MULTIPLIER)  // ×1.5
+        synergyMultiplier = YONGSIN_CHAIN_MULTIPLIER
       } else {
         damage = Math.round(damage * YONGSIN_BONUS_MULTIPLIER)  // ×1.3
+        synergyMultiplier = YONGSIN_BONUS_MULTIPLIER
       }
     }
   }
@@ -400,6 +417,26 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     }
   }
 
+  // R5 (balance-v3 §3): 가호 시너지 배율 — 효과에 적용 가능한 가호만 synergyMultiplier에 반영
+  // 디스패치 규칙:
+  //   - sikshin "다음 공격 +10%": 공격만, 효과 미적용
+  //   - sikshin 낱장 +20%: 낳는 융합은 2장 조합이므로 자연 제외
+  //   - geoptae: 목 카드 포함 시 첫 공격 +30% — 효과에도 적용
+  //   - sanggwan/pyeonin: 화3장 이상/토 모으기 조건 — 낳는 융합 2장에서 자연 제외
+  if (!isBlocked) {
+    const activeIdsForSynergy = state.activePassiveIds ?? []
+    if (activeIdsForSynergy.includes('geoptae')) {
+      const hasMok = playedCards.some(c => c.element === 'mok')
+      // geoptaeUsed는 공격 섹션(가호 루프)에서 이미 설정됨.
+      // 효과 발동 시 geoptaeUsed는 여기서 판단 — 공격 damage에는 기여 안 했으므로 별도 체크
+      // 단, 공격과 효과가 동시에 발동하지 않으므로 newGeoptaeUsed 상태로 판단
+      if (hasMok && !newGeoptaeUsed) {
+        synergyMultiplier = synergyMultiplier * 1.3
+        newGeoptaeUsed = true
+      }
+    }
+  }
+
   // Phase 1.9.5: 10종 융합 특성 발동 판정
   // 융합 조합인 경우만 특성 발동 (rank: fusion-birth or fusion-hone)
   const isFusion = result.rank === 'fusion-birth' || result.rank === 'fusion-hone'
@@ -443,13 +480,20 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     damage = damage + extraDamage
   }
 
+  // B1-1: effectMode — fusion-birth 조합에서 양자택일(효과만, 공격 데미지 = 0)
+  // effectMode=true이면 공격 데미지를 0으로 설정하고 효과만 발동
+  // 융합(fusion-birth)이 아닌 경우 effectMode는 무시
+  if (effectMode && isFusion && result.rank === 'fusion-birth') {
+    damage = 0
+  }
+
   // C10(d): 고목령 — 매 턴 체력 15 회복 (피해 적용 후, 생존 시에만)
   const healGimmick = gimmicks.find(g => g.type === 'heal')
   const afterDamageHp = Math.max(0, state.enemyHp - damage)
   const enemyHealAmount = (healGimmick && healGimmick.type === 'heal' && afterDamageHp > 0)
     ? healGimmick.amount : 0
 
-  const newEnemyHp = Math.min(state.enemyMaxHp, afterDamageHp + enemyHealAmount)
+  let newEnemyHp = Math.min(state.enemyMaxHp, afterDamageHp + enemyHealAmount)
   let counterDamage = floorConfig.counterDamage
 
   // T17: 비견(比肩) — 같은 기운 모으기 3 이상 시 반격 -1
@@ -526,6 +570,9 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
     )
   }
 
+  // R5: 정화 추가 데미지 (purification case에서 설정, switch 블록 이후 newEnemyHp에 반영)
+  let purificationBonusDamage = 0
+
   // Phase 1.9.5: 10종 융합 특성 발동 (피해 적용 후 효과)
   if (isFusion && comboName && !isBlocked) {
     const traitId = FUSION_TRAIT_MAP[comboName]
@@ -536,21 +583,32 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
       if (config && !isDisabled) {
         switch (traitId) {
           case 'wildfire': {
-            // 번짐: 피해 30% 다음 공격에 이월
-            newCarryoverBurn = Math.round(damage * 0.3)
+            // R5 (balance-v3 §3): 번짐 — 피해 30% × synergyMultiplier 다음 공격에 이월
+            newCarryoverBurn = Math.round(damage * 0.3 * synergyMultiplier)
             break
           }
           case 'mining': {
-            // 채굴: 덱에서 1장 추가 드로우
-            if (newDeck.length > 0) {
-              const drawn = newDeck.shift()!
-              newHand = [...newHand, drawn]
+            // R5 (balance-v3 §3): 채굴 — 투입값 × synergyMultiplier 기반 드로우
+            // floor(투입값 × synergyMultiplier / MINING_DRAW_DIVISOR)장, 최대 MINING_MAX_DRAW
+            // 핸드 상한(HAND_SIZE) 초과 금지 — 남은 핸드 여유분까지만 드로우
+            const baseValueMining = playedCards.reduce((sum, c) => sum + c.value, 0)
+            const handRoom = Math.max(0, HAND_SIZE - newHand.length)
+            const drawCount = Math.min(
+              Math.floor(baseValueMining * synergyMultiplier / MINING_DRAW_DIVISOR),
+              MINING_MAX_DRAW,
+              newDeck.length,
+              handRoom,
+            )
+            const drawnInMining: Card[] = []
+            for (let i = 0; i < drawCount; i++) {
+              if (newDeck.length > 0) drawnInMining.push(newDeck.shift()!)
             }
+            newHand = [...newHand, ...drawnInMining]
             break
           }
           case 'nourish': {
-            // 자양: 체력 8 회복 (후처리에서 newPlayerHp에 반영)
-            // 여기서 임시 표시 — HP 계산은 lifesteal 적용 후
+            // R5 (balance-v3 §3): 자양 — 투입값 × NOURISH_EFFECT_COEFF × synergyMultiplier 회복
+            // 후처리 블록에서 synergyMultiplier 반영하여 finalPlayerHp 계산
             break
           }
           case 'harvest': {
@@ -572,12 +630,26 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
             break
           }
           case 'purification': {
-            // R10: 정화(샘) — 기세 죽음 1종 해제
-            // 적 주기운이 극하는 원소를 purifiedElements에 추가
-            if (floorEnemyEl) {
+            // R5 정화 구현: R3 감사(2026-07-14) 시 purification case 미검증 — 부실 기록 인정
+            // R5 (balance-v3 §3): 정화(샘) — 투입값 기반 분기 + 시너지 적용
+            // 적 상태이상(기세 죽음) 해제 시마다 데미지: BASE_PURIFICATION_DAMAGE × synergyMultiplier
+            const baseValuePurify = playedCards.reduce((sum, c) => sum + c.value, 0)
+            // 임계값 시너지 스케일: synergyMultiplier가 클수록 더 적은 투입값으로 전해제 달성
+            const effectiveThreshold = PURIFICATION_THRESHOLD / synergyMultiplier
+            if (baseValuePurify >= effectiveThreshold) {
+              // 전 원소 기세 죽음 해제 (투입값 충분 시)
+              const allElements: Element[] = ['mok', 'hwa', 'to', 'geum', 'su']
+              const newlyPurified = allElements.filter(el => !(state.purifiedElements ?? []).includes(el))
+              newPurifiedElements = [...allElements]
+              // 해제된 원소 수 × 기본 데미지 × synergyMultiplier
+              purificationBonusDamage = Math.round(newlyPurified.length * BASE_PURIFICATION_DAMAGE * synergyMultiplier)
+            } else if (floorEnemyEl) {
+              // 1종만 해제 (R10 기존 로직 유지)
               const deadEl = GEUK_MAP[floorEnemyEl] as Element | undefined
               if (deadEl && !(state.purifiedElements ?? []).includes(deadEl)) {
                 newPurifiedElements = [...(state.purifiedElements ?? []), deadEl]
+                // 해제 1종 데미지 (상성 무시)
+                purificationBonusDamage = Math.round(BASE_PURIFICATION_DAMAGE * synergyMultiplier)
               }
             }
             break
@@ -598,6 +670,11 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
         }
       }
     }
+  }
+
+  // R5: 정화 추가 데미지 — switch 블록 이후 newEnemyHp에 반영 (상성 무시)
+  if (purificationBonusDamage > 0) {
+    newEnemyHp = Math.max(0, newEnemyHp - purificationBonusDamage)
   }
 
   const floorCleared = newEnemyHp <= 0
@@ -631,11 +708,14 @@ export function playCards(state: GameState, cardIds: string[]): GameState {
   const nextPlaysLeft = newPlaysLeft
   const newIsLastAttack = nextPlaysLeft === 1
 
-  // Phase 1.9.5: 자양(nourish) 체력 회복 — 피해 계산 후 적용
+  // R5 (balance-v3 §3): 자양(nourish) 체력 회복 — heal value × synergyMultiplier
+  // heal value = playerMaxHp × NOURISH_HEAL_PCT (T19 기준 유지)
+  // 시너지 적용: 기존 회복량 × synergyMultiplier
   let finalPlayerHp = newPlayerHp
   if (isFusion && comboName && FUSION_TRAIT_MAP[comboName] === 'nourish' && !isBlocked) {
-    // T19: 고정 8 → 최대 HP의 8% (반올림)
-    finalPlayerHp = Math.min(state.playerMaxHp, finalPlayerHp + Math.round(state.playerMaxHp * NOURISH_HEAL_PCT))
+    const baseHeal = Math.round(state.playerMaxHp * NOURISH_HEAL_PCT)
+    const healAmount = Math.round(baseHeal * synergyMultiplier)
+    finalPlayerHp = Math.min(state.playerMaxHp, finalPlayerHp + healAmount)
   }
   // T17: 편재(偏財) 체력 회복 보너스
   if (passiveHealBonus > 0) {
@@ -900,8 +980,12 @@ export function getCondenseAvailability(
  * - 실제 피해 0, condensedMultiplier = 화/토 조합 비례 배율 설정
  * - 중첩 불가 (이미 응축 활성 시 무시)
  * - 마지막 공격 기회(isLastAttack)에는 적용 불가
+ *
+ * R5 (balance-v3 §3): synergyMultiplier 파라미터 추가.
+ * 응축 실효 배율 = (bonusPercent / 100) × synergyMultiplier
+ * 호출부에서 용신·가호 시너지 배율을 전달; 기본값 1.0 (시너지 없음)
  */
-export function applyCondense(state: GameState, cardIds: string[]): GameState {
+export function applyCondense(state: GameState, cardIds: string[], synergyMultiplier = 1.0): GameState {
   // 마지막 공격 기회에는 응축 불가
   if (state.isLastAttack) return state
   // 중첩 불가
@@ -931,8 +1015,9 @@ export function applyCondense(state: GameState, cardIds: string[]): GameState {
   const bonusPercent = getCondenseBonus(hwaCount, toCount)
   if (bonusPercent === 0) return state  // 유효한 조합 아님
 
-  // % 값을 배율로 변환 (120 → 1.2)
-  const multiplier = bonusPercent / 100
+  // R5 (balance-v3 §3): 응축 실효 배율 = 화/토 매트릭스 % × synergyMultiplier
+  // synergyMultiplier = 1.0이면 기존 동작과 동일
+  const multiplier = (bonusPercent / 100) * synergyMultiplier
 
   const newPlaysLeft = state.playsLeft - 1
 
