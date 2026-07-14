@@ -129,6 +129,11 @@ export interface GameState {
   sikshinDiscardBonus?: boolean           // true = 다음 공격에 ×1.15 적용 후 false로 리셋
   // R10: 겁재(劫財) 출정당 1회 제한 추적
   geoptaeUsed?: boolean                   // true = 이미 발동됨 (런 내내 유지, 층 전환 시 리셋 금지)
+  // B1-1: 잔불(들불 재정의) 상태
+  emberDamagePerTurn?: number              // 잔불 턴당 고정 피해 (0 = 비활성)
+  emberTurnsLeft?: number                  // 잔불 남은 턴 수
+  // B1-1: 정화 면역 상태
+  purificationImmune?: boolean             // true = 출정 내 기세 죽음 재발 면역
 }
 
 export type FortuneLevel = 'daegil' | 'gil' | 'pyeong' | 'hyung' | 'daehyung'

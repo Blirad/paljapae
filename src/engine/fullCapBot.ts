@@ -44,13 +44,13 @@ import {
   JEONGJAE_SU_WEIGHT,
   PYEONIN_TO_WEIGHT,
   FUSION_TRAIT_MAP,
-  NOURISH_EFFECT_COEFF,
+  NOURISH_HEAL_PCT,
+  BASE_PURIFICATION_DAMAGE,
   PURIFICATION_THRESHOLD,
   MINING_DRAW_DIVISOR,
   MINING_MAX_DRAW,
   EMBER_MULTIPLIER,
   EMBER_DURATION,
-  EMBER_BOT_MULTIPLIER,
   MAX_DISCARD_PER_USE,
 } from './balance'
 import { getFavorableElement } from './manseryeok'
@@ -144,19 +144,26 @@ export interface FullCapPlayDecision {
 }
 
 /**
- * V3 작업 3 — 효과 기대값 닫힌 수식 4종
+ * R5 (balance-v3 §3) — 효과 기대값 닫힌 수식 5종 + synergyMultiplier 거울 반영
  *
  * 원칙: 우대 가중치(bias/boost) 절대 금지.
  * 공격 기대 데미지와 동일 척도(데미지 환산)로 비교만 수행.
+ * 엔진(paljajeonEngine.ts)의 효과 계산식을 그대로 거울 반영 — C안 흔적 없음.
  *
- * @param traitId      특성 ID (nourish / wildfire / mining / yonggigama)
- * @param baseValue    투입 카드 value 합계
- * @param attackDamage 공격 시 기대 데미지 (비교 기준)
- * @param hand         현재 핸드 전체 (채굴 핸드평균값 계산용)
- * @param playerHp     현재 플레이어 HP (자양 HP위험 가중치용)
- * @param condensedMultiplier 현재 응축 배율 (응축 기대값 계산용)
- * @param enemyPrimaryElement 적 주 원소 (잔불 상성 배율용)
- * @param comboResult  judgeCombo 결과 (잔불 상성 배율용)
+ * synergyMultiplier = 용신 배율 × 가호 배율 (엔진과 동일 산출 방식)
+ *  - 용신: favorableElement 카드 포함 시 YONGSIN_BONUS_MULTIPLIER(×1.3) 또는 YONGSIN_CHAIN_MULTIPLIER(×1.5)
+ *  - 가호(geoptae): 목 카드 포함 시 ×1.3 추가 (낳는 융합 2장이므로 sanggwan/pyeonin 자연 제외)
+ *
+ * @param traitId             특성 ID (nourish / wildfire / mining / purification / yonggigama)
+ * @param baseValue           투입 카드 value 합계
+ * @param attackDamage        공격 시 기대 데미지 (비교 기준)
+ * @param hand                현재 핸드 전체 (채굴 핸드평균값 계산용)
+ * @param playerHp            현재 플레이어 HP (자양 HP위험 가중치용)
+ * @param condensedMultiplier 현재 응축 배율 (미사용, 시그니처 유지)
+ * @param enemyPrimaryElement 적 주 원소 (정화 기세죽음 해제 판정용)
+ * @param _comboResult        judgeCombo 결과 (시그니처 유지)
+ * @param playsLeft           남은 공격 횟수 (잔불 평가식용)
+ * @param synergyMultiplier   용신·가호 시너지 배율 (엔진과 동일 계산값)
  * @returns 효과 기대값 (데미지 환산). attackDamage 초과 시 효과 선택.
  */
 function scoreEffectForTrait(
@@ -167,17 +174,20 @@ function scoreEffectForTrait(
   playerHp: number | undefined,
   condensedMultiplier: number | undefined,
   enemyPrimaryElement: Element | undefined,
-  comboResult: ReturnType<typeof judgeCombo>,
+  _comboResult: ReturnType<typeof judgeCombo>,
+  playsLeft: number,
+  synergyMultiplier: number,
 ): number {
   const maxHp = PLAYER_BASE_HP
   const curHp = playerHp ?? maxHp
 
   switch (traitId) {
     case 'nourish': {
-      // 자양: min(기본치×2.5, maxHP - HP) × HP위험 가중치
+      // R5: 자양 — 엔진과 동일: playerMaxHp × NOURISH_HEAL_PCT × synergyMultiplier
       // HP위험 가중치: HP≤30% → ×2.0, HP≤50% → ×1.5, else → ×1.0
+      const baseHeal = Math.round(maxHp * NOURISH_HEAL_PCT)
       const rawHeal = Math.min(
-        Math.round(baseValue * NOURISH_EFFECT_COEFF),
+        Math.round(baseHeal * synergyMultiplier),
         Math.max(0, maxHp - curHp),
       )
       const hpRatio = curHp / maxHp
@@ -186,26 +196,20 @@ function scoreEffectForTrait(
     }
 
     case 'wildfire': {
-      // 잔불(ember): max(기본치×3, 즉발데미지 × EMBER_MULTIPLIER × 상성배율)
-      // 즉발데미지 = attackDamage (현재 핸드 최고 공격 조합 점수)
-      const affinityMult = enemyPrimaryElement
-        ? getAffinityMultiplier(comboResult.finishingElement, enemyPrimaryElement)
-        : 1.0
-      const emberVal = Math.max(
-        baseValue * EMBER_BOT_MULTIPLIER,  // R2: ×3.0(EMBER_DURATION) → ×2.2(EMBER_BOT_MULTIPLIER)
-        Math.round(attackDamage * EMBER_MULTIPLIER * affinityMult),
-      )
-      return emberVal
+      // R5: 잔불 — 엔진과 동일: damage × 0.3 × synergyMultiplier
+      // 봇 기대값: attackDamage × 0.3 × synergyMultiplier × min(3, 남은공격)/3
+      // (엔진은 이전 공격 damage 기준이므로 봇은 attackDamage를 대리값으로 사용)
+      const gameTotalMult = EMBER_MULTIPLIER * EMBER_DURATION
+      const attackDecay = Math.min(3, playsLeft) / 3
+      return Math.round(baseValue * gameTotalMult * attackDecay * synergyMultiplier)
     }
 
     case 'mining': {
-      // 채굴: 드로우장수 × 핸드평균값
-      // 드로우장수 = min(MINING_MAX_DRAW, floor(투입값/MINING_DRAW_DIVISOR))
-      // 투입값 = baseValue (엔진 구현과 동일 — hand.length가 아닌 카드값 합계 기준)
+      // R5: 채굴 — 엔진과 동일: floor(투입값 × synergyMultiplier / MINING_DRAW_DIVISOR)
       // 핸드평균값 = sum(card.value) / hand.length
       const drawCount = Math.min(
         MINING_MAX_DRAW,
-        Math.floor(baseValue / MINING_DRAW_DIVISOR),
+        Math.floor(baseValue * synergyMultiplier / MINING_DRAW_DIVISOR),
       )
       const handAvg = hand.length > 0
         ? hand.reduce((s, c) => s + c.value, 0) / hand.length
@@ -213,10 +217,27 @@ function scoreEffectForTrait(
       return Math.round(drawCount * handAvg)
     }
 
+    case 'purification': {
+      // R5: 정화 — 엔진과 동일: 임계값 시너지 스케일 + 데미지 × synergyMultiplier
+      // effectiveThreshold = PURIFICATION_THRESHOLD / synergyMultiplier
+      // 투입값 ≥ effectiveThreshold: 전 원소 기세죽음 해제 → 5 × BASE_PURIFICATION_DAMAGE × synergyMultiplier
+      // 투입값 < effectiveThreshold: 1종 해제 → BASE_PURIFICATION_DAMAGE × synergyMultiplier
+      const effectiveThreshold = PURIFICATION_THRESHOLD / synergyMultiplier
+      if (baseValue >= effectiveThreshold) {
+        // 전 원소 해제 (5종) — 최대 기대값
+        return Math.round(5 * BASE_PURIFICATION_DAMAGE * synergyMultiplier)
+      } else if (enemyPrimaryElement) {
+        // 1종 해제 기대값
+        return Math.round(BASE_PURIFICATION_DAMAGE * synergyMultiplier)
+      }
+      return 0
+    }
+
     case 'yonggigama': {
       // 응축(옹기가마): effectMode 경로가 아닌 별도 applyCondense 경로로 처리됨
-      // 봇 루프에서 getCondenseAvailability → applyCondense 직접 호출하므로
-      // effectMode 경로에서는 0 반환 (이중 처리 방지)
+      // 봇 루프(simulateFullCapRun)에서 getCondenseAvailability → applyCondense 직접 호출
+      // effectMode 경로에서는 return 0 (이중 처리 방지 — 정당한 설계)
+      // * 응축 채택률은 applyCondense 별도 경로에서 condenseCount로 추적됨
       return 0
     }
 
@@ -242,6 +263,8 @@ export function fullCapSelectCards(
   activePassiveIds?: string[],
   playerHp?: number,          // B1-1: 추가
   enableEffectMode?: boolean, // B1-1: 추가
+  playsLeft?: number,         // R4: 잔불 평가식 남은 공격 횟수 전달
+  enemyHp?: number,           // R7: 오버킬 할인 — 적 현재 HP
 ): FullCapPlayDecision {
   // T16-P3: talismans에서 amplifyActive 여부 추출 (증폭부 사용 가능 시 평가에 반영)
   const amplifyActive = (talismans ?? []).includes('jeungpok')
@@ -382,12 +405,39 @@ export function fullCapSelectCards(
           ? fullCapCalcExpectedDamage(bestCombo, enemyPrimaryElement, enemySubElement, condensedMultiplier, yeonhwanUsed, carryoverBurn, favorableElement, amplifyActive)
           : result.totalScore
 
-        // V3 작업 3: 효과 기대값 닫힌 수식 4종
-        // 원칙: 우대 가중치 없음 — 공격 기대 데미지 vs 효과 기대값 동일 척도(데미지 환산) 비교
-        const effectValue = scoreEffectForTrait(traitId, baseValue, attackDamage, hand, playerHp, condensedMultiplier, enemyPrimaryElement, result)
+        // R5 (balance-v3 §3): synergyMultiplier 계산 — 엔진과 동일 방식
+        // 용신 배율: favorableElement 카드 포함 여부 + 연환 조건
+        let synergyMultiplier = 1.0
+        if (favorableElement) {
+          const hasYongsin = bestCombo.some(c => c.element === favorableElement)
+          if (hasYongsin) {
+            const isChain3Plus = bestCombo.length >= 3
+            const lastCard = bestCombo[bestCombo.length - 1]
+            const lastIsYongsin = lastCard?.element === favorableElement
+            if (isChain3Plus && lastIsYongsin) {
+              synergyMultiplier = YONGSIN_CHAIN_MULTIPLIER
+            } else {
+              synergyMultiplier = YONGSIN_BONUS_MULTIPLIER
+            }
+          }
+        }
+        // 가호(geoptae): 목 카드 포함 시 ×1.3 (효과에도 적용 — 엔진 R5 규칙)
+        if ((activePassiveIds ?? []).includes('geoptae')) {
+          const hasMok = bestCombo.some(c => c.element === 'mok')
+          if (hasMok) {
+            synergyMultiplier = synergyMultiplier * 1.3
+          }
+        }
 
-        // 효과 선택 여부 결정: 효과 기대값 > 공격 기대 데미지일 때만 선택
-        if (effectValue > attackDamage) {
+        // R5: 효과 기대값 — 엔진 거울 반영 (synergyMultiplier 전달)
+        const effectValue = scoreEffectForTrait(traitId, baseValue, attackDamage, hand, playerHp, condensedMultiplier, enemyPrimaryElement, result, playsLeft ?? 1, synergyMultiplier)
+
+        // R7: 오버킬 할인 — 즉발 공격으로 적 격파 가능하면 잔불 효과 기대값 0 처리
+        // 적이 이번 공격으로 죽으면 잔불 3틱은 의미없음 → 효과 선택 불필요
+        const adjustedEffectValue = (enemyHp !== undefined && attackDamage >= enemyHp) ? 0 : effectValue
+
+        // 효과 선택 여부 결정: 조정된 효과 기대값 > 공격 기대 데미지일 때만 선택
+        if (adjustedEffectValue > attackDamage) {
           bestEffectMode = true
         } else {
           bestEffectMode = false
@@ -648,6 +698,9 @@ function createDeterministicState(
     isLastAttack: floorConfig.maxPlays === 1,
     lastTraitTriggered: undefined,
     carryoverBurn: 0,
+    // B1-1: 잔불 지속 피해 — 런 시작 시 초기화
+    emberDamagePerTurn: 0,
+    emberTurnsLeft: 0,
     reshuffled: false,
     favorableElement: opts?.favorableElement,
     disabledTraits: opts?.disabledTraits,
@@ -728,6 +781,9 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         isLastAttack: floorConfig.maxPlays === 1,
         lastTraitTriggered: undefined,
         carryoverBurn: 0,
+        // B1-1: 잔불 지속 피해 — 층 전환 시 리셋
+        emberDamagePerTurn: 0,
+        emberTurnsLeft: 0,
         reshuffled: false,
         favorableElement: resolvedFavorableElement,
         // T13: 층 전환 시 activePassiveIds(가호) 유지 — 런 내내 유지
@@ -836,6 +892,8 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         state.activePassiveIds,  // sikshin A안: 낱장 후보 평가
         state.playerHp,          // B1-1: 추가
         opts?.enableEffectMode,  // B1-1: 추가
+        state.playsLeft,         // R4: 잔불 평가식 남은 공격 횟수 전달
+        state.enemyHp,           // R7: 오버킬 할인 — 적 현재 HP 전달
       )
 
       if (decision.cardIds.length === 0) {

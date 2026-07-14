@@ -528,9 +528,13 @@ export const MINING_DRAW_DIVISOR = 5       // 채굴 [효과]: 드로우 = floor
 export const MINING_MAX_DRAW = 3           // 채굴 [효과]: 최대 3장
 export const EMBER_DURATION = 3            // 잔불 [효과]: 지속 턴 수
 export const EMBER_MULTIPLIER = 1.0        // 잔불 [효과]: 턴당 피해 = 투입값 × 계수
-export const EMBER_BOT_MULTIPLIER = 2.2    // 잔불 [봇 기대값]: baseValue × 2.2 (R2: 3.0→2.2, 나쁜 상성 탈출구로 역할)
 export const CONDENSE_SCALE_BASE = 10      // 응축 값 스케일 기준값 (R2: 15→10, 저투입 효율 상향)
 export const CONDENSE_SCALE_MIN = 0.6      // 응축 값 스케일 하한 (R2: 0.4→0.6, 저치 착취 차단 강화)
+
+// --- R5: 효과 시너지 (balance-v3 §3 개정)
+// 스펙 v3.1 §3: 효과 = rawBase가 아니라 용신·가호 시너지를 받는 값. 공격과의 차이는 상성 축뿐.
+/** 정화 [효과]: 원소 기세 죽음 해제 시 적에게 추가 데미지 (해제 1종당) */
+export const BASE_PURIFICATION_DAMAGE = 8  // 해제된 원소 1종당 기본 데미지 × synergyMultiplier
 export const BASE_PLAYS = 4
 export const BOSS_FLOOR = 4
 

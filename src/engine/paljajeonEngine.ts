@@ -157,6 +157,9 @@ export function createInitialGameState(floorIndex = 0, heroProfile?: SavedHeroPr
     // Phase 1.9.5: 10종 융합 특성
     lastTraitTriggered: undefined,
     carryoverBurn: 0,
+    // B1-1: 잔불 지속 피해 — 런 시작 시 초기화
+    emberDamagePerTurn: 0,
+    emberTurnsLeft: 0,
     // R10: 미구현 3종 융합 특성
     purifiedElements: [],
     keenActive: false,
@@ -444,6 +447,18 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
   let newLastTraitTriggered: string | undefined = undefined
   let newCarryoverBurn = state.carryoverBurn ?? 0
 
+  // B1-1: 잔불 지속 피해 적용 (emberDamagePerTurn × 남은 턴)
+  // 매 playCards 호출 시 잔불 1틱 적용 후 emberTurnsLeft 감소
+  let newEmberDamagePerTurn = state.emberDamagePerTurn ?? 0
+  let newEmberTurnsLeft = state.emberTurnsLeft ?? 0
+  if (newEmberDamagePerTurn > 0 && newEmberTurnsLeft > 0 && !isBlocked) {
+    damage = damage + newEmberDamagePerTurn
+    newEmberTurnsLeft = newEmberTurnsLeft - 1
+    if (newEmberTurnsLeft <= 0) {
+      newEmberDamagePerTurn = 0
+    }
+  }
+
   // 번짐 이월 피해 가산 (이전 공격에서 저장된 잔불)
   if (newCarryoverBurn > 0 && !isBlocked) {
     damage = damage + newCarryoverBurn
@@ -583,8 +598,18 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
       if (config && !isDisabled) {
         switch (traitId) {
           case 'wildfire': {
-            // R5 (balance-v3 §3): 번짐 — 피해 30% × synergyMultiplier 다음 공격에 이월
-            newCarryoverBurn = Math.round(damage * 0.3 * synergyMultiplier)
+            // R6 (balance-v3 §6): 번짐 — effectMode 분기
+            // effectMode=true (효과 모드): rawBase × EMBER_MULTIPLIER 턴당 고정 피해, EMBER_DURATION턴 지속
+            //   → damage=0이어서 damage 경유 불가. rawBase 직접 계산.
+            // effectMode=false (공격 모드): damage × 0.3 × synergyMultiplier 다음 공격 이월 (기존 방식 유지)
+            if (effectMode && isFusion && result.rank === 'fusion-birth') {
+              const rawBase = playedCards.reduce((sum, c) => sum + c.value, 0)
+              newEmberDamagePerTurn = Math.round(rawBase * EMBER_MULTIPLIER * synergyMultiplier)
+              newEmberTurnsLeft = EMBER_DURATION
+              newCarryoverBurn = 0
+            } else {
+              newCarryoverBurn = Math.round(damage * 0.3 * synergyMultiplier)
+            }
             break
           }
           case 'mining': {
@@ -760,6 +785,9 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
     isLastAttack: newIsLastAttack,
     lastTraitTriggered: newLastTraitTriggered,
     carryoverBurn: newCarryoverBurn,
+    // B1-1: 잔불 지속 피해 상태
+    emberDamagePerTurn: newEmberDamagePerTurn,
+    emberTurnsLeft: newEmberTurnsLeft,
     // R10: 3종 융합 특성 상태
     purifiedElements: newPurifiedElements,
     keenActive: newKeenActive,
@@ -942,6 +970,9 @@ export function advanceToNextFloor(state: GameState): GameState {
     isLastAttack: floorConfig.maxPlays === 1,
     lastTraitTriggered: undefined,
     carryoverBurn: 0,
+    // B1-1: 잔불 지속 피해 — 층 전환 시 리셋
+    emberDamagePerTurn: 0,
+    emberTurnsLeft: 0,
     // R10: 층 전환 시 리셋
     purifiedElements: [],
     keenActive: false,
