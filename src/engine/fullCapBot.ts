@@ -54,6 +54,8 @@ import {
   EMBER_MULTIPLIER,
   EMBER_DURATION,
   MAX_DISCARD_PER_USE,
+  RECIPE_MULTIPLIER_BY_PRESET,
+  identifyRecipePreset,
 } from './balance'
 import { getFavorableElement } from './manseryeok'
 
@@ -91,8 +93,9 @@ export function fullCapCalcExpectedDamage(
   carryoverBurn?: number,
   favorableElement?: Element,
   amplifyActive?: boolean,
+  recipeMultipliers?: Record<string, number>,
 ): number {
-  const result = judgeCombo(combo)
+  const result = judgeCombo(combo, recipeMultipliers)
   let damage = result.totalScore
 
   if (result.type === 'ohang-yeonhwan' && yeonhwanUsed) {
@@ -251,6 +254,7 @@ function scoreEffectForTrait(
 /**
  * 풀능력 봇 핸드 선택
  * T16-P3: talismans 파라미터 추가 — 부적 효과를 카드 선택 평가에 반영
+ * 배치 1.5: recipeMultipliers 추가 — 사주별 레시피 배율
  */
 export function fullCapSelectCards(
   hand: Card[],
@@ -267,6 +271,7 @@ export function fullCapSelectCards(
   enableEffectMode?: boolean, // B1-1: 추가
   playsLeft?: number,         // R4: 잔불 평가식 남은 공격 횟수 전달
   enemyHp?: number,           // R7: 오버킬 할인 — 적 현재 HP
+  recipeMultipliers?: Record<string, number>, // 배치 1.5: 사주별 레시피 배율
 ): FullCapPlayDecision {
   // T16-P3: talismans에서 amplifyActive 여부 추출 (증폭부 사용 가능 시 평가에 반영)
   const amplifyActive = (talismans ?? []).includes('jeungpok')
@@ -283,7 +288,7 @@ export function fullCapSelectCards(
   for (let k = 1; k <= maxCards; k++) {
     const combos = combinations(hand, k)
     for (const combo of combos) {
-      const result = judgeCombo(combo)
+      const result = judgeCombo(combo, recipeMultipliers)
 
       // sikshin A안: 낱장(k=1)이고 sikshin 장착 시 — 직접 기대 데미지 계산
       // judgeCombo가 'none'을 반환해도 낱장은 유효 선택지로 평가한다.
@@ -361,7 +366,7 @@ export function fullCapSelectCards(
       }
 
       // T14: 타격 속성(finishingElement) 기준 — 다수결 제거
-      const evalResult = judgeCombo(evalCombo)
+      const evalResult = judgeCombo(evalCombo, recipeMultipliers)
       const repEl = evalResult.finishingElement
       const affinityMult = getAffinityMultiplier(repEl, enemyPrimaryElement)
 
@@ -374,6 +379,7 @@ export function fullCapSelectCards(
         carryoverBurn,
         favorableElement,
         amplifyActive,  // T16-P2/P3: 증폭부 효과 반영
+        recipeMultipliers, // 배치 1.5: 사주별 레시피 배율
       )
 
       // 통합 최대화: 최종 기대 데미지(콤보 × 상성 × 용신 통합) 순수 최대화
@@ -399,12 +405,12 @@ export function fullCapSelectCards(
   if (enableEffectMode && bestIds.length > 0 && bestIds.length <= 5) {
     const bestCombo = hand.filter(c => bestIds.includes(c.id))
     if (bestCombo.length > 0) {
-      const result = judgeCombo(bestCombo)
+      const result = judgeCombo(bestCombo, recipeMultipliers)
       if (result.type === 'fusion-birth') {
         const traitId = FUSION_TRAIT_MAP[result.name] ?? ''
         const baseValue = bestCombo.reduce((sum, c) => sum + c.value, 0)
         const attackDamage = enemyPrimaryElement
-          ? fullCapCalcExpectedDamage(bestCombo, enemyPrimaryElement, enemySubElement, condensedMultiplier, yeonhwanUsed, carryoverBurn, favorableElement, amplifyActive)
+          ? fullCapCalcExpectedDamage(bestCombo, enemyPrimaryElement, enemySubElement, condensedMultiplier, yeonhwanUsed, carryoverBurn, favorableElement, amplifyActive, recipeMultipliers)
           : result.totalScore
 
         // R5 (balance-v3 §3): synergyMultiplier 계산 — 엔진과 동일 방식
@@ -680,6 +686,14 @@ function createDeterministicState(
   const hand = deck.slice(0, HAND_SIZE)
   const remainDeck = deck.slice(HAND_SIZE)
 
+  // 배치 1.5: 레시피 사주별 배율 산출 (출정 시 고정)
+  // E2E 지문: elementDist 기반으로 preset 식별 후 배율표 선택
+  let recipeMultipliers: Record<string, number> = {}
+  if (opts?.elementDist) {
+    const preset = identifyRecipePreset(opts.elementDist)
+    recipeMultipliers = RECIPE_MULTIPLIER_BY_PRESET[preset]
+  }
+
   return {
     currentFloor: floorConfig.floor,
     playerHp: PLAYER_BASE_HP,
@@ -722,6 +736,8 @@ function createDeterministicState(
     geoptaeUsed: false,
     // 배치 1.5: 강림제 상태 초기화 — ENABLE_YONGSIN_DESCENT=true 시 슬롯 사전 결정
     yongsinDescent: initYongsinDescent(null, floorIndex),
+    // 배치 1.5: 레시피 사주별 배율 (출정 시 고정, 런 중 재계산 금지)
+    recipeMultipliers,
   }
 }
 
@@ -809,6 +825,8 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         sikshinDiscardBonus: false,
         // R10: 겁재 발동 여부 — 출정(런) 전체 기준, 층 전환 시 리셋 금지
         geoptaeUsed: state.geoptaeUsed ?? false,
+        // 배치 1.5: 레시피 배율 — 출정 시작 시 고정, 층 전환 시 유지
+        recipeMultipliers: state.recipeMultipliers,
       }
     } else {
       state = { ...state, playerHp }
@@ -909,6 +927,7 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         opts?.enableEffectMode,  // B1-1: 추가
         state.playsLeft,         // R4: 잔불 평가식 남은 공격 횟수 전달
         state.enemyHp,           // R7: 오버킬 할인 — 적 현재 HP 전달
+        state.recipeMultipliers, // 배치 1.5: 사주별 레시피 배율
       )
 
       if (decision.cardIds.length === 0) {
@@ -947,7 +966,7 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         state.playsLeft >= 2
       ) {
         const selectedCards = state.hand.filter(c => decision.cardIds.includes(c.id))
-        const comboResult = judgeCombo(selectedCards)
+        const comboResult = judgeCombo(selectedCards, state.recipeMultipliers)
         const condenseKind = getCondenseAvailability(comboResult.name, comboResult.finishingElement)
         if (condenseKind === 'great') {
           const mult = getCondenseMultiplier(selectedCards.length)
@@ -975,7 +994,7 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
 
       // 융합 통계 수집
       const selectedCards = state.hand.filter(c => decision.cardIds.includes(c.id))
-      const comboResult = judgeCombo(selectedCards)
+      const comboResult = judgeCombo(selectedCards, state.recipeMultipliers)
       if (comboResult.type === 'fusion-birth' || comboResult.type === 'fusion-hone') {
         fusionCount++
       }

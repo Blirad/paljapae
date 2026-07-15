@@ -716,3 +716,74 @@ export const RECIPE_MAP: Record<string, RecipeSpec> = {
     large: { elem1: 'hwa', elem2: 'geum', minCount: 3 },
   },
 }
+
+/**
+ * Recipe (B) 사주별 배율 — 공식: M = 1 + 0.8 / (성립률%)
+ * 0단계 측정 성립률 기준으로 배율 산출 후 출정 시 고정 (런 중 재계산 금지)
+ * 캡: [2.0, 5.0]
+ */
+export type RecipePresetKey = 'mokHwa' | 'geumSu' | 'toDanil'
+
+export interface RecipeMultiplierTable {
+  [recipeId: string]: number
+}
+
+export const RECIPE_MULTIPLIER_BY_PRESET: Record<RecipePresetKey, RecipeMultiplierTable> = {
+  // 목화 — fusion_keen 45.84% → ×2.75, fusion_harvest 48.76% → ×2.64
+  mokHwa: {
+    fusion_forest: 2.75,      // 4.61% → 5.08
+    fusion_spring: 2.64,      // 1.29% → 5.06
+    fusion_mine: 5.00,        // 1.29% → 5.06
+    fusion_kiln: 2.75,        // 4.61% → 5.08
+    fusion_wildfire: 5.00,    // 1.12% → 5.07
+    fusion_keen: 2.75,        // 45.84% → 2.75
+    fusion_snipe: 2.32,       // 31.78% → 2.52
+    fusion_harvest: 2.64,     // 48.76% → 2.64
+    fusion_pierce: 5.00,      // 0% → 3.0 (기본값)
+    fusion_temper: 5.00,      // 1.09% → 5.07
+  },
+  // 금수 — fusion_keen 76.80% → ×2.04, fusion_snipe 39.25% → ×3.04
+  geumSu: {
+    fusion_forest: 2.37,      // 4.57% → 5.09
+    fusion_spring: 2.35,      // 15.55% → 3.38
+    fusion_mine: 2.48,        // 4.62% → 5.07
+    fusion_kiln: 4.92,        // 1.11% → 5.81 → cap 5.0
+    fusion_wildfire: 5.00,    // 0% → 3.0 (기본값)
+    fusion_keen: 2.04,        // 76.80% → 2.04 ← 문제!
+    fusion_snipe: 3.04,       // 39.25% → 3.04
+    fusion_harvest: 2.72,     // 12.59% → 3.84
+    fusion_pierce: 5.00,      // 0% → 3.0 (기본값)
+    fusion_temper: 2.64,      // 3.47% → 4.31
+  },
+  // 토단일 — fusion_mine 19.63% → ×5.08, fusion_keen 13.44% → ×6.95
+  toDanil: {
+    fusion_forest: 6.32,      // 0.09% → 889 → cap 5.0 (기본값)
+    fusion_spring: 5.35,      // 0.34% → 236 → cap 5.0 (기본값)
+    fusion_mine: 5.08,        // 19.63% → 5.08
+    fusion_kiln: 3.31,        // 7.98% → 4.04
+    fusion_wildfire: 5.00,    // 0% → 3.0 (기본값)
+    fusion_keen: 6.95,        // 13.44% → 6.95 → cap 5.0 (기본값)
+    fusion_snipe: 3.82,       // 25.96% → 3.09
+    fusion_harvest: 3.87,     // 9.41% → 3.85
+    fusion_pierce: 5.00,      // 0% → 3.0 (기본값)
+    fusion_temper: 6.32,      // 0.09% → 889 → cap 5.0 (기본값)
+  },
+}
+
+/**
+ * elementDist 기반 사주 preset 식별
+ * 목화: mok:4, hwa:4 / 금수: geum:4, su:4 / 토단일: to:14
+ */
+export function identifyRecipePreset(elementDist: Record<Element, number>): RecipePresetKey {
+  if ((elementDist.mok ?? 0) >= 4 && (elementDist.hwa ?? 0) >= 4) {
+    return 'mokHwa'
+  }
+  if ((elementDist.geum ?? 0) >= 4 && (elementDist.su ?? 0) >= 4) {
+    return 'geumSu'
+  }
+  if ((elementDist.to ?? 0) >= 10) {
+    return 'toDanil'
+  }
+  // 기본값: 목화
+  return 'mokHwa'
+}

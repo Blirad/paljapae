@@ -115,8 +115,17 @@ export function isOhangYeonhwan(cards: Card[]): boolean {
   return elements.size === 5
 }
 
-/** 조합 판정 메인 함수 */
-export function judgeCombo(selectedCards: Card[]): ComboJudgeResult {
+/**
+ * 조합 판정 메인 함수
+ * @param selectedCards 선택된 카드 배열
+ * @param recipeMultipliers 사주별 레시피 배율표 (선택사항, 배치 1.5)
+ *   - undefined: 전역 고정 배율 사용 (기본값)
+ *   - Record: state.recipeMultipliers로 주입된 배율표 (런 중 고정)
+ */
+export function judgeCombo(
+  selectedCards: Card[],
+  recipeMultipliers?: Record<string, number>,
+): ComboJudgeResult {
   if (selectedCards.length === 0) {
     return {
       type: 'none',
@@ -147,15 +156,25 @@ export function judgeCombo(selectedCards: Card[]): ComboJudgeResult {
 
   // 배치 1.5: recipe 모드 — detectRecipe() 우선 적용 (3/5장, 조기 반환)
   // recipe 불성립 시 이하 기존 판정(融合/모으기/none)으로 자연 폴백
+  // E2E 지문: recipeMultipliers[recipeId]로 출정 시작 덱 기준 배율 조회
   if (COMBO_RULESET_VERSION === 'recipe' && (selectedCards.length === 3 || selectedCards.length === 5)) {
     const recipeId = detectRecipe(selectedCards)
     if (recipeId !== null) {
       const isSmall = selectedCards.length === 3
       const spec = isSmall ? RECIPE_MAP[recipeId].small : RECIPE_MAP[recipeId].large
       const isHone = spec.elem2 === null
-      const multiplier = isSmall
-        ? (isHone ? RECIPE_SMALL_HONE_MULT : RECIPE_SMALL_BIRTH_MULT)
-        : (isHone ? RECIPE_LARGE_HONE_MULT : RECIPE_LARGE_BIRTH_MULT)
+
+      // 사주별 배율 주입: recipeMultipliers가 존재하면 우선, 없으면 기본값
+      let multiplier: number
+      if (recipeMultipliers?.[recipeId] !== undefined) {
+        multiplier = recipeMultipliers[recipeId]
+      } else {
+        // Fallback to global constants
+        multiplier = isSmall
+          ? (isHone ? RECIPE_SMALL_HONE_MULT : RECIPE_SMALL_BIRTH_MULT)
+          : (isHone ? RECIPE_LARGE_HONE_MULT : RECIPE_LARGE_BIRTH_MULT)
+      }
+
       return {
         type: isHone ? 'fusion-hone' : 'fusion-birth',
         name: recipeId,
@@ -231,9 +250,10 @@ export function judgeCombo(selectedCards: Card[]): ComboJudgeResult {
  * 내부적으로 judgeCombo()를 호출하고 HandJudgeResult로 변환
  *
  * Phase 1.9 — 조합 이름 추가: 응축 조건 판정 시 사용
+ * 배치 1.5 — recipeMultipliers 옵션 추가: 사주별 배율 주입
  */
-export function judgeHand(selectedCards: Card[]): HandJudgeResult {
-  const result = judgeCombo(selectedCards)
+export function judgeHand(selectedCards: Card[], recipeMultipliers?: Record<string, number>): HandJudgeResult {
+  const result = judgeCombo(selectedCards, recipeMultipliers)
   return {
     rank: result.type as any,  // ComboType → HandRank 호환성
     baseScore: result.baseScore,

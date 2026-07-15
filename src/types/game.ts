@@ -128,6 +128,8 @@ export interface GameState {
     yongsinAttackCount?: number           // (폐기 예정) B-1 구버전 카운터
     waitWindowRemaining?: number          // B-1 대기창: 남은 공격 수 (3→2→1→0=소멸)
   }
+  // 배치 1.5: 레시피 사주별 배율 (출정 시 고정, 런 중 재계산 금지)
+  recipeMultipliers?: Record<string, number>   // { fusion_forest: 2.75, fusion_keen: 2.75, ... }
   // Phase 1.9.6 신규 — 유물 시스템
   relics: Relic[]                         // 획득한 유물 목록 (런 한정 특수 효과)
   // T17: 가호(십성) 시스템 — 선택된 패시브 ID 목록
