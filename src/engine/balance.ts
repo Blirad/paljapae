@@ -652,6 +652,12 @@ export interface RecipeSpec {
   large: { elem1: Element; elem2: Element | null; minCount: number }
 }
 
+// 레시피 배율 (소형 3장 / 대형 5장)
+export const RECIPE_SMALL_BIRTH_MULT = 3.0   // 소형 낳는 (기존 birth 동일)
+export const RECIPE_SMALL_HONE_MULT = 3.5    // 소형 벼리는 (기존 hone 동일)
+export const RECIPE_LARGE_BIRTH_MULT = 3.5   // 대형 낳는 (소형보다 0.5 상향)
+export const RECIPE_LARGE_HONE_MULT = 4.0    // 대형 벼리는 (소형보다 0.5 상향)
+
 export const RECIPE_MAP: Record<string, RecipeSpec> = {
   // 낳는 5쌍
   'fusion_forest': {

@@ -310,7 +310,8 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
   if (state.favorableElement && !isBlocked) {
     const favEl = state.favorableElement
     const hasYongsin = playedCards.some(c => c.element === favEl)
-    if (hasYongsin) {
+    if (hasYongsin && !ENABLE_YONGSIN_DESCENT) {
+      // 강림제 OFF: 기존 상시 배율 적용 (×1.3 / 연환 마지막 용신 ×1.5)
       const isChain3Plus = playedCards.length >= 3
       const lastCard = playedCards[playedCards.length - 1]
       const lastIsYongsin = lastCard?.element === favEl
@@ -322,6 +323,17 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
         synergyMultiplier = YONGSIN_BONUS_MULTIPLIER
       }
     }
+  }
+
+  // 배치 1.5: 강림제 — 강림 슬롯에서만 ×2.0 (상시 ×1.3 폐지 대체)
+  // ENABLE_YONGSIN_DESCENT=true 시: 슬롯 적중+용신 포함 → ×2.0
+  // ENABLE_YONGSIN_DESCENT=false 시: 이 블록 전체 건너뜀 (프로덕션 불변)
+  let newYongsinDescent = state.yongsinDescent
+  if (ENABLE_YONGSIN_DESCENT && state.yongsinDescent && state.favorableElement && !isBlocked) {
+    const hasYongsin = playedCards.some(c => c.element === state.favorableElement)
+    const descentResult = applyYongsinDescent(damage, hasYongsin, state.attackCount, state.yongsinDescent)
+    damage = descentResult.damage
+    newYongsinDescent = descentResult.updatedState
   }
 
   // Phase 1.9.5: 응축 % 방식 소모 — condensedMultiplier > 0이면 damage × (1 + multiplier) 적용
@@ -802,6 +814,8 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
     sikshinDiscardBonus: false,
     // R10: 겁재 발동 여부 업데이트 (출정당 1회 유지)
     geoptaeUsed: newGeoptaeUsed,
+    // 배치 1.5: 강림제 상태 전달
+    yongsinDescent: newYongsinDescent,
   }
 }
 

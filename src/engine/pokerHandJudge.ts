@@ -17,6 +17,10 @@ import {
   OHANG_YEONHWAN_MULTIPLIER,
   COMBO_RULESET_VERSION,
   RECIPE_MAP,
+  RECIPE_SMALL_BIRTH_MULT,
+  RECIPE_SMALL_HONE_MULT,
+  RECIPE_LARGE_BIRTH_MULT,
+  RECIPE_LARGE_HONE_MULT,
 } from './balance'
 
 // 오행 상극: A가 B를 극한다
@@ -138,6 +142,40 @@ export function judgeCombo(selectedCards: Card[]): ComboJudgeResult {
       totalScore: Math.round(baseScore * OHANG_YEONHWAN_MULTIPLIER),
       finishingElement: 'mok',  // 임시 (모든 기운이 관여하므로)
       description: '모든 기운이 원형으로 순환한다 — 천지를 뒤흔들다',
+    }
+  } else if (COMBO_RULESET_VERSION === 'recipe' && (selectedCards.length === 3 || selectedCards.length === 5)) {
+    // 2. 레시피 판정 (recipe 모드에서만)
+    const recipeId = detectRecipe(selectedCards)
+    if (recipeId !== null) {
+      const isSmall = selectedCards.length === 3
+      const spec = isSmall ? RECIPE_MAP[recipeId].small : RECIPE_MAP[recipeId].large
+      const isHone = spec.elem2 === null
+      const multiplier = isSmall
+        ? (isHone ? RECIPE_SMALL_HONE_MULT : RECIPE_SMALL_BIRTH_MULT)
+        : (isHone ? RECIPE_LARGE_HONE_MULT : RECIPE_LARGE_BIRTH_MULT)
+      return {
+        type: isHone ? 'fusion-hone' : 'fusion-birth',
+        name: recipeId,
+        baseScore,
+        multiplier,
+        totalScore: Math.round(baseScore * multiplier),
+        finishingElement: spec.elem1,
+        description: `${isSmall ? '소형' : '대형'} 레시피 — ${recipeId}`,
+      }
+    }
+    // recipe 불성립 → 이하 기존 판정으로 폴백
+    if (isFusionCombo(selectedCards)) {
+      const [el1, el2] = Array.from(new Set(selectedCards.map((c) => c.element))) as Element[]
+      const fusion = findFusionCombo(el1, el2)!
+      return {
+        type: fusion.type === 'birth' ? 'fusion-birth' : 'fusion-hone',
+        name: fusion.name,
+        baseScore,
+        multiplier: fusion.multiplier,
+        totalScore: Math.round(baseScore * fusion.multiplier),
+        finishingElement: fusion.result,
+        description: fusion.description,
+      }
     }
   } else if (isFusionCombo(selectedCards)) {
     // 2. 융합 (낳는 or 벼리는)
