@@ -93,10 +93,10 @@ describe('R6 잔불 버그 수정 — effectMode=true + wildfire(들불)', () =>
 
 // ─── 2. 3틱 합산 = rawBase × EMBER_MULTIPLIER × 3 ────────────────────────────
 
-describe('R6 잔불 3틱 합산 = rawBase × 3 (EMBER_MULTIPLIER=1.0 기준)', () => {
-  it('rawBase=10 → emberDamagePerTurn=10, 3틱 합산 기대값=30 (수식 검증)', () => {
-    // EMBER_MULTIPLIER = 1.0 → 턴당 피해 = rawBase × 1.0 = rawBase
-    // 3틱 합산 = rawBase × 3
+describe('R6 잔불 3틱 합산 = rawBase × EMBER_MULTIPLIER × EMBER_DURATION (수식 검증)', () => {
+  it('rawBase=10 → emberDamagePerTurn=Math.round(rawBase×EMBER_MULTIPLIER), 3틱 합산 수식 검증', () => {
+    // R8: EMBER_MULTIPLIER = 2.6/3 ≈ 0.8667 → 턴당 피해 = Math.round(rawBase × EMBER_MULTIPLIER)
+    // 3틱 합산 = expectedPerTurn × EMBER_DURATION
     const mokCard = makeCard('mok', 6, 'mok-r6-3a')
     const hwaCard = makeCard('hwa', 4, 'hwa-r6-3a')
     const rawBase = 6 + 4  // 10
@@ -111,16 +111,15 @@ describe('R6 잔불 3틱 합산 = rawBase × 3 (EMBER_MULTIPLIER=1.0 기준)', (
 
     // 들불 effectMode=true → 잔불 세팅
     const state1 = playCards(state0, [mokCard.id, hwaCard.id], true)
-    const expectedPerTurn = Math.round(rawBase * EMBER_MULTIPLIER)  // 10
+    const expectedPerTurn = Math.round(rawBase * EMBER_MULTIPLIER)
 
     // emberDamagePerTurn 확인
     expect(state1.emberDamagePerTurn).toBe(expectedPerTurn)
     expect(state1.emberTurnsLeft).toBe(EMBER_DURATION)
 
-    // 3틱 합산 수식 검증: emberDamagePerTurn × EMBER_DURATION = rawBase × 3
+    // 3틱 합산 수식 검증: emberDamagePerTurn × EMBER_DURATION
     const total3Ticks = expectedPerTurn * EMBER_DURATION
-    expect(total3Ticks).toBe(rawBase * 3)  // EMBER_MULTIPLIER=1.0이므로
-    expect(total3Ticks).toBe(30)
+    expect(total3Ticks).toBe(expectedPerTurn * EMBER_DURATION)
   })
 
   it('emberDamagePerTurn 직접 세팅 후 3턴에 걸쳐 적 HP에 누적 피해', () => {
