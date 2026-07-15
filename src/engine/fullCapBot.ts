@@ -19,6 +19,7 @@ import {
   applyCondense,
   getCondenseAvailability,
   applyRewardOption,
+  initYongsinDescent,
 } from './paljajeonEngine'
 import type { RewardOption } from './paljajeonEngine'
 import { generateSajuDeck } from './deckGenerator'
@@ -473,6 +474,12 @@ export interface FullCapRunResult {
   reachedFloor4: boolean
   /** R7-2: 4층에서 플레이된 카드 원소 목록 */
   floor4PlayedElements?: Element[]
+  /** 배치 1.5: 강림제 통계 */
+  descentActivated?: number
+  descentDeferred?: number
+  descentVanished?: number
+  /** 배치 1.5 §4-b: 슬롯 도래 횟수 (포착률 산출용) */
+  descentSlotsArrived?: number
 }
 
 function makeLcg(seed: number): () => number {
@@ -713,6 +720,8 @@ function createDeterministicState(
     sikshinDiscardBonus: false,
     // R10: 겁재 출정당 1회 제한 — 런 시작 시 초기화
     geoptaeUsed: false,
+    // 배치 1.5: 강림제 상태 초기화 — ENABLE_YONGSIN_DESCENT=true 시 슬롯 사전 결정
+    yongsinDescent: initYongsinDescent(null, floorIndex),
   }
 }
 
@@ -740,6 +749,11 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
   let fusionCount = 0
   const traitCounts: Record<string, number> = {}
   const floor4PlayedElements: Element[] = []  // [R7-2] 4층에서 플레이된 카드 원소 기록
+  // 배치 1.5: 강림제 통계 추적
+  let descentActivated = 0
+  let descentDeferred = 0
+  let descentVanished = 0
+  let descentSlotsArrived = 0
 
   // createDeterministicState에 resolvedFavorableElement 반영을 위해 opts 래핑
   const resolvedOpts: FullCapSimOptions | undefined = opts
@@ -850,19 +864,19 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
           deathFloor = floor
           floorStats.push({ floor, attackCount, cleared: false })
         }
-        return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements }
+        return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived }
       }
 
       if (state.playsLeft <= 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements }
+        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived }
       }
 
       if (state.playerHp <= 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements }
+        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived }
       }
 
       // 랜덤화된 층별 원소 사용 (작업 2) — R7-2 검증용 4층 강제 옵션 지원
@@ -900,7 +914,7 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
       if (decision.cardIds.length === 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements }
+        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived }
       }
 
       // 버리기 전략 — B1-4: discardCards는 MAX_DISCARD_PER_USE(3)장 초과 리젝 → 슬라이스로 무한루프 방지
@@ -1050,6 +1064,20 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
       if (state.lastTraitTriggered) {
         traitCounts[state.lastTraitTriggered] = (traitCounts[state.lastTraitTriggered] ?? 0) + 1
       }
+      // 배치 1.5: 강림제 상태 변화 추적
+      if (prevState.yongsinDescent && state.yongsinDescent) {
+        // §4-b: 슬롯 도래 카운트 (포착률 산출용)
+        if (prevState.yongsinDescent.slots.includes(attackCount)) {
+          descentSlotsArrived++
+        }
+        if (state.yongsinDescent.usedCount > prevState.yongsinDescent.usedCount) {
+          descentActivated++
+        } else if (!prevState.yongsinDescent.pendingDescent && state.yongsinDescent.pendingDescent) {
+          descentDeferred++
+        } else if (prevState.yongsinDescent.pendingDescent && !state.yongsinDescent.pendingDescent) {
+          descentVanished++
+        }
+      }
       attackCount++
       playerHp = state.playerHp
     }
@@ -1066,6 +1094,10 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
     traitCounts,
     reachedFloor4: floor4PlayedElements.length > 0,
     floor4PlayedElements,
+    descentActivated,
+    descentDeferred,
+    descentVanished,
+    descentSlotsArrived,
   }
 }
 

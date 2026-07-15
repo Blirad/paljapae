@@ -643,6 +643,22 @@ export const COMBO_RULESET_VERSION: 'v3' | 'recipe' = 'v3'
 export const ENABLE_YONGSIN_DESCENT = false
 
 /**
+ * 강림제 변형 모드 (시뮬 전용) — §4-b 정의 정본 (2026-07-15)
+ * 'slot': 0단계 기본 (2~3 슬롯 × ×2.0, 1턴 이월/소멸)
+ * 'wait3': B-1 대기창 — 슬롯 도래 시 최대 3공격 대기, 창 내 용신 → ×2.0. 카운터제 아님, 슬롯 귀속.
+ * 'dual': B-2 이원 — 슬롯 도래 즉시 발동, 용신 ×2.5 / 미포함 ×1.5. 슬롯 소비형, 비슬롯 보너스 없음.
+ */
+export type DescentVariant = 'slot' | 'wait3' | 'dual'
+export const DESCENT_VARIANT: DescentVariant = 'slot'
+
+// B-1 대기창 상수
+export const DESCENT_WAIT_WINDOW = 3          // 슬롯 도래 후 대기 공격 수
+
+// B-2 이원 배율 상수
+export const DESCENT_DUAL_SLOT_MULT = 2.5    // 슬롯+용신
+export const DESCENT_DUAL_NONSLOT_MULT = 1.5 // 슬롯+미포함 (약강림)
+
+/**
  * 10쌍 레시피 판정 맵
  * elem1: 주 원소, elem2: 부 원소 (null이면 "他" — elem1 외 아무 원소)
  * minCount: 소형 3장에서 부 원소 최소 장수 / 대형 5장에서 부 원소 최소 장수

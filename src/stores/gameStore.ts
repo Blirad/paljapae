@@ -18,9 +18,10 @@ import {
   applyCondense,
   applyRewardOption,
 } from '../engine/paljajeonEngine'
-import { HAND_SIZE } from '../engine/balance'
+import { HAND_SIZE, RELIC_DEFS, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER } from '../engine/balance'
+import type { RelicId } from '../engine/balance'
 import { judgeHand } from '../engine/pokerHandJudge'
-import type { HandJudgeResult, Card, Element } from '../types/game'
+import type { HandJudgeResult, Card, Element, Relic } from '../types/game'
 
 function generateRandomCard(): Card {
   const ELEMENTS: Element[] = ['mok', 'hwa', 'to', 'geum', 'su']
@@ -78,9 +79,9 @@ interface GameStore extends GameState {
   // 액션
   startGame: () => void
   toggleCardSelect: (cardId: string) => void
-  playSelectedCards: () => void
+  playSelectedCards: (effectMode?: boolean) => void
   discardSelectedCards: () => void
-  proceedToNextFloor: (rewardIndex: number) => void
+  proceedToNextFloor: (rewardIndex: number, selectedRelicId?: string) => void
   resetGame: () => void
   markFirstHandShown: () => void
   markFirstDiscardShown: () => void
@@ -95,6 +96,8 @@ interface GameStore extends GameState {
   applyCondenseAction: (cardIds: string[]) => void
   // T17: 가호(십성) 장착
   setActivePassiveIds: (ids: string[]) => void
+  // T8: 유물 획득 (중복 차단 내장)
+  acquireRelic: (relicId: string) => void
 }
 
 const INITIAL_BATTLE_STATS: BattleStats = {
@@ -141,23 +144,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ selectedCards: newSelected, previewResult })
   },
 
-  playSelectedCards: () => {
+  playSelectedCards: (effectMode?: boolean) => {
     const state = get()
     if (state.selectedCards.length === 0 || state.playsLeft <= 0) return
-    const newState = playCards(state, state.selectedCards)
-    set({ ...newState, previewResult: null })
+    const newState = playCards(state, state.selectedCards, effectMode)
+    set({ ...newState, previewResult: null, selectedCards: [] })
   },
 
   discardSelectedCards: () => {
     const state = get()
     if (state.selectedCards.length === 0 || state.discardsLeft <= 0) return
     const newState = discardCards(state, state.selectedCards)
-    set({ ...newState, previewResult: null })
+    set({ ...newState, previewResult: null, selectedCards: [] })
   },
 
-  proceedToNextFloor: (rewardIndex: number) => {
+  proceedToNextFloor: (rewardIndex: number, selectedRelicId?: string) => {
     const state = get()
-    const REWARD_TYPES = ['add-card', 'upgrade-card', 'remove-card']
+    // T8: 보상 유형 확장 — add-relic 포함
+    const REWARD_TYPES = ['add-card', 'upgrade-card', 'remove-card', 'add-relic']
     const rewardType = REWARD_TYPES[rewardIndex] || 'add-card'
 
     // 현재 덱 수집 (hand + deck + discardPile)
@@ -187,11 +191,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
         type: 'remove-card',
         targetId: removeTarget.id
       })
-    } else if (rewardType === 'add-relic') {
-      // TODO: balance-v2에서 실제 유물 정의 후 구현
-      // 임시: 유물 ID만 추가
-      const newRelic = { id: `relic_${Date.now()}`, name: '미정', description: '' }
-      newRelics = [...state.relics, newRelic]
+    } else if (rewardType === 'add-relic' && selectedRelicId) {
+      // T8: 실제 유물 획득 — 중복 차단
+      const alreadyHas = state.relics.some(r => r.id === selectedRelicId)
+      if (!alreadyHas) {
+        const relicDef = RELIC_DEFS[selectedRelicId as RelicId]
+        if (relicDef) {
+          const newRelic: Relic = { id: relicDef.id, name: relicDef.name, description: relicDef.description }
+          newRelics = [...state.relics, newRelic]
+        }
+      }
     }
 
     // 다음 층으로 진행
@@ -204,7 +213,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       hand: updatedDeck.slice(0, handSize),
       deck: updatedDeck.slice(handSize),
       relics: newRelics,
-      previewResult: null
+      previewResult: null,
+      selectedCards: [],
     })
   },
 
@@ -225,28 +235,54 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // Phase 1.6 B — 부적술 액션
   useJeonghwa: () => {
     const newState = activateJeonghwa(get())
-    set(newState)
+    set({ ...newState, selectedCards: [] })
   },
   useHwanpae: () => {
     const newState = activateHwanpae(get())
-    set({ ...newState, previewResult: null })
+    set({ ...newState, previewResult: null, selectedCards: [] })
   },
   useJeungpok: () => {
     const newState = activateJeungpok(get())
-    set(newState)
+    set({ ...newState, selectedCards: [] })
   },
   gainTalisman: (talismanId: string) => {
     const newState = acquireTalisman(get(), talismanId)
-    set(newState)
+    set({ ...newState, selectedCards: [] })
   },
   // Phase 1.9.5: 응축 확정판 — 선택된 카드 장수 기반 % 배율 자동 계산
+  // R5 (balance-v3 §3): 응축 실효 배율에 용신 시너지 반영
   applyCondenseAction: (cardIds: string[]) => {
     const state = get()
-    const newState = applyCondense(state, cardIds)
+    // 응축 선택 카드 기준 용신 시너지 계산 (playCards와 동일 로직)
+    let synergyMultiplier = 1.0
+    if (state.favorableElement) {
+      const favEl = state.favorableElement
+      const condensedCards = state.hand.filter(c => cardIds.includes(c.id))
+      const hasYongsin = condensedCards.some(c => c.element === favEl)
+      if (hasYongsin) {
+        const isChain3Plus = condensedCards.length >= 3
+        const lastCard = condensedCards[condensedCards.length - 1]
+        const lastIsYongsin = lastCard?.element === favEl
+        synergyMultiplier = (isChain3Plus && lastIsYongsin)
+          ? YONGSIN_CHAIN_MULTIPLIER
+          : YONGSIN_BONUS_MULTIPLIER
+      }
+    }
+    const newState = applyCondense(state, cardIds, synergyMultiplier)
     set({ ...newState, previewResult: null, selectedCards: [] })
   },
   // T17: 가호(십성) 장착 — BattleScreen 진입 시 PassiveDraft 선택 결과 반영
   setActivePassiveIds: (ids: string[]) => {
     set({ activePassiveIds: ids })
+  },
+  // T8: 유물 획득 — 중복 차단, 런 종료 시 소멸(resetGame에서 초기화됨)
+  acquireRelic: (relicId: string) => {
+    const state = get()
+    const alreadyHas = state.relics.some(r => r.id === relicId)
+    if (alreadyHas) return
+    const relicDef = RELIC_DEFS[relicId as RelicId]
+    if (!relicDef) return
+    const newRelic: Relic = { id: relicDef.id, name: relicDef.name, description: relicDef.description }
+    set({ relics: [...state.relics, newRelic] })
   },
 }))

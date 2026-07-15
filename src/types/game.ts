@@ -124,7 +124,9 @@ export interface GameState {
     descentCount: number                  // 이 출정에서 강림 횟수 (2~3)
     slots: number[]                       // 강림 슬롯 인덱스 ([3, 8, 14] 형태)
     usedCount: number                     // 현재까지 사용한 강림 횟수
-    pendingDescent: boolean               // 1회 이월 상태
+    pendingDescent: boolean               // 1회 이월 상태 (0단계: 1턴 이월 / B-1: 대기창 활성)
+    yongsinAttackCount?: number           // (폐기 예정) B-1 구버전 카운터
+    waitWindowRemaining?: number          // B-1 대기창: 남은 공격 수 (3→2→1→0=소멸)
   }
   // Phase 1.9.6 신규 — 유물 시스템
   relics: Relic[]                         // 획득한 유물 목록 (런 한정 특수 효과)

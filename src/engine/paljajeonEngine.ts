@@ -9,7 +9,7 @@ import {
   GEUK_MAP,
   detectElementClash,
 } from './pokerHandJudge'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, MAX_DISCARD_PER_USE, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, OHANG_YEONHWAN_MULTIPLIER, SANGGWAN_MAX_PER_RUN, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, EMBER_DURATION, EMBER_MULTIPLIER, BASE_PURIFICATION_DAMAGE, ENABLE_YONGSIN_DESCENT } from './balance'
+import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, MAX_DISCARD_PER_USE, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, OHANG_YEONHWAN_MULTIPLIER, SANGGWAN_MAX_PER_RUN, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, EMBER_DURATION, EMBER_MULTIPLIER, BASE_PURIFICATION_DAMAGE, ENABLE_YONGSIN_DESCENT, DESCENT_VARIANT, DESCENT_DUAL_SLOT_MULT, DESCENT_DUAL_NONSLOT_MULT, DESCENT_WAIT_WINDOW } from './balance'
 import { generateSajuDeck } from './deckGenerator'
 import { getFavorableElement } from './manseryeok'
 // T17: 가호(십성) 효과 반영
@@ -1140,6 +1140,7 @@ export function initYongsinDescent(
   slots: number[]
   usedCount: number
   pendingDescent: boolean
+  yongsinAttackCount?: number
 } {
   if (!ENABLE_YONGSIN_DESCENT) {
     return { descentCount: 0, slots: [], usedCount: 0, pendingDescent: false }
@@ -1158,6 +1159,7 @@ export function initYongsinDescent(
     slots,
     usedCount: 0,
     pendingDescent: false,
+    yongsinAttackCount: 0,  // B-1: 용신 공격 카운터 초기화
   }
 }
 
@@ -1193,8 +1195,12 @@ function generateDescentSlots(hash: number, count: number, maxTurns: number): nu
 }
 
 /**
- * 강림 발동 함수
- * 콤보 판정 시 현재 턴이 강림 슬롯이면 ×2.0 배율 적용
+ * 강림 발동 함수 — 3가지 변형 지원 (§4-b 정의 정본, 2026-07-15)
+ * 'slot' (0단계): 2~3 슬롯 × ×2.0, 1턴 이월/소멸
+ * 'wait3' (B-1 대기창): 슬롯 도래 → 3공격 대기, 창 내 용신 → ×2.0. 슬롯 귀속, 카운터제 아님.
+ * 'dual' (B-2 이원): 슬롯 도래 즉시 발동, 용신 ×2.5 / 미포함 ×1.5. 슬롯 소비형, 비슬롯 보너스 없음.
+ *
+ * E2E 지문: 모든 변형은 descentState.slots.includes(currentTurn)으로 슬롯 참조 (§4 불변)
  */
 export function applyYongsinDescent(
   damage: number,
@@ -1206,31 +1212,114 @@ export function applyYongsinDescent(
     return { damage, descended: false, updatedState: descentState }
   }
 
-  const isDescentSlot = descentState.slots.includes(currentTurn)
   let newState = { ...descentState }
+  const variant = DESCENT_VARIANT
 
-  if (!isDescentSlot) {
-    return { damage, descended: false, updatedState: newState }
-  }
-
-  // 강림 슬롯이지만 용신 부재
-  if (!hasYongsin) {
-    if (newState.pendingDescent) {
-      // 이미 1회 이월됨 → 소멸
-      newState.pendingDescent = false
-    } else {
-      // 1회 이월
-      newState.pendingDescent = true
+  // ─── 변형 1: slot (0단계 기본) ─────────────────────────────────────
+  if (variant === 'slot') {
+    const isDescentSlot = descentState.slots.includes(currentTurn)
+    if (!isDescentSlot) {
+      // 이월 상태에서 비슬롯 턴: 1회 이월 소비
+      if (newState.pendingDescent) {
+        if (hasYongsin) {
+          // 이월 턴에서 용신 → 발동
+          newState.pendingDescent = false
+          newState.usedCount++
+          damage = Math.round(damage * 2.0)
+          return { damage, descended: true, updatedState: newState }
+        } else {
+          // 이월 턴에서 미포함 → 소멸
+          newState.pendingDescent = false
+          return { damage, descended: false, updatedState: newState }
+        }
+      }
+      return { damage, descended: false, updatedState: newState }
     }
-    return { damage, descended: false, updatedState: newState }
-  }
 
-  // 용신 포함 → 강림 발동
-  if (hasYongsin) {
+    if (!hasYongsin) {
+      // 슬롯 도래 + 미포함 → 1턴 이월 개시
+      newState.pendingDescent = true
+      return { damage, descended: false, updatedState: newState }
+    }
+
+    // 슬롯 도래 + 용신 → 즉시 발동
     newState.pendingDescent = false
     newState.usedCount++
-    damage = Math.round(damage * 2.0) // ×2.0 배율
+    damage = Math.round(damage * 2.0)
     return { damage, descended: true, updatedState: newState }
+  }
+
+  // ─── 변형 2: wait3 (B-1 대기창) ────────────────────────────────────
+  // §4-b: 슬롯 도래 → 최대 3공격 대기. 창 내 용신 → ×2.0. 3공격 경과 → 소멸.
+  // 카운터제 아님 — 슬롯당 1회, 대기는 슬롯에 귀속.
+  if (variant === 'wait3') {
+    const isDescentSlot = descentState.slots.includes(currentTurn)  // E2E 지문: 슬롯 참조
+
+    // 1) 슬롯 도래: 대기창 개시
+    if (isDescentSlot && !newState.pendingDescent) {
+      newState.pendingDescent = true
+      newState.waitWindowRemaining = DESCENT_WAIT_WINDOW  // 3
+
+      if (hasYongsin) {
+        // 슬롯 턴 자체에서 용신 → 즉시 발동, 창 닫힘
+        newState.pendingDescent = false
+        newState.waitWindowRemaining = 0
+        newState.usedCount++
+        damage = Math.round(damage * 2.0)
+        return { damage, descended: true, updatedState: newState }
+      }
+
+      // 슬롯 턴 용신 없음 → 대기창 개시, 남은 2공격
+      newState.waitWindowRemaining--
+      return { damage, descended: false, updatedState: newState }
+    }
+
+    // 2) 대기창 활성 중 (비슬롯 턴)
+    if (newState.pendingDescent && (newState.waitWindowRemaining ?? 0) > 0) {
+      if (hasYongsin) {
+        // 대기 중 용신 → 발동, 창 닫힘
+        newState.pendingDescent = false
+        newState.waitWindowRemaining = 0
+        newState.usedCount++
+        damage = Math.round(damage * 2.0)
+        return { damage, descended: true, updatedState: newState }
+      }
+
+      // 용신 없음 → 잔여 감소
+      newState.waitWindowRemaining = (newState.waitWindowRemaining ?? 0) - 1
+      if (newState.waitWindowRemaining <= 0) {
+        // 3공격 경과 → 소멸 ("기운이 스쳐 지나갔다")
+        newState.pendingDescent = false
+        newState.waitWindowRemaining = 0
+      }
+      return { damage, descended: false, updatedState: newState }
+    }
+
+    return { damage, descended: false, updatedState: newState }
+  }
+
+  // ─── 변형 3: dual (B-2 이원) ──────────────────────────────────────
+  // §4-b: 슬롯 도래 즉시 발동 — 용신 ×2.5 / 미포함 ×1.5. 슬롯 소비형.
+  // 비슬롯 턴 보너스 일절 없음.
+  if (variant === 'dual') {
+    const isDescentSlot = descentState.slots.includes(currentTurn)  // E2E 지문: 슬롯 참조
+
+    if (!isDescentSlot) {
+      // 비슬롯 턴: 일절 보너스 없음 (§4-b 확정)
+      return { damage, descended: false, updatedState: newState }
+    }
+
+    // 슬롯 도래: 즉시 소비
+    newState.usedCount++
+    if (hasYongsin) {
+      // 용신 포함: ×2.5
+      damage = Math.round(damage * DESCENT_DUAL_SLOT_MULT)
+      return { damage, descended: true, updatedState: newState }
+    } else {
+      // 미포함: ×1.5 약강림 (슬롯 소비됨)
+      damage = Math.round(damage * DESCENT_DUAL_NONSLOT_MULT)
+      return { damage, descended: true, updatedState: newState }
+    }
   }
 
   return { damage, descended: false, updatedState: newState }

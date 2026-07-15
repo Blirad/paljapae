@@ -113,6 +113,7 @@ export default function App() {
     currentFloor,
     isVictory,
     floorsCleared,
+    relics,
     startGame,
     proceedToNextFloor,
   } = useGameStore()
@@ -171,8 +172,8 @@ export default function App() {
     setScreen('result')
   }, [])
 
-  const handleFloorRewardProceed = useCallback((rewardIndex: number) => {
-    proceedToNextFloor(rewardIndex)
+  const handleFloorRewardProceed = useCallback((rewardIndex: number, selectedRelicId?: string) => {
+    proceedToNextFloor(rewardIndex, selectedRelicId)
     setScreen('battle')
   }, [proceedToNextFloor])
 
@@ -228,7 +229,11 @@ export default function App() {
         />
       )}
       {screen === 'floorReward' && (
-        <FloorRewardScreen currentFloor={currentFloor} onProceed={handleFloorRewardProceed} />
+        <FloorRewardScreen
+          currentFloor={currentFloor}
+          currentRelicIds={relics.map(r => r.id)}
+          onProceed={handleFloorRewardProceed}
+        />
       )}
       {screen === 'result' && (
         <ResultScreen
