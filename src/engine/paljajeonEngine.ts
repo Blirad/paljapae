@@ -9,7 +9,7 @@ import {
   GEUK_MAP,
   detectElementClash,
 } from './pokerHandJudge'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, MAX_DISCARD_PER_USE, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, OHANG_YEONHWAN_MULTIPLIER, SANGGWAN_MAX_PER_RUN, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, EMBER_DURATION, EMBER_MULTIPLIER, BASE_PURIFICATION_DAMAGE } from './balance'
+import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, MAX_DISCARD_PER_USE, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, OHANG_YEONHWAN_MULTIPLIER, SANGGWAN_MAX_PER_RUN, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, EMBER_DURATION, EMBER_MULTIPLIER, BASE_PURIFICATION_DAMAGE, ENABLE_YONGSIN_DESCENT } from './balance'
 import { generateSajuDeck } from './deckGenerator'
 import { getFavorableElement } from './manseryeok'
 // T17: 가호(십성) 효과 반영
@@ -175,6 +175,8 @@ export function createInitialGameState(floorIndex = 0, heroProfile?: SavedHeroPr
     sikshinDiscardBonus: false,
     // R10: 겁재 출정당 1회 제한 — 런 시작 시 초기화
     geoptaeUsed: false,
+    // 배치 1.5: 강림제 초기화
+    yongsinDescent: initYongsinDescent(heroProfile, floorIndex),
   }
 }
 
@@ -1106,4 +1108,116 @@ export function applyRewardOption(deck: Card[], option: RewardOption): Card[] {
     case 'add-relic':
       return deck  // relics are handled separately in GameState
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 배치 1.5: 용신 강림제 (yongsinDescent)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 강림제 상태 초기화
+ * 출정 시작 시 강림 슬롯을 사전 결정 (비공개)
+ */
+export function initYongsinDescent(
+  heroProfile: SavedHeroProfile | null | undefined,
+  floorIndex: number,
+): {
+  descentCount: number
+  slots: number[]
+  usedCount: number
+  pendingDescent: boolean
+} {
+  if (!ENABLE_YONGSIN_DESCENT) {
+    return { descentCount: 0, slots: [], usedCount: 0, pendingDescent: false }
+  }
+
+  const seed = heroProfile?.deckSeed || 12345
+  const hash = simpleHash(JSON.stringify(heroProfile) + seed + floorIndex)
+
+  // 2~3회 강림
+  const descentCount = 2 + (hash % 2)
+  // 18턴 중 슬롯 위치 결정
+  const slots = generateDescentSlots(hash, descentCount, 18)
+
+  return {
+    descentCount,
+    slots,
+    usedCount: 0,
+    pendingDescent: false,
+  }
+}
+
+/**
+ * 간단한 해시 함수 (SHA256 대체)
+ * 일진 + 시드 + 층수 기반 난수 생성
+ */
+function simpleHash(input: string): number {
+  let hash = 0
+  for (let i = 0; i < input.length; i++) {
+    const char = input.charCodeAt(i)
+    hash = (hash << 5) - hash + char
+    hash = hash & hash  // Convert to 32bit integer
+  }
+  return Math.abs(hash)
+}
+
+/**
+ * 강림 슬롯 생성 함수
+ * 해시값으로부터 2~3개의 슬롯 위치 결정
+ */
+function generateDescentSlots(hash: number, count: number, maxTurns: number): number[] {
+  const slots: number[] = []
+  let seed = hash
+
+  for (let i = 0; i < count; i++) {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff
+    const slotIndex = seed % maxTurns
+    slots.push(slotIndex)
+  }
+
+  return slots.sort((a, b) => a - b)
+}
+
+/**
+ * 강림 발동 함수
+ * 콤보 판정 시 현재 턴이 강림 슬롯이면 ×2.0 배율 적용
+ */
+export function applyYongsinDescent(
+  damage: number,
+  hasYongsin: boolean,
+  currentTurn: number,
+  descentState: GameState['yongsinDescent'],
+): { damage: number; descended: boolean; updatedState: GameState['yongsinDescent'] } {
+  if (!ENABLE_YONGSIN_DESCENT || !descentState) {
+    return { damage, descended: false, updatedState: descentState }
+  }
+
+  const isDescentSlot = descentState.slots.includes(currentTurn)
+  let newState = { ...descentState }
+
+  if (!isDescentSlot) {
+    return { damage, descended: false, updatedState: newState }
+  }
+
+  // 강림 슬롯이지만 용신 부재
+  if (!hasYongsin) {
+    if (newState.pendingDescent) {
+      // 이미 1회 이월됨 → 소멸
+      newState.pendingDescent = false
+    } else {
+      // 1회 이월
+      newState.pendingDescent = true
+    }
+    return { damage, descended: false, updatedState: newState }
+  }
+
+  // 용신 포함 → 강림 발동
+  if (hasYongsin) {
+    newState.pendingDescent = false
+    newState.usedCount++
+    damage = Math.round(damage * 2.0) // ×2.0 배율
+    return { damage, descended: true, updatedState: newState }
+  }
+
+  return { damage, descended: false, updatedState: newState }
 }

@@ -623,3 +623,76 @@ export function getRandomFloorElements(rng: () => number): Array<{
 
   return result
 }
+
+// ─── 배치 1.5: 레시피제(comboRuleset) + 강림제(yongsinDescent) ────────────────
+
+/**
+ * comboRuleset 토글 플래그
+ * 'v3': 기존 체계 (융합 10쌍 무명 "치기", 배율 미분화)
+ * 'recipe': 신규 체계 (융합 10쌍 명명 레시피, 4계층 위계)
+ * 배포: v3 기본값 (recipe는 배치 1.5 재기준선 게이트 후 활성화)
+ */
+export const COMBO_RULESET_VERSION: 'v3' | 'recipe' = 'v3'
+
+/**
+ * 강림제 활성화 플래그
+ * false: 기존 체계 (용신 상시 ×1.3)
+ * true: 강림제 (2~3회 슬롯에서만 ×2.0, 소멸 처리)
+ * 배포: false 기본값 (배치 1.5 재기준선 게이트 후 활성화)
+ */
+export const ENABLE_YONGSIN_DESCENT = false
+
+/**
+ * 10쌍 레시피 판정 맵
+ * elem1: 주 원소, elem2: 부 원소 (null이면 "他" — elem1 외 아무 원소)
+ * minCount: 소형 3장에서 부 원소 최소 장수 / 대형 5장에서 부 원소 최소 장수
+ */
+export interface RecipeSpec {
+  small: { elem1: Element; elem2: Element | null; minCount: number }
+  large: { elem1: Element; elem2: Element | null; minCount: number }
+}
+
+export const RECIPE_MAP: Record<string, RecipeSpec> = {
+  // 낳는 5쌍
+  'fusion_forest': {
+    small: { elem1: 'su', elem2: 'mok', minCount: 2 },
+    large: { elem1: 'su', elem2: 'mok', minCount: 3 },
+  },
+  'fusion_spring': {
+    small: { elem1: 'geum', elem2: 'su', minCount: 2 },
+    large: { elem1: 'geum', elem2: 'su', minCount: 3 },
+  },
+  'fusion_mine': {
+    small: { elem1: 'to', elem2: 'geum', minCount: 2 },
+    large: { elem1: 'to', elem2: 'geum', minCount: 3 },
+  },
+  'fusion_kiln': {
+    small: { elem1: 'hwa', elem2: 'to', minCount: 2 },
+    large: { elem1: 'hwa', elem2: 'to', minCount: 3 },
+  },
+  'fusion_wildfire': {
+    small: { elem1: 'hwa', elem2: 'hwa', minCount: 3 },
+    large: { elem1: 'hwa', elem2: 'hwa', minCount: 5 },
+  },
+  // 벼리는 5쌍 (elem2=null → elem1 외 타 원소)
+  'fusion_keen': {
+    small: { elem1: 'geum', elem2: null, minCount: 2 },
+    large: { elem1: 'geum', elem2: null, minCount: 3 },
+  },
+  'fusion_snipe': {
+    small: { elem1: 'su', elem2: null, minCount: 2 },
+    large: { elem1: 'su', elem2: null, minCount: 3 },
+  },
+  'fusion_harvest': {
+    small: { elem1: 'mok', elem2: null, minCount: 2 },
+    large: { elem1: 'mok', elem2: null, minCount: 3 },
+  },
+  'fusion_pierce': {
+    small: { elem1: 'geum', elem2: 'su', minCount: 2 },
+    large: { elem1: 'geum', elem2: 'su', minCount: 3 },
+  },
+  'fusion_temper': {
+    small: { elem1: 'hwa', elem2: 'geum', minCount: 2 },
+    large: { elem1: 'hwa', elem2: 'geum', minCount: 3 },
+  },
+}

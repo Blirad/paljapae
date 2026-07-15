@@ -10,7 +10,14 @@
  */
 
 import type { Card, Element, HandJudgeResult } from '../types/game'
-import { GATHER_MULTIPLIERS, findFusionCombo, EUMYANG_HARMONY_BONUS, OHANG_YEONHWAN_MULTIPLIER } from './balance'
+import {
+  GATHER_MULTIPLIERS,
+  findFusionCombo,
+  EUMYANG_HARMONY_BONUS,
+  OHANG_YEONHWAN_MULTIPLIER,
+  COMBO_RULESET_VERSION,
+  RECIPE_MAP,
+} from './balance'
 
 // 오행 상극: A가 B를 극한다
 const GEUK_MAP: Record<Element, Element> = {
@@ -302,3 +309,63 @@ export function detectYeokgeukPenalty(
 }
 
 export { GEUK_MAP }
+
+/**
+ * 레시피 검출 함수 (배치 1.5)
+ * comboRuleset이 'recipe'일 때만 동작
+ * 3장: X원소 1장 + Y원소 2장
+ * 5장: X원소 2장 + Y원소 3장
+ */
+export function detectRecipe(combo: Card[]): string | null {
+  if (COMBO_RULESET_VERSION !== 'recipe') return null
+  if (combo.length !== 3 && combo.length !== 5) return null
+
+  const elementCounts: Record<Element, number> = {
+    mok: 0,
+    hwa: 0,
+    to: 0,
+    geum: 0,
+    su: 0,
+  }
+
+  for (const card of combo) {
+    elementCounts[card.element]++
+  }
+
+  for (const [recipeId, recipe] of Object.entries(RECIPE_MAP)) {
+    const spec = combo.length === 3 ? recipe.small : recipe.large
+    const { elem1, elem2, minCount } = spec
+
+    if (combo.length === 3) {
+      if (elem2 === null) {
+        // 벼리는: elem1 1장 + 타 원소 2장
+        const otherCount = combo.length - elementCounts[elem1]
+        if (elementCounts[elem1] >= 1 && otherCount >= minCount) return recipeId
+      } else if (elem1 === elem2) {
+        // 들불: 순수 동일 원소 3장
+        if (elementCounts[elem1] >= minCount) return recipeId
+      } else {
+        // 낳는: X1+Y2 또는 Y1+X2
+        if (elementCounts[elem1] >= 1 && elementCounts[elem2] >= 2) return recipeId
+        if (elementCounts[elem2] >= 1 && elementCounts[elem1] >= 2) return recipeId
+      }
+    }
+
+    if (combo.length === 5) {
+      if (elem2 === null) {
+        // 벼리는: elem1 2장 + 타 원소 3장
+        const otherCount = combo.length - elementCounts[elem1]
+        if (elementCounts[elem1] >= 2 && otherCount >= minCount) return recipeId
+      } else if (elem1 === elem2) {
+        // 들불: 순수 동일 원소 5장
+        if (elementCounts[elem1] >= minCount) return recipeId
+      } else {
+        // 낳는: X2+Y3 또는 Y2+X3
+        if (elementCounts[elem1] >= 2 && elementCounts[elem2] >= 3) return recipeId
+        if (elementCounts[elem2] >= 2 && elementCounts[elem1] >= 3) return recipeId
+      }
+    }
+  }
+
+  return null
+}

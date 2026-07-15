@@ -119,6 +119,13 @@ export interface GameState {
   reshuffled: boolean                     // 이번 턴 덱 재순환 발동 여부 (UI 배너용)
   // 스펙 v2 — 용신 원소 (일간 기반 계산)
   favorableElement?: Element              // 플레이어 용신 원소 (없으면 undefined)
+  // 배치 1.5: 강림제 상태
+  yongsinDescent?: {
+    descentCount: number                  // 이 출정에서 강림 횟수 (2~3)
+    slots: number[]                       // 강림 슬롯 인덱스 ([3, 8, 14] 형태)
+    usedCount: number                     // 현재까지 사용한 강림 횟수
+    pendingDescent: boolean               // 1회 이월 상태
+  }
   // Phase 1.9.6 신규 — 유물 시스템
   relics: Relic[]                         // 획득한 유물 목록 (런 한정 특수 효과)
   // T17: 가호(십성) 시스템 — 선택된 패시브 ID 목록
