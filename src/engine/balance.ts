@@ -422,7 +422,7 @@ export const FLOOR_CONFIGS: FloorConfig[] = [
   {
     floor: 2,
     enemyName: '변질 오행 혼성',
-    enemyHp: 430,  // R10: 400→430
+    enemyHp: 445,  // R9: 430→445 (목화 2층 사망 집중 정밀 레버)
     counterDamage: 1,
     maxPlays: 4,
     enemyPrimaryElement: 'hwa',
@@ -528,7 +528,7 @@ export const MINING_DRAW_DIVISOR = 5       // 채굴 [효과]: 드로우 = floor
 export const MINING_MAX_DRAW = 3           // 채굴 [효과]: 최대 3장
 export const EMBER_DURATION = 3            // 잔불 [효과]: 지속 턴 수
 export const EMBER_MULTIPLIER = 2.6 / 3   // ≈ 0.8667 — 총배율 ×2.6 (R8: ×3.0→×2.6)
-export const CONDENSE_SCALE_BASE = 10      // 응축 값 스케일 기준값 (R2: 15→10, 저투입 효율 상향)
+export const CONDENSE_SCALE_BASE = 8       // 응축 값 스케일 기준값 (R9: 10→8, 토단일 전형 투입합 8이 풀 매트릭스 받도록)
 export const CONDENSE_SCALE_MIN = 0.6      // 응축 값 스케일 하한 (R2: 0.4→0.6, 저치 착취 차단 강화)
 
 // --- R5: 효과 시너지 (balance-v3 §3 개정)
