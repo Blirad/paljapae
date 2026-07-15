@@ -169,10 +169,10 @@ export interface FullCapPlayDecision {
 function scoreEffectForTrait(
   traitId: string,
   baseValue: number,
-  attackDamage: number,
+  _attackDamage: number,
   hand: Card[],
   playerHp: number | undefined,
-  condensedMultiplier: number | undefined,
+  _condensedMultiplier: number | undefined,
   enemyPrimaryElement: Element | undefined,
   _comboResult: ReturnType<typeof judgeCombo>,
   playsLeft: number,
@@ -1035,7 +1035,7 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
       state = playCards(state, decision.cardIds, decision.effectMode)
       // V3 무한루프 픽스: 리젝 판별 — 모든 상태 동일 = 리젝 = throw
       if (
-        state.hp === prevState.hp &&
+        state.playerHp === prevState.playerHp &&
         state.enemyHp === prevState.enemyHp &&
         state.playsLeft === prevState.playsLeft &&
         state.hand.length === prevState.hand.length &&
