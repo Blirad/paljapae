@@ -157,11 +157,16 @@ export function judgeCombo(
   // 배치 1.5: recipe 모드 — detectRecipe() 우선 적용 (3/5장, 조기 반환)
   // recipe 불성립 시 이하 기존 판정(融合/모으기/none)으로 자연 폴백
   // E2E 지문: recipeMultipliers[recipeId]로 출정 시작 덱 기준 배율 조회
-  if (COMBO_RULESET_VERSION === 'recipe' && (selectedCards.length === 3 || selectedCards.length === 5)) {
+  if (COMBO_RULESET_VERSION === 'recipe' && (selectedCards.length >= 3 && selectedCards.length <= 5)) {
     const recipeId = detectRecipe(selectedCards)
     if (recipeId !== null) {
-      const isSmall = selectedCards.length === 3
-      const spec = isSmall ? RECIPE_MAP[recipeId].small : RECIPE_MAP[recipeId].large
+      // α 스펙: 촉매(elem1) 정확히 1장 + 연료(elem2) 2~4장 판별 (E2E 지문)
+      const smallSpec = RECIPE_MAP[recipeId].small
+      const largeSpec = RECIPE_MAP[recipeId].large
+      const catalystCount = selectedCards.filter(c => c.element === smallSpec.elem1).length
+      const fuelCount = smallSpec.elem2 ? selectedCards.filter(c => c.element === smallSpec.elem2).length : 0
+      const isSmall = catalystCount === 1 && fuelCount >= 2 && fuelCount <= 4
+      const spec = isSmall ? smallSpec : largeSpec
       const isHone = spec.elem2 === null
 
       // 사주별 배율 주입: recipeMultipliers가 존재하면 우선, 없으면 기본값
@@ -175,12 +180,25 @@ export function judgeCombo(
           : (isHone ? RECIPE_LARGE_HONE_MULT : RECIPE_LARGE_BIRTH_MULT)
       }
 
+      const totalScore = Math.round(baseScore * multiplier)
+
+      // 토단일 α 시도/성공 카운트 (소응축 기여 측정용)
+      if (recipeId === 'fusion_kiln' && selectedCards.length <= 5) {
+        if (!(globalThis as any).__toDanilAlphaLog) {
+          ;(globalThis as any).__toDanilAlphaLog = { attempts: 0, successes: 0 }
+        }
+        ;(globalThis as any).__toDanilAlphaLog.attempts++
+        if (isSmall) {
+          ;(globalThis as any).__toDanilAlphaLog.successes++
+        }
+      }
+
       return {
         type: isHone ? 'fusion-hone' : 'fusion-birth',
         name: recipeId,
         baseScore,
         multiplier,
-        totalScore: Math.round(baseScore * multiplier),
+        totalScore,
         finishingElement: spec.elem1,
         description: `${isSmall ? '소형' : '대형'} 레시피 — ${recipeId}`,
       }

@@ -406,6 +406,17 @@ export function fullCapSelectCards(
     const bestCombo = hand.filter(c => bestIds.includes(c.id))
     if (bestCombo.length > 0) {
       const result = judgeCombo(bestCombo, recipeMultipliers)
+      // 실발동 로그 (판당 ≤19회 보장 시점)
+      if (typeof globalThis !== 'undefined') {
+        if (!(globalThis as any).__recipeLog) (globalThis as any).__recipeLog = []
+        if (result.name && result.name.startsWith('fusion_')) {
+          ;(globalThis as any).__recipeLog.push({
+            recipeId: result.name,
+            damage: result.totalScore,
+            size: 'actual',
+          })
+        }
+      }
       if (result.type === 'fusion-birth') {
         const traitId = FUSION_TRAIT_MAP[result.name] ?? ''
         const baseValue = bestCombo.reduce((sum, c) => sum + c.value, 0)
@@ -995,6 +1006,17 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
       // 융합 통계 수집
       const selectedCards = state.hand.filter(c => decision.cardIds.includes(c.id))
       const comboResult = judgeCombo(selectedCards, state.recipeMultipliers)
+      // 실발동 로그 (판당 ≤19회 보장 시점)
+      if (typeof globalThis !== 'undefined') {
+        if (!(globalThis as any).__recipeLog) (globalThis as any).__recipeLog = []
+        if (comboResult.name && comboResult.name.startsWith('fusion_')) {
+          ;(globalThis as any).__recipeLog.push({
+            recipeId: comboResult.name,
+            damage: comboResult.totalScore,
+            size: 'actual',
+          })
+        }
+      }
       if (comboResult.type === 'fusion-birth' || comboResult.type === 'fusion-hone') {
         fusionCount++
       }
