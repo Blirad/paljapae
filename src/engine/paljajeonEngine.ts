@@ -9,7 +9,7 @@ import {
   GEUK_MAP,
   detectElementClash,
 } from './pokerHandJudge'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, MAX_DISCARD_PER_USE, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, OHANG_YEONHWAN_MULTIPLIER, SANGGWAN_MAX_PER_RUN, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, EMBER_DURATION, EMBER_MULTIPLIER, BASE_PURIFICATION_DAMAGE, ENABLE_YONGSIN_DESCENT, DESCENT_VARIANT, DESCENT_DUAL_SLOT_MULT, DESCENT_DUAL_NONSLOT_MULT, DESCENT_WAIT_WINDOW } from './balance'
+import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, MAX_DISCARD_PER_USE, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, OHANG_YEONHWAN_MULTIPLIER, SANGGWAN_MAX_PER_RUN, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, EMBER_DURATION, EMBER_MULTIPLIER, BASE_PURIFICATION_DAMAGE, ENABLE_YONGSIN_DESCENT, DESCENT_VARIANT, DESCENT_DUAL_SLOT_MULT, DESCENT_DUAL_NONSLOT_MULT, DESCENT_WAIT_WINDOW, DESCENT_GLOW_FULL_MULT, DESCENT_GLOW_AFTERGLOW_MULT } from './balance'
 import { generateSajuDeck } from './deckGenerator'
 import { getFavorableElement } from './manseryeok'
 // T17: 가호(십성) 효과 반영
@@ -1320,6 +1320,58 @@ export function applyYongsinDescent(
       damage = Math.round(damage * DESCENT_DUAL_NONSLOT_MULT)
       return { damage, descended: true, updatedState: newState }
     }
+  }
+
+  // ─── 변형 4: glow (B-3 잔광, 2026-07-16) ─────────────────────────────
+  // §4-b 개정: 슬롯 도래 3공격 대기, 용신 ×1.8 풀강림 / 만료 시 ×1.25 잔광.
+  // 슬롯당 정확히 1결과 (풀강림 또는 잔광), 소멸 개념 제거.
+  if (variant === 'glow') {
+    const isDescentSlot = descentState.slots.includes(currentTurn)  // E2E 지문: 슬롯 참조
+
+    // 1) 슬롯 도래: 대기창 개시
+    if (isDescentSlot && !newState.pendingDescent) {
+      newState.pendingDescent = true
+      newState.waitWindowRemaining = DESCENT_WAIT_WINDOW  // 3
+
+      if (hasYongsin) {
+        // 슬롯 턴 자체에서 용신 → 풀강림 ×1.8 발동, 창 닫힘
+        newState.pendingDescent = false
+        newState.waitWindowRemaining = 0
+        newState.usedCount++
+        damage = Math.round(damage * DESCENT_GLOW_FULL_MULT)
+        return { damage, descended: true, updatedState: newState }
+      }
+
+      // 슬롯 턴 용신 없음 → 대기창 개시, 남은 2공격
+      newState.waitWindowRemaining--
+      return { damage, descended: false, updatedState: newState }
+    }
+
+    // 2) 대기창 활성 중 (비슬롯 턴)
+    if (newState.pendingDescent && (newState.waitWindowRemaining ?? 0) > 0) {
+      if (hasYongsin) {
+        // 대기 중 용신 → 풀강림 ×1.8 발동, 창 닫힘
+        newState.pendingDescent = false
+        newState.waitWindowRemaining = 0
+        newState.usedCount++
+        damage = Math.round(damage * DESCENT_GLOW_FULL_MULT)
+        return { damage, descended: true, updatedState: newState }
+      }
+
+      // 용신 없음 → 잔여 감소
+      newState.waitWindowRemaining = (newState.waitWindowRemaining ?? 0) - 1
+      if (newState.waitWindowRemaining <= 0) {
+        // 3공격 경과 → 잔광 ×1.25 부여 (대신 소멸 제거, E2E 지문)
+        newState.pendingDescent = false
+        newState.waitWindowRemaining = 0
+        damage = Math.round(damage * DESCENT_GLOW_AFTERGLOW_MULT)
+        newState.usedCount++
+        return { damage, descended: false, updatedState: newState }
+      }
+      return { damage, descended: false, updatedState: newState }
+    }
+
+    return { damage, descended: false, updatedState: newState }
   }
 
   return { damage, descended: false, updatedState: newState }
