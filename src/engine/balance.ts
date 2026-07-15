@@ -445,7 +445,7 @@ export const FLOOR_CONFIGS: FloorConfig[] = [
   {
     floor: 4,
     enemyName: '보스: 명외자 대장',
-    enemyHp: 560,
+    enemyHp: 540,  // R10: 560→540 (4층 HP 하향)
     counterDamage: 4,
     maxPlays: 6,
     enemyPrimaryElement: 'geum',
