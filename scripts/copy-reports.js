@@ -31,10 +31,10 @@ function isExcluded(filename) {
 
 mkdirSync(DEST, { recursive: true })
 
-// 복사 대상 1: workspace root의 ZERA_BALANCE_V3_* 파일
+// 복사 대상 1: workspace root의 감사 보고 + 시뮬 결과 파일
 const workspaceFiles = readdirSync(WORKSPACE_ROOT)
   .filter(f => f.endsWith('.md'))
-  .filter(f => /^ZERA_BALANCE_V3_/.test(f) || f === 'SPEC_v3.1.md' || f === 'DISPATCH_HANDOFF.md')
+  .filter(f => /^ZERA_BALANCE_V3_/.test(f) || /^G1_AUDIT_REPORT_/.test(f) || f === 'SPEC_v3.1.md' || f === 'DISPATCH_HANDOFF.md')
   .filter(f => !isExcluded(f))
 
 for (const f of workspaceFiles) {
