@@ -32,6 +32,7 @@ vi.mock('../engine/balance', async () => {
     ...(actual as Record<string, unknown>),
     ENABLE_YONGSIN_DESCENT: true,
     DESCENT_VARIANT: 'glow' as const,
+    DESCENT_WAIT_WINDOW: 3,
     DESCENT_GLOW_FULL_MULT: 1.8,
     DESCENT_GLOW_AFTERGLOW_MULT: 1.25,
   }
