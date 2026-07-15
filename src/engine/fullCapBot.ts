@@ -43,6 +43,7 @@ import {
   PYEONJAE_GEUM_WEIGHT,
   JEONGJAE_SU_WEIGHT,
   PYEONIN_TO_WEIGHT,
+  ENABLE_YONGSIN_DESCENT,
   FUSION_TRAIT_MAP,
   NOURISH_HEAL_PCT,
   BASE_PURIFICATION_DAMAGE,
@@ -117,8 +118,8 @@ export function fullCapCalcExpectedDamage(
     damage = damage * 2
   }
 
-  // [신규 2-4] 용신 보너스 가중치 (엔진에서 실제 적용되는 보너스를 봇 평가에도 반영)
-  if (favorableElement) {
+  // [신규 2-4] 용신 보너스 가중치 — 강림 모드에서는 무가중 (슬롯 비공개 원칙)
+  if (favorableElement && !ENABLE_YONGSIN_DESCENT) {
     const hasYongsin = combo.some(c => c.element === favorableElement)
     if (hasYongsin) {
       const isChain3Plus = combo.length >= 3
@@ -304,8 +305,8 @@ export function fullCapSelectCards(
         if (amplifyActive) {
           baseScore = baseScore * 2
         }
-        // 용신 보너스 적용
-        if (favorableElement && card.element === favorableElement) {
+        // 용신 보너스 적용 — 강림 모드에서는 무가중
+        if (favorableElement && card.element === favorableElement && !ENABLE_YONGSIN_DESCENT) {
           baseScore = Math.round(baseScore * YONGSIN_BONUS_MULTIPLIER)
         }
         // 번짐 이월 피해 가산
@@ -406,9 +407,9 @@ export function fullCapSelectCards(
           : result.totalScore
 
         // R5 (balance-v3 §3): synergyMultiplier 계산 — 엔진과 동일 방식
-        // 용신 배율: favorableElement 카드 포함 여부 + 연환 조건
+        // 강림 모드에서는 용신 배율 무가중 (슬롯 비공개 원칙)
         let synergyMultiplier = 1.0
-        if (favorableElement) {
+        if (favorableElement && !ENABLE_YONGSIN_DESCENT) {
           const hasYongsin = bestCombo.some(c => c.element === favorableElement)
           if (hasYongsin) {
             const isChain3Plus = bestCombo.length >= 3
@@ -558,7 +559,7 @@ function evaluateDeckDamageScore(
     if (nextEnemyEl) {
       cardWeight *= getAffinityMultiplier(card.element, nextEnemyEl)
     }
-    if (favorableEl && card.element === favorableEl) {
+    if (favorableEl && card.element === favorableEl && !ENABLE_YONGSIN_DESCENT) {
       cardWeight *= YONGSIN_BONUS_MULTIPLIER
     }
     score += cardWeight
