@@ -9,7 +9,7 @@ import {
   GEUK_MAP,
   detectElementClash,
 } from './pokerHandJudge'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, OHANG_YEONHWAN_MULTIPLIER, SANGGWAN_MAX_PER_RUN, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, EMBER_DURATION, EMBER_MULTIPLIER, BASE_PURIFICATION_DAMAGE } from './balance'
+import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, MAX_DISCARD_PER_USE, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, OHANG_YEONHWAN_MULTIPLIER, SANGGWAN_MAX_PER_RUN, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, EMBER_DURATION, EMBER_MULTIPLIER, BASE_PURIFICATION_DAMAGE } from './balance'
 import { generateSajuDeck } from './deckGenerator'
 import { getFavorableElement } from './manseryeok'
 // T17: 가호(십성) 효과 반영
@@ -807,8 +807,10 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
 export function discardCards(state: GameState, cardIds: string[]): GameState {
   if (state.discardsLeft <= 0) return state
 
-  const discarded = state.hand.filter(c => cardIds.includes(c.id))
-  const remainHand = state.hand.filter(c => !cardIds.includes(c.id))
+  // B1-4: 1회 버리기당 최대 3장 제한
+  const limitedIds = cardIds.slice(0, MAX_DISCARD_PER_USE)
+  const discarded = state.hand.filter(c => limitedIds.includes(c.id))
+  const remainHand = state.hand.filter(c => !limitedIds.includes(c.id))
 
   // Phase 1.9.4: 덱 부족 시 재순환 (버리기도 동일 불변 조건 적용)
   const newDiscardPile = [...state.discardPile, ...discarded]
