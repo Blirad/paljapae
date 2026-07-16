@@ -162,13 +162,15 @@ export function judgeCombo(
     const recipeId = detectRecipe(selectedCards)
     if (recipeId !== null) {
       // α 스펙: 촉매(elem1) 정확히 1장 + 연료(elem2) 2~4장 판별 (E2E 지문)
-      const smallSpec = RECIPE_MAP[recipeId].small
-      const largeSpec = RECIPE_MAP[recipeId].large
+      const recipeEntry = RECIPE_MAP[recipeId]
+      const smallSpec = recipeEntry.small
+      const largeSpec = recipeEntry.large
       const catalystCount = selectedCards.filter(c => c.element === smallSpec.elem1).length
-      const fuelCount = smallSpec.elem2 ? selectedCards.filter(c => c.element === smallSpec.elem2).length : 0
+      const fuelCount = selectedCards.filter(c => c.element === smallSpec.elem2).length
       const isSmall = catalystCount === 1 && fuelCount >= 2 && fuelCount <= 4
       const spec = isSmall ? smallSpec : largeSpec
-      const isHone = spec.elem2 === null
+      // fusionType 필드 기반 판별 (elem2 고정 후 null 판별 불가 — 2026-07-16 정본화)
+      const isHone = recipeEntry.fusionType === 'hone'
 
       // 사주별 배율 주입: recipeMultipliers가 존재하면 우선, 없으면 기본값
       let multiplier: number
@@ -225,8 +227,10 @@ export function judgeCombo(
     const count = selectedCards.length
     // T20: recipe 모드에서 gather5(5장) 필살기 계층 배율 override
     // ⚠️ GATHER_MULTIPLIERS[5]=5.0 은 v3 모드 동결값 — 직접 수정 금지
+    // recipeMultipliers['_gather5'] 주입 시 그 값 우선 (B벌=7.0 측정용)
+    const gather5Mult = recipeMultipliers?.['_gather5'] ?? RECIPE_GATHER5_MULT_A
     const multiplier = (COMBO_RULESET_VERSION === 'recipe' && count === 5)
-      ? RECIPE_GATHER5_MULT_A
+      ? gather5Mult
       : (GATHER_MULTIPLIERS[count] ?? 1)
     const hasHarmony = hasEumyangHarmony(selectedCards)
     const harmonyBonus = hasHarmony ? EUMYANG_HARMONY_BONUS : 0
@@ -385,8 +389,12 @@ export { GEUK_MAP }
 /**
  * 레시피 검출 함수 (배치 1.5)
  * comboRuleset이 'recipe'일 때만 동작
- * 3장: X원소 1장 + Y원소 2장
- * 5장: X원소 2장 + Y원소 3장
+ * 3장: X원소 1장 + Y원소 2장 (또는 Y1+X2)
+ * 5장: X원소 2장 + Y원소 3장 (또는 Y2+X3)
+ *
+ * 2026-07-16 정본화: elem2 null 분기 제거 (모든 레시피 elem2 고정).
+ * E2E 지문: elementCounts[elem1] 및 elementCounts[elem2] 조건으로 특정 원소 쌍만 성립.
+ *   예) fusion_keen: geum+mok만 성립 (geum+su는 fusion_spring이므로 불성립).
  */
 export function detectRecipe(combo: Card[]): string | null {
   if (COMBO_RULESET_VERSION !== 'recipe') return null
@@ -409,33 +417,15 @@ export function detectRecipe(combo: Card[]): string | null {
     const { elem1, elem2, minCount } = spec
 
     if (combo.length === 3) {
-      if (elem2 === null) {
-        // 벼리는: elem1 1장 + 타 원소 2장
-        const otherCount = combo.length - elementCounts[elem1]
-        if (elementCounts[elem1] >= 1 && otherCount >= minCount) return recipeId
-      } else if (elem1 === elem2) {
-        // 들불: 순수 동일 원소 3장
-        if (elementCounts[elem1] >= minCount) return recipeId
-      } else {
-        // 낳는: X1+Y2 또는 Y1+X2
-        if (elementCounts[elem1] >= 1 && elementCounts[elem2] >= 2) return recipeId
-        if (elementCounts[elem2] >= 1 && elementCounts[elem1] >= 2) return recipeId
-      }
+      // 3장: elem1 1장+elem2 2장 또는 elem2 1장+elem1 2장
+      if (elementCounts[elem1] >= 1 && elementCounts[elem2] >= minCount) return recipeId
+      if (elementCounts[elem2] >= 1 && elementCounts[elem1] >= minCount) return recipeId
     }
 
     if (combo.length === 5) {
-      if (elem2 === null) {
-        // 벼리는: elem1 2장 + 타 원소 3장
-        const otherCount = combo.length - elementCounts[elem1]
-        if (elementCounts[elem1] >= 2 && otherCount >= minCount) return recipeId
-      } else if (elem1 === elem2) {
-        // 들불: 순수 동일 원소 5장
-        if (elementCounts[elem1] >= minCount) return recipeId
-      } else {
-        // 낳는: X2+Y3 또는 Y2+X3
-        if (elementCounts[elem1] >= 2 && elementCounts[elem2] >= 3) return recipeId
-        if (elementCounts[elem2] >= 2 && elementCounts[elem1] >= 3) return recipeId
-      }
+      // 5장: elem1 2장+elem2 3장 또는 elem2 2장+elem1 3장
+      if (elementCounts[elem1] >= 2 && elementCounts[elem2] >= minCount) return recipeId
+      if (elementCounts[elem2] >= 2 && elementCounts[elem1] >= minCount) return recipeId
     }
   }
 

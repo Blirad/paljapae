@@ -664,12 +664,14 @@ export const DESCENT_GLOW_AFTERGLOW_MULT = 1.25 // 잔광 (대기창 만료 시)
 
 /**
  * 10쌍 레시피 판정 맵
- * elem1: 주 원소, elem2: 부 원소 (null이면 "他" — elem1 외 아무 원소)
+ * elem1: 주 원소, elem2: 부 원소
  * minCount: 소형 3장에서 부 원소 최소 장수 / 대형 5장에서 부 원소 최소 장수
+ * fusionType: 'birth'(낳는) | 'hone'(벼리는) — elem2 고정 후 null 판별 불가하므로 명시 필드
  */
 export interface RecipeSpec {
-  small: { elem1: Element; elem2: Element | null; minCount: number }
-  large: { elem1: Element; elem2: Element | null; minCount: number }
+  small: { elem1: Element; elem2: Element; minCount: number }
+  large: { elem1: Element; elem2: Element; minCount: number }
+  fusionType: 'birth' | 'hone'
 }
 
 // 레시피 배율 (소형 3장 / 대형 5장)
@@ -679,47 +681,68 @@ export const RECIPE_LARGE_BIRTH_MULT = 3.5   // 대형 낳는 (소형보다 0.5 
 export const RECIPE_LARGE_HONE_MULT = 4.0    // 대형 벼리는 (소형보다 0.5 상향)
 
 export const RECIPE_MAP: Record<string, RecipeSpec> = {
-  // 낳는 5쌍
+  // 낳는 5쌍 (birth)
+  // fusion_forest — 숲 (수+목)
   'fusion_forest': {
     small: { elem1: 'su', elem2: 'mok', minCount: 2 },
     large: { elem1: 'su', elem2: 'mok', minCount: 3 },
+    fusionType: 'birth',
   },
+  // fusion_spring — 샘 (금+수)
   'fusion_spring': {
     small: { elem1: 'geum', elem2: 'su', minCount: 2 },
     large: { elem1: 'geum', elem2: 'su', minCount: 3 },
+    fusionType: 'birth',
   },
+  // fusion_mine — 광맥 (토+금)
   'fusion_mine': {
     small: { elem1: 'to', elem2: 'geum', minCount: 2 },
     large: { elem1: 'to', elem2: 'geum', minCount: 3 },
+    fusionType: 'birth',
   },
+  // fusion_kiln — 옹기가마 (화+토)
   'fusion_kiln': {
     small: { elem1: 'hwa', elem2: 'to', minCount: 2 },
     large: { elem1: 'hwa', elem2: 'to', minCount: 3 },
+    fusionType: 'birth',
   },
+  // fusion_wildfire — 들불 (목+화) — 정본 복원: RECIPE_MAP 화+화는 오기, FUSION_COMBOS 기준 목+화
   'fusion_wildfire': {
-    small: { elem1: 'hwa', elem2: 'hwa', minCount: 3 },
-    large: { elem1: 'hwa', elem2: 'hwa', minCount: 5 },
+    small: { elem1: 'mok', elem2: 'hwa', minCount: 2 },
+    large: { elem1: 'mok', elem2: 'hwa', minCount: 3 },
+    fusionType: 'birth',
   },
-  // 벼리는 5쌍 (elem2=null → elem1 외 타 원소)
+  // 벼리는 5쌍 (hone) — 정본 극관계 원소 고정 (elem2=null 설계 버그 수정)
+  // fusion_keen — 벼림 (금극목: 금+목)
   'fusion_keen': {
-    small: { elem1: 'geum', elem2: null, minCount: 2 },
-    large: { elem1: 'geum', elem2: null, minCount: 3 },
+    small: { elem1: 'geum', elem2: 'mok', minCount: 2 },
+    large: { elem1: 'geum', elem2: 'mok', minCount: 3 },
+    fusionType: 'hone',
   },
+  // fusion_snipe — 담금질 (수극화: 수+화)
   'fusion_snipe': {
-    small: { elem1: 'su', elem2: null, minCount: 2 },
-    large: { elem1: 'su', elem2: null, minCount: 3 },
+    small: { elem1: 'su', elem2: 'hwa', minCount: 2 },
+    large: { elem1: 'su', elem2: 'hwa', minCount: 3 },
+    fusionType: 'hone',
   },
+  // fusion_harvest — 개간 (목극토: 목+토)
   'fusion_harvest': {
-    small: { elem1: 'mok', elem2: null, minCount: 2 },
-    large: { elem1: 'mok', elem2: null, minCount: 3 },
+    small: { elem1: 'mok', elem2: 'to', minCount: 2 },
+    large: { elem1: 'mok', elem2: 'to', minCount: 3 },
+    fusionType: 'hone',
   },
+  // fusion_pierce — 제방 (토극수: 토+수) — 특성 없음 (순수 화력) — 배치 1.5 스코프 밖
+  // 원소 변경: 금+수(구) → 토+수(정본, 토극수). fusion_spring(금+수)과 충돌 해소됨.
   'fusion_pierce': {
-    small: { elem1: 'geum', elem2: 'su', minCount: 2 },
-    large: { elem1: 'geum', elem2: 'su', minCount: 3 },
+    small: { elem1: 'to', elem2: 'su', minCount: 2 },
+    large: { elem1: 'to', elem2: 'su', minCount: 3 },
+    fusionType: 'hone',
   },
+  // fusion_temper — 주물 (화극금: 화+금) — 특성 없음 (순수 화력) — 배치 1.5 스코프 밖
   'fusion_temper': {
     small: { elem1: 'hwa', elem2: 'geum', minCount: 2 },
     large: { elem1: 'hwa', elem2: 'geum', minCount: 3 },
+    fusionType: 'hone',
   },
 }
 
@@ -734,48 +757,76 @@ export interface RecipeMultiplierTable {
   [recipeId: string]: number
 }
 
+/**
+ * Recipe (B) 사주별 배율 재산출 (2026-07-16 정본화 후 전면 재실측)
+ *
+ * 구조 정본화:
+ *  - fusion_wildfire: 화+화 → 목+화 (RECIPE_MAP 오기 수정)
+ *  - fusion_keen:     null → 금+목 (금극목 고정)
+ *  - fusion_snipe:    null → 수+화 (수극화 고정)
+ *  - fusion_harvest:  null → 목+토 (목극토 고정)
+ *  - fusion_pierce:   금+수 → 토+수 (토극수, elem1 변경)
+ *
+ * 재실측 성립률 (핸드 샘플링 10000핸드):
+ *  목화: wildfire 15.58% / 나머지 1.1~4.6% / keen 4.56% / snipe 4.64% / harvest 4.58%
+ *  금수: spring 15.87% / 나머지 1.1~4.7% / keen 4.55% / pierce 4.61%
+ *  토단일: mine 19.59% / pierce 19.53% / harvest 7.93% / kiln 7.85% / wildfire 0%
+ *
+ * 공식: M = max(lowerBound, min(5.0, 1 + K/(rate%)))
+ *  mokHwa/toDanil: K=0.8, lowerBound=2.0
+ *  geumSu:         K=0.65, lowerBound=1.6
+ *
+ * 정본화 후 구조 특성: 원소 특정으로 모든 성립률 < 20%
+ * → K 공식 전량 상한 5.0 cap (cap 초과 → 5.0 적용)
+ * → 예외: wildfire 토단일=0% → 기본값 3.0
+ */
 export const RECIPE_MULTIPLIER_BY_PRESET: Record<RecipePresetKey, RecipeMultiplierTable> = {
-  // 목화 — fusion_keen 45.84% → ×2.75, fusion_harvest 48.76% → ×2.64
+  // 목화 — K=0.8, lowerBound=2.0 (재실측 기반)
+  // fusion_keen — 벼림 (금극목: 금+목): 4.56% → cap 5.0
+  // fusion_harvest — 개간 (목극토: 목+토): 4.58% → cap 5.0
+  // fusion_snipe — 담금질 (수극화: 수+화): 4.64% → cap 5.0
+  // fusion_wildfire — 들불 (목+화): 15.58% → cap 5.0
   mokHwa: {
-    fusion_forest: 2.75,      // 4.61% → 5.08
-    fusion_spring: 2.64,      // 1.29% → 5.06
-    fusion_mine: 5.00,        // 1.29% → 5.06
-    fusion_kiln: 2.75,        // 4.61% → 5.08
-    fusion_wildfire: 5.00,    // 1.12% → 5.07
-    fusion_keen: 2.75,        // 45.84% → 2.75
-    fusion_snipe: 2.32,       // 31.78% → 2.52
-    fusion_harvest: 2.64,     // 48.76% → 2.64
-    fusion_pierce: 5.00,      // 0% → 3.0 (기본값)
-    fusion_temper: 5.00,      // 1.09% → 5.07
+    fusion_forest:   5.00,  // 4.63% → cap 5.0
+    fusion_spring:   5.00,  // 1.12% → cap 5.0
+    fusion_mine:     5.00,  // 1.12% → cap 5.0
+    fusion_kiln:     5.00,  // 4.59% → cap 5.0
+    fusion_wildfire: 5.00,  // 15.58% → 1+0.8/0.1558=6.13 → cap 5.0
+    fusion_keen:     5.00,  // 4.56% → cap 5.0
+    fusion_snipe:    5.00,  // 4.64% → cap 5.0
+    fusion_harvest:  5.00,  // 4.58% → cap 5.0
+    fusion_pierce:   5.00,  // 1.13% → cap 5.0
+    fusion_temper:   5.00,  // 4.54% → cap 5.0
   },
-  // 금수 — K=0.65 (2026-07-16 이든 확정: K 다이얼 1호 성공)
-  // 배경: K=0.8에서 40.6% 과열 → K=0.65로 하향 → 36.1% PASS (목표 36~38 착지)
-  // 공식: M = max(1.6, min(5.0, 1 + 0.65/(rate%)))
+  // 금수 — K=0.65, lowerBound=1.6 (2026-07-16 이든 확정 K 유지)
+  // 재실측: keen 76.8%(구)→4.55%(정본화). spring 15.87% 최고.
+  // 정본화 후 전량 cap 5.0 (keen 특정으로 성립률 대폭 하락)
   geumSu: {
-    fusion_forest: 5.00,      // 4.57% → cap 5.0
-    fusion_spring: 5.00,      // 15.55% → 1 + 0.65/0.1555 = 5.18 → cap 5.0
-    fusion_mine: 5.00,        // 4.62% → cap 5.0
-    fusion_kiln: 5.00,        // 1.11% → cap 5.0
-    fusion_wildfire: 3.00,    // 0% (발동 불가) — 기본값 3.0
-    fusion_keen: 1.85,        // 76.80% → 1 + 0.65/0.768 = 1.846 → max(1.6,1.85)
-    fusion_snipe: 2.66,       // 39.25% → 1 + 0.65/0.3925 = 2.656
-    fusion_harvest: 5.00,     // 12.59% → cap 5.0
-    fusion_pierce: 3.00,      // 0% (발동 불가) — 기본값 3.0
-    fusion_temper: 5.00,      // 3.47% → cap 5.0
+    fusion_forest:   5.00,  // 4.58% → cap 5.0
+    fusion_spring:   5.00,  // 15.87% → 1+0.65/0.1587=5.10 → cap 5.0
+    fusion_mine:     5.00,  // 4.60% → cap 5.0
+    fusion_kiln:     5.00,  // 1.10% → cap 5.0
+    fusion_wildfire: 5.00,  // 1.11% → cap 5.0
+    fusion_keen:     5.00,  // 4.55% → cap 5.0
+    fusion_snipe:    5.00,  // 4.66% → cap 5.0
+    fusion_harvest:  5.00,  // 1.11% → cap 5.0
+    fusion_pierce:   5.00,  // 4.61% → cap 5.0
+    fusion_temper:   5.00,  // 4.61% → cap 5.0
   },
-  // 토단일 — K=0.8 공식 단일 경로 (수동값 전량 제거, 2026-07-16 정화)
-  // 공식: M = max(2.0, min(5.0, 1 + 0.8/(rate%)))
+  // 토단일 — K=0.8, lowerBound=2.0 (재실측 기반)
+  // mine(토+금) 19.59% / pierce(토+수) 19.53% / harvest(목+토) 7.93% / kiln(화+토) 7.85%
+  // wildfire(목+화) 0% — 토단일 덱에 목 1장뿐, 목+화 동시 불성립
   toDanil: {
-    fusion_forest:   5.00,  // 0.09% → 889 → cap 5.0
-    fusion_spring:   5.00,  // 0.34% → 236 → cap 5.0
-    fusion_mine:     5.00,  // 19.63% → 5.08 → cap 5.0
-    fusion_kiln:     5.00,  // 7.98% → 11.03 → cap 5.0
-    fusion_wildfire: 3.00,  // 0% 발동불가 — 기본값
-    fusion_keen:     5.00,  // 13.44% → 6.95 → cap 5.0
-    fusion_snipe:    4.08,  // 25.96% → 4.08 (공식 K=0.8)
-    fusion_harvest:  5.00,  // 9.41% → 9.50 → cap 5.0
-    fusion_pierce:   3.00,  // 0% 발동불가 — 기본값
-    fusion_temper:   5.00,  // 0.09% → 889 → cap 5.0
+    fusion_forest:   5.00,  // 0.09% → cap 5.0
+    fusion_spring:   5.00,  // 0.34% → cap 5.0
+    fusion_mine:     5.00,  // 19.59% → 1+0.8/0.1959=5.08 → cap 5.0
+    fusion_kiln:     5.00,  // 7.85% → 1+0.8/0.0785=11.19 → cap 5.0
+    fusion_wildfire: 3.00,  // 0% 발동불가 — 기본값 3.0
+    fusion_keen:     5.00,  // 0.09% → cap 5.0
+    fusion_snipe:    5.00,  // 0.09% → cap 5.0
+    fusion_harvest:  5.00,  // 7.93% → 1+0.8/0.0793=11.09 → cap 5.0
+    fusion_pierce:   5.00,  // 19.53% → 1+0.8/0.1953=5.10 → cap 5.0
+    fusion_temper:   5.00,  // 0.09% → cap 5.0
   },
 }
 

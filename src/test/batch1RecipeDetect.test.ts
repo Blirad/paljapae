@@ -41,8 +41,9 @@ describe('배치 1.5: 레시피 검출 (comboRuleset: recipe)', () => {
     expect(typeof result === 'string' || result === null).toBe(true)
   })
 
-  it('들불(순불) 3장 레시피: 순수 화만 3장', () => {
-    const cards = [card('1', 'hwa'), card('2', 'hwa'), card('3', 'hwa')]
+  it('들불 3장 레시피: 목+화 2종 (정본화 2026-07-16 — 화+화 구 설계 폐기)', () => {
+    // 구버전: 화+화+화 → fusion_wildfire. 정본화 후: 목+화 조합이 정본
+    const cards = [card('1', 'mok'), card('2', 'hwa'), card('3', 'hwa')]
     const result = detectRecipe(cards)
     expect(result).toBe('fusion_wildfire')
   })
