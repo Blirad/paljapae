@@ -32,6 +32,8 @@ import {
   GEUK_BONUS_MULTIPLIER,
   SANG_PENALTY_MULTIPLIER,
   ANTI_GEUK_PENALTY,
+  YIKSEANG_MAP,
+  YIKSEANG_MULT,
   getCondenseMultiplier,
   YONGSIN_BONUS_MULTIPLIER,
   YONGSIN_CHAIN_MULTIPLIER,
@@ -75,6 +77,7 @@ function getAffinityMultiplier(repEl: Element, enemyEl: Element): number {
   if (GEUK_MAP[repEl] === enemyEl) return GEUK_BONUS_MULTIPLIER
   if (SANG_MAP[repEl] === enemyEl) return SANG_PENALTY_MULTIPLIER
   if (GEUK_MAP[enemyEl] === repEl) return ANTI_GEUK_PENALTY
+  if (YIKSEANG_MAP[repEl] === enemyEl) return YIKSEANG_MULT  // 역생: 적이 나를 생 → ×1.2
   return 1.0
 }
 
@@ -556,6 +559,12 @@ export interface FullCapSimOptions {
    * 미지정 시 RECIPE_GATHER5_MULT_A 사용 (기본값)
    */
   gather5MultOverride?: number
+  /**
+   * 대형 레시피 필살기 배율 직접 지정 (A벌=5.5, B벌=6.0)
+   * 지정 시 recipeMultipliers['_largeMult']에 주입됨
+   * 미지정 시 RECIPE_LARGE_MULT_A 사용 (기본값)
+   */
+  largeMultOverride?: number
 }
 
 /**
@@ -713,6 +722,10 @@ function createDeterministicState(
   // T20: gather5MultOverride 주입 (_gather5 키 — pokerHandJudge.ts에서 읽힘)
   if (opts?.gather5MultOverride !== undefined) {
     recipeMultipliers['_gather5'] = opts.gather5MultOverride
+  }
+  // 대형 레시피 필살기 배율 주입 (_largeMult 키 — pokerHandJudge.ts에서 읽힘)
+  if (opts?.largeMultOverride !== undefined) {
+    recipeMultipliers['_largeMult'] = opts.largeMultOverride
   }
 
   return {

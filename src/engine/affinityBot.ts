@@ -31,6 +31,8 @@ import {
   GEUK_BONUS_MULTIPLIER,
   SANG_PENALTY_MULTIPLIER,
   ANTI_GEUK_PENALTY,
+  YIKSEANG_MAP,
+  YIKSEANG_MULT,
   getCondenseMultiplier,
 } from './balance'
 
@@ -79,10 +81,11 @@ function getRepresentativeElement(cards: Card[]): Element {
  * - 동기/적이 나를 생 → ×1.0
  */
 function getAffinityMultiplier(repEl: Element, enemyEl: Element): number {
-  if (GEUK_MAP[repEl] === enemyEl) return GEUK_BONUS_MULTIPLIER    // ×1.5 극
+  if (GEUK_MAP[repEl] === enemyEl) return GEUK_BONUS_MULTIPLIER    // ×1.7 극
   if (SANG_MAP[repEl] === enemyEl) return SANG_PENALTY_MULTIPLIER  // ×0.5 생
   if (GEUK_MAP[enemyEl] === repEl) return ANTI_GEUK_PENALTY        // ×0.75 역극
-  return 1.0  // 동기 또는 적이 나를 생
+  if (YIKSEANG_MAP[repEl] === enemyEl) return YIKSEANG_MULT        // ×1.2 역생
+  return 1.0  // 동기
 }
 
 /**

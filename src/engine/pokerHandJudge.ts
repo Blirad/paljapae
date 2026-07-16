@@ -218,7 +218,11 @@ export function judgeCombo(
     }
   }
 
-  if (isFusionCombo(selectedCards)) {
+  // 배치 1.5-A-1 (2026-07-16): v3 융합 판정은 ruleset==='v3'에서만.
+  //   recipe 모드에서는 detectRecipe(위 3~5장 소형/대형) 단일 참조로 통일.
+  //   → 2장 융합·잡탕(2원소 비레시피)은 여기서 걸리지 않고 일반기(none)로 폴백.
+  //   (버그: 화1토1이 v3 옹기가마 fusion-birth로 판정되어 대응축 +120%/양자택일 노출)
+  if (COMBO_RULESET_VERSION !== 'recipe' && isFusionCombo(selectedCards)) {
     // 2. 융합 (낳는 or 벼리는)
     const [el1, el2] = Array.from(new Set(selectedCards.map((c) => c.element))) as Element[]
     const fusion = findFusionCombo(el1, el2)!

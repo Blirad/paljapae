@@ -26,7 +26,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useGameStore } from '../stores/gameStore'
-import { FLOOR_CONFIGS, GEUK_BONUS_MULTIPLIER, TRAIT_CONFIGS, FUSION_TRAIT_MAP, SANG_MAP, SANG_PENALTY_MULTIPLIER, ANTI_GEUK_PENALTY, getCondenseBonus, RELIC_DEFS, PLAYER_BASE_HP, NOURISH_EFFECT_COEFF, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW } from '../engine/balance'
+import { FLOOR_CONFIGS, GEUK_BONUS_MULTIPLIER, TRAIT_CONFIGS, FUSION_TRAIT_MAP, SANG_MAP, SANG_PENALTY_MULTIPLIER, ANTI_GEUK_PENALTY, YIKSEANG_MAP, YIKSEANG_MULT, getCondenseBonus, RELIC_DEFS, PLAYER_BASE_HP, NOURISH_EFFECT_COEFF, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW } from '../engine/balance'
 import type { RelicId } from '../engine/balance'
 // Phase 1.7: FLOOR_ENEMY_ELEMENTS는 floorConfig.enemyPrimaryElement로 대체됨
 import { useGameContext } from '../context/GameContext'
@@ -168,22 +168,24 @@ function getRepresentativeElement(cards: Array<{ element: Element }>): Element {
 }
 
 /** 상생상극 매트릭스 결과 타입 */
-type AffinityResult = 'geuk' | 'saeng' | 'anti-geuk' | 'neutral'
+type AffinityResult = 'geuk' | 'saeng' | 'anti-geuk' | 'yikseang' | 'neutral'
 
 /** 대표 원소(A)와 적 원소(B)의 상성 판정 */
 function calcAffinity(repEl: Element, enemyEl: Element): AffinityResult {
   if (GEUK_MAP[repEl] === enemyEl) return 'geuk'        // 내가 적을 극
   if (SANG_MAP[repEl] === enemyEl) return 'saeng'       // 내가 적을 생
   if (GEUK_MAP[enemyEl] === repEl) return 'anti-geuk'   // 적이 나를 극
+  if (YIKSEANG_MAP[repEl] === enemyEl) return 'yikseang' // 역생: 적이 나를 생 → 연료를 삼킨다
   return 'neutral'
 }
 
 /** 상성 배율 (balance.ts 값만 참조 — 소스 오브 트루스) */
 function getAffinityMultiplier(affinity: AffinityResult): number {
   switch (affinity) {
-    case 'geuk':      return GEUK_BONUS_MULTIPLIER    // ×1.5
+    case 'geuk':      return GEUK_BONUS_MULTIPLIER    // ×1.7
     case 'saeng':     return SANG_PENALTY_MULTIPLIER  // ×0.5
     case 'anti-geuk': return ANTI_GEUK_PENALTY        // ×0.75
+    case 'yikseang':  return YIKSEANG_MULT            // ×1.2
     default:          return 1.0
   }
 }
@@ -293,6 +295,7 @@ function buildPreviewText(
   const geuksEnemy = affinity === 'geuk'
   const saengEnemy = affinity === 'saeng'
   const enemyGeuksMe = affinity === 'anti-geuk'
+  const yikseangEnemy = affinity === 'yikseang'
 
   // 상태 ⑤: 연환 — T25: 3단 분해식 + 예상 데미지
   if (comboResult.type === 'ohang-yeonhwan') {
@@ -331,6 +334,9 @@ function buildPreviewText(
       const reason = ELEMENT_ANTI_REASON[enemyElement] ?? '막힌다'
       affinityLine = `${feHanja} → ${ELEMENT_LABELS[enemyElement]} ${reason} (-25%)`
       affinityLineColor = '#C63D2F'
+    } else if (affinity === 'yikseang') {
+      affinityLine = `${feHanja} → ${ELEMENT_LABELS[enemyElement]} 연료를 삼킨다 (×1.2)`
+      affinityLineColor = '#7BAFDE'
     } else {
       affinityLine = `${feHanja} → ${ELEMENT_LABELS[enemyElement]} 동기 (×1.0)`
       affinityLineColor = '#8B9BB4'
@@ -368,6 +374,9 @@ function buildPreviewText(
   } else if (enemyGeuksMe) {
     affinitySegment = '× 역극 0.75'
     line1Color = '#C63D2F'
+  } else if (yikseangEnemy) {
+    affinitySegment = '× 역생 1.2'
+    line1Color = '#7BAFDE'
   } else {
     affinitySegment = '× 동기 1.0'
   }
@@ -3874,9 +3883,9 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
             descentEnabled={getDevDescentEnabled()}
             attackCount={attackCount}
           />
-          {/* 작업 2-b: 레시피 내비게이터 간이판 (recipe 모드 한정) */}
+          {/* 작업 2-b / 배치 1.5-C: 레시피 내비게이터 접이식 (recipe 모드 한정) */}
           {getDevComboRuleset() === 'recipe' && (
-            <RecipeNavigator hand={hand} />
+            <RecipeNavigator hand={hand} selectedCards={selectedCards} />
           )}
           <button
             onClick={handleDiscardCards}

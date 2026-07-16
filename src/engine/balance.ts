@@ -4,6 +4,7 @@
  */
 
 import type { FloorConfig, Element } from '../types/game'
+import { getDevComboRuleset, getDevDescentEnabled } from './devSettings'
 
 /**
  * Phase 1.9 — 새 조합 체계
@@ -376,6 +377,18 @@ export const SANG_PENALTY_MULTIPLIER = 0.5
 /** 역극 배율: 적이 나를 극 (×0.75) */
 export const ANTI_GEUK_PENALTY = 0.75     // ×0.75 (스펙 v2)
 
+/** 역생(逆生) 매트릭스: 적이 나를 생 (내가 적의 자식 = 연료를 삼킨다). SANG_MAP의 역방향.
+ * 공격 원소 기준: 화→목·목→수·수→금·금→토·토→화 (attacker=enemy의 자식) */
+export const YIKSEANG_MAP: Record<string, string> = {
+  hwa: 'mok',
+  mok: 'su',
+  su: 'geum',
+  geum: 'to',
+  to: 'hwa',
+}
+/** 역생 배율: 적이 나를 생 → ×1.2 (이든 기정 승인 2026-07-16) — 양 룰셋 공통 상성층 */
+export const YIKSEANG_MULT = 1.2
+
 // 하위 호환 — 극 판정 배율 (deprecated, GEUK_BONUS_MULTIPLIER로 통일)
 /** @deprecated GEUK_BONUS_MULTIPLIER 사용 */
 export const YEOKGEUK_PENALTY_OLD = 0.5
@@ -637,16 +650,24 @@ export function getRandomFloorElements(rng: () => number): Array<{
  * 'v3': 기존 체계 (융합 10쌍 무명 "치기", 배율 미분화)
  * 'recipe': 신규 체계 (융합 10쌍 명명 레시피, 4계층 위계)
  * 배포: v3 기본값 (recipe는 배치 1.5 재기준선 게이트 후 활성화)
+ *
+ * 배치 1.5-A-1 (2026-07-16): 모듈 로드 시 프로토 스위치(getDevComboRuleset)로 초기화.
+ *   - 프로토 브라우저: ?ruleset=recipe → localStorage → 'recipe' (판정 경로 실제 진입)
+ *   - 프로덕션/SSR/테스트: window 없음 → 'v3' 기본값 (기존 동작 동일)
+ *   - export const 유지 → 테스트 vi.mock 오버라이드 그대로 호환
  */
-export const COMBO_RULESET_VERSION: 'v3' | 'recipe' = 'v3'
+export const COMBO_RULESET_VERSION: 'v3' | 'recipe' = getDevComboRuleset()
 
 /**
  * 강림제 활성화 플래그
  * false: 기존 체계 (용신 상시 ×1.3)
  * true: 강림제 (2~3회 슬롯에서만 ×2.0, 소멸 처리)
  * 배포: false 기본값 (배치 1.5 재기준선 게이트 후 활성화)
+ *
+ * 배치 1.5-A-1 (2026-07-16): 프로토 스위치(getDevDescentEnabled)로 초기화.
+ *   - 프로토: ?descent=true → true / 프로덕션·테스트: false 기본값
  */
-export const ENABLE_YONGSIN_DESCENT = false
+export const ENABLE_YONGSIN_DESCENT = getDevDescentEnabled()
 
 /**
  * 강림제 변형 모드 (시뮬 전용) — 2026-07-16 최신
@@ -677,8 +698,15 @@ export interface RecipeSpec {
 // 레시피 배율 (소형 3장 / 대형 5장)
 export const RECIPE_SMALL_BIRTH_MULT = 3.0   // 소형 낳는 (기존 birth 동일)
 export const RECIPE_SMALL_HONE_MULT = 3.5    // 소형 벼리는 (기존 hone 동일)
-export const RECIPE_LARGE_BIRTH_MULT = 3.5   // 대형 낳는 (소형보다 0.5 상향)
-export const RECIPE_LARGE_HONE_MULT = 4.0    // 대형 벼리는 (소형보다 0.5 상향)
+export const RECIPE_LARGE_BIRTH_MULT = 3.5   // 대형 낳는 (소형보다 0.5 상향) — fallback only
+export const RECIPE_LARGE_HONE_MULT = 4.0    // 대형 벼리는 (소형보다 0.5 상향) — fallback only
+
+// --- 대형 레시피 필살기 배율 (recipe 모드 한정, 소형 cap 5.0과 완전 분리)
+// 위계표: 소형 5.0 < 대형 5.5~6.0 < gather5 6.5 < 연환 8
+// "대형 = gather5 불가 사주의 필살기" 재정의
+// A벌: ×5.5 / B벌: ×6.0
+export const RECIPE_LARGE_MULT_A = 5.5
+export const RECIPE_LARGE_MULT_B = 6.0
 
 export const RECIPE_MAP: Record<string, RecipeSpec> = {
   // 낳는 5쌍 (birth)

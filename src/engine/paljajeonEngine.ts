@@ -9,7 +9,7 @@ import {
   GEUK_MAP,
   detectElementClash,
 } from './pokerHandJudge'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, MAX_DISCARD_PER_USE, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, OHANG_YEONHWAN_MULTIPLIER, SANGGWAN_MAX_PER_RUN, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, EMBER_DURATION, EMBER_MULTIPLIER, BASE_PURIFICATION_DAMAGE, ENABLE_YONGSIN_DESCENT, DESCENT_VARIANT, DESCENT_GLOW_FULL_MULT, DESCENT_GLOW_AFTERGLOW_MULT } from './balance'
+import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, MAX_DISCARD_PER_USE, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, OHANG_YEONHWAN_MULTIPLIER, SANGGWAN_MAX_PER_RUN, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, EMBER_DURATION, EMBER_MULTIPLIER, BASE_PURIFICATION_DAMAGE, ENABLE_YONGSIN_DESCENT, DESCENT_VARIANT, DESCENT_GLOW_FULL_MULT, DESCENT_GLOW_AFTERGLOW_MULT, COMBO_RULESET_VERSION, YIKSEANG_MAP, YIKSEANG_MULT } from './balance'
 // 폐기된 dual/wait3 변형 상수 — balance.ts에서 삭제됨. 코드 경로 유지용 하드코딩.
 const DESCENT_DUAL_SLOT_MULT = 2.0    // B-2 dual: 슬롯 적중 배율 (폐기)
 const DESCENT_DUAL_NONSLOT_MULT = 1.3 // B-2 dual: 비슬롯 배율 (폐기)
@@ -272,8 +272,11 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
       if (!isPurified) {
         damage = Math.round(damage * ANTI_GEUK_PENALTY)      // ×0.75
       }
+    } else if (YIKSEANG_MAP[repEl] === floorEnemyEl) {
+      // 역생: 적이 나를 생 → ×1.2 (배치 1.5-A-2, 이든 기정 승인 2026-07-16)
+      damage = Math.round(damage * YIKSEANG_MULT)
     }
-    // 동기(同氣) 또는 적이 나를 생 → ×1.0 (변화 없음)
+    // 동기(同氣) → ×1.0 (변화 없음)
   }
 
   // R8 복원: 부 기운 극 보너스 ×1.25 (주 기운 극 미적용 시, 카드가 부 기운을 극하면 적용)
@@ -1021,6 +1024,9 @@ export function getCondenseAvailability(
   comboName: string | undefined,
   finishingElement: string,
 ): 'great' | null {
+  // A-1 (2026-07-16): recipe 모드에서는 v3 응축(옹기가마 효과) 경로 봉쇄.
+  // recipe 모드의 옹기가마는 fusion_kiln 레시피로 판정되므로 v3 응축 판정 참조 제거.
+  if (COMBO_RULESET_VERSION === 'recipe') return null
   if (finishingElement !== 'to') return null
   if (!comboName) return null
   if (comboName === '옹기가마') return 'great'
