@@ -33,6 +33,12 @@ export const GATHER_MULTIPLIERS: Record<number, number> = {
   5: 5.0,
 }
 
+// --- T20: recipe 모드 전용 gather 필살기 계층 배율 (gather5)
+// ⚠️ GATHER_MULTIPLIERS[5]=5.0 은 v3 모드용 — 직접 수정 금지
+// recipe 모드에서만 아래 값 사용 (pokerHandJudge.ts 내 COMBO_RULESET_VERSION 분기)
+export const RECIPE_GATHER5_MULT_A = 6.5  // 1벌 (A안)
+export const RECIPE_GATHER5_MULT_B = 7.0  // 2벌 (B안)
+
 // --- 융합 10쌍 정의
 
 /** 융합 조합 타입 */
@@ -742,31 +748,34 @@ export const RECIPE_MULTIPLIER_BY_PRESET: Record<RecipePresetKey, RecipeMultipli
     fusion_pierce: 5.00,      // 0% → 3.0 (기본값)
     fusion_temper: 5.00,      // 1.09% → 5.07
   },
-  // 금수 — fusion_keen 76.80% → ×2.04, fusion_snipe 39.25% → ×3.04
+  // 금수 — K=0.65 (2026-07-16 이든 확정: K 다이얼 1호 성공)
+  // 배경: K=0.8에서 40.6% 과열 → K=0.65로 하향 → 36.1% PASS (목표 36~38 착지)
+  // 공식: M = max(1.6, min(5.0, 1 + 0.65/(rate%)))
   geumSu: {
-    fusion_forest: 2.37,      // 4.57% → 5.09
-    fusion_spring: 2.35,      // 15.55% → 3.38
-    fusion_mine: 2.48,        // 4.62% → 5.07
-    fusion_kiln: 4.92,        // 1.11% → 5.81 → cap 5.0
-    fusion_wildfire: 5.00,    // 0% → 3.0 (기본값)
-    fusion_keen: 2.04,        // 76.80% → 2.04 ← 문제!
-    fusion_snipe: 3.04,       // 39.25% → 3.04
-    fusion_harvest: 2.72,     // 12.59% → 3.84
-    fusion_pierce: 5.00,      // 0% → 3.0 (기본값)
-    fusion_temper: 2.64,      // 3.47% → 4.31
+    fusion_forest: 5.00,      // 4.57% → cap 5.0
+    fusion_spring: 5.00,      // 15.55% → 1 + 0.65/0.1555 = 5.18 → cap 5.0
+    fusion_mine: 5.00,        // 4.62% → cap 5.0
+    fusion_kiln: 5.00,        // 1.11% → cap 5.0
+    fusion_wildfire: 3.00,    // 0% (발동 불가) — 기본값 3.0
+    fusion_keen: 1.85,        // 76.80% → 1 + 0.65/0.768 = 1.846 → max(1.6,1.85)
+    fusion_snipe: 2.66,       // 39.25% → 1 + 0.65/0.3925 = 2.656
+    fusion_harvest: 5.00,     // 12.59% → cap 5.0
+    fusion_pierce: 3.00,      // 0% (발동 불가) — 기본값 3.0
+    fusion_temper: 5.00,      // 3.47% → cap 5.0
   },
-  // 토단일 — fusion_mine 19.63% → ×5.08, fusion_keen 13.44% → ×6.95
+  // 토단일 — K=0.8 공식 단일 경로 (수동값 전량 제거, 2026-07-16 정화)
+  // 공식: M = max(2.0, min(5.0, 1 + 0.8/(rate%)))
   toDanil: {
-    fusion_forest: 6.32,      // 0.09% → 889 → cap 5.0 (기본값)
-    fusion_spring: 5.35,      // 0.34% → 236 → cap 5.0 (기본값)
-    fusion_mine: 5.08,        // 19.63% → 5.08
-    fusion_kiln: 3.31,        // 7.98% → 4.04
-    fusion_wildfire: 5.00,    // 0% → 3.0 (기본값)
-    fusion_keen: 6.95,        // 13.44% → 6.95 → cap 5.0 (기본값)
-    fusion_snipe: 3.82,       // 25.96% → 3.09
-    fusion_harvest: 3.87,     // 9.41% → 3.85
-    fusion_pierce: 5.00,      // 0% → 3.0 (기본값)
-    fusion_temper: 6.32,      // 0.09% → 889 → cap 5.0 (기본값)
+    fusion_forest:   5.00,  // 0.09% → 889 → cap 5.0
+    fusion_spring:   5.00,  // 0.34% → 236 → cap 5.0
+    fusion_mine:     5.00,  // 19.63% → 5.08 → cap 5.0
+    fusion_kiln:     5.00,  // 7.98% → 11.03 → cap 5.0
+    fusion_wildfire: 3.00,  // 0% 발동불가 — 기본값
+    fusion_keen:     5.00,  // 13.44% → 6.95 → cap 5.0
+    fusion_snipe:    4.08,  // 25.96% → 4.08 (공식 K=0.8)
+    fusion_harvest:  5.00,  // 9.41% → 9.50 → cap 5.0
+    fusion_pierce:   3.00,  // 0% 발동불가 — 기본값
+    fusion_temper:   5.00,  // 0.09% → 889 → cap 5.0
   },
 }
 

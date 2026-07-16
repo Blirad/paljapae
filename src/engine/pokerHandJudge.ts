@@ -21,6 +21,7 @@ import {
   RECIPE_SMALL_HONE_MULT,
   RECIPE_LARGE_BIRTH_MULT,
   RECIPE_LARGE_HONE_MULT,
+  RECIPE_GATHER5_MULT_A,
 } from './balance'
 
 // 오행 상극: A가 B를 극한다
@@ -222,7 +223,11 @@ export function judgeCombo(
     // 3. 기운 모으기
     const element = selectedCards[0].element
     const count = selectedCards.length
-    const multiplier = GATHER_MULTIPLIERS[count] ?? 1
+    // T20: recipe 모드에서 gather5(5장) 필살기 계층 배율 override
+    // ⚠️ GATHER_MULTIPLIERS[5]=5.0 은 v3 모드 동결값 — 직접 수정 금지
+    const multiplier = (COMBO_RULESET_VERSION === 'recipe' && count === 5)
+      ? RECIPE_GATHER5_MULT_A
+      : (GATHER_MULTIPLIERS[count] ?? 1)
     const hasHarmony = hasEumyangHarmony(selectedCards)
     const harmonyBonus = hasHarmony ? EUMYANG_HARMONY_BONUS : 0
     const totalScoreBase = Math.round(baseScore * multiplier)
