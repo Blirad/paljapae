@@ -31,12 +31,12 @@ describe('Phase 1.9 QA — 새 조합 체계 + 응축 + 극/반극', () => {
       expect(result.multiplier).toBe(2.5)
     })
 
-    it('4장 → 3.5배', () => {
+    it('4장 → 4.0배', () => {
       const result = judgeCombo([
-        makeCard('to', 'yang', 2), makeCard('to', 'yin', 3), 
+        makeCard('to', 'yang', 2), makeCard('to', 'yin', 3),
         makeCard('to', 'yang', 4), makeCard('to', 'yin', 5),
       ])
-      expect(result.multiplier).toBe(3.5)
+      expect(result.multiplier).toBe(4.0)  // GATHER_MULTIPLIERS[4] (B1-6: 3.5→4.0)
     })
 
     it('5장 → 5.0배', () => {

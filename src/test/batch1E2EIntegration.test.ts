@@ -57,8 +57,8 @@ describe('E2E: detectRecipe → judgeCombo() 경유 (recipe 모드)', () => {
     const result = judgeCombo(cards)
     expect(result.name).toBe('fusion_mine')
     expect(result.type).toBe('fusion-birth')
-    expect(result.multiplier).toBe(3.5)  // RECIPE_LARGE_BIRTH_MULT
-    expect(result.totalScore).toBe(Math.round(result.baseScore * 3.5))
+    expect(result.multiplier).toBe(5.5)  // RECIPE_LARGE_MULT_A (A벌 정본, 9e76a4d)
+    expect(result.totalScore).toBe(Math.round(result.baseScore * 5.5))
   })
 
   it('4장 잡탕(레시피 분기 미진입)은 none 또는 gather로 폴백됨', () => {

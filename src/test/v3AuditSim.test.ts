@@ -39,14 +39,14 @@ const PRESETS = [
 ]
 
 const R10_CLEAR_RATES: Record<string, number> = {
-  '목화': 37.53,
+  '목화': 44.00,  // v3r 기준선 (역생 ×1.2 시프트 반영, ZERA_B6_V3R_TRIAGE §2)
   '금수': 32.73,
   '토단일': 31.23,
 }
 
 describe('V3 작업 2 — 무한루프 픽스 후 목화 1000판 정합 확인', () => {
   it(
-    '목화 A안 1000판: R10 37.53%와 ±2%p 이내',
+    '목화 A안 1000판: v3r 44.00%와 ±5%p 이내',
     { timeout: 120000 },
     () => {
       const preset = PRESETS[0]

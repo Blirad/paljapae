@@ -72,7 +72,7 @@ describe('Phase 1.9 조합 판정: 기운 모으기', () => {
     expect(result.multiplier).toBe(2.5)
   })
 
-  it('같은 기운 4장 → 기운 모으기 (배율 ×3.5)', () => {
+  it('같은 기운 4장 → 기운 모으기 (배율 ×4.0)', () => {
     const cards = [
       makeCard('to', 'yang', 2),
       makeCard('to', 'yin', 3),
@@ -81,7 +81,7 @@ describe('Phase 1.9 조합 판정: 기운 모으기', () => {
     ]
     const result = judgeHand(cards)
     expect(result.rank).toBe('gather')
-    expect(result.multiplier).toBe(3.5)
+    expect(result.multiplier).toBe(4.0)  // GATHER_MULTIPLIERS[4] (B1-6: 3.5→4.0)
   })
 
   it('같은 기운 5장 → 기운 모으기 (배율 ×5.0)', () => {

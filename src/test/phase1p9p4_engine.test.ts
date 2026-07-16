@@ -204,9 +204,9 @@ describe('수정 3: 10종 융합 특성 발동', () => {
     const state = makeState({ hand: [toCard, geumCard], deck, playsLeft: 3 })
     const handBefore = state.hand.length
     const newState = playCards(state, [toCard.id, geumCard.id])
-    // 채굴: 덱에서 1장 추가 드로우 (리필 후 +1)
-    // 2장 플레이 → 2장 리필 + 채굴 1장 추가
-    expect(newState.hand.length).toBe(handBefore - 2 + 2 + 1)
+    // 채굴: floor(baseValue/MINING_DRAW_DIVISOR)장 추가 드로우 = floor((5+5)/5) = 2
+    // 2장 플레이 → 2장 리필 + 채굴 2장 추가
+    expect(newState.hand.length).toBe(handBefore - 2 + 2 + 2)
     expect(newState.lastTraitTriggered).toBe('mining')
   })
 

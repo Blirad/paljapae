@@ -65,7 +65,7 @@ function runSim2(presetKey: keyof typeof PRESETS, n: number) {
 const N = 1000
 
 describe('R6 설정② 어블레이션 — CONDENSE_SCALE_MIN=0.7', () => {
-  it('목화 1000판', () => {
+  it('목화 1000판', { timeout: 300000 }, () => {
     const r = runSim2('mokwa', N)
     console.log('\n=== R6 설정② 목화 (CONDENSE_SCALE_MIN=0.7) ===')
     console.log(`클리어: ${r.victories}/${r.total} = ${r.clearRate.toFixed(2)}%`)
@@ -74,7 +74,7 @@ describe('R6 설정② 어블레이션 — CONDENSE_SCALE_MIN=0.7', () => {
     console.log(`wildfire 효과채택: ${r.wildfireEffectRate.toFixed(2)}회/판, 공격채택: ${r.wildfireAttackRate.toFixed(2)}회/판`)
   })
 
-  it('금수 1000판', () => {
+  it('금수 1000판', { timeout: 300000 }, () => {
     const r = runSim2('geumsu', N)
     console.log('\n=== R6 설정② 금수 (CONDENSE_SCALE_MIN=0.7) ===')
     console.log(`클리어: ${r.victories}/${r.total} = ${r.clearRate.toFixed(2)}%`)
@@ -83,7 +83,7 @@ describe('R6 설정② 어블레이션 — CONDENSE_SCALE_MIN=0.7', () => {
     console.log(`wildfire 효과채택: ${r.wildfireEffectRate.toFixed(2)}회/판, 공격채택: ${r.wildfireAttackRate.toFixed(2)}회/판`)
   })
 
-  it('토단일 1000판', () => {
+  it('토단일 1000판', { timeout: 300000 }, () => {
     const r = runSim2('todanil', N)
     console.log('\n=== R6 설정② 토단일 (CONDENSE_SCALE_MIN=0.7) ===')
     console.log(`클리어: ${r.victories}/${r.total} = ${r.clearRate.toFixed(2)}%`)

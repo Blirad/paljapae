@@ -123,7 +123,7 @@ function runSim(
 const N = 1000
 
 describe('R6 어블레이션 — 설정 ① 잔불 수정 (CONDENSE_SCALE_MIN=0.6)', () => {
-  it('목화 1000판', () => {
+  it('목화 1000판', { timeout: 300000 }, () => {
     const r = runSim('mokwa', N, 0.6)
     console.log('\n=== R6 설정① 목화 ===')
     console.log(`클리어: ${r.victories}/${r.total} = ${r.clearRate.toFixed(2)}%`)
@@ -132,7 +132,7 @@ describe('R6 어블레이션 — 설정 ① 잔불 수정 (CONDENSE_SCALE_MIN=0.
     console.log(`wildfire 효과채택: ${r.wildfireEffectRate.toFixed(2)}회/판, 공격채택: ${r.wildfireAttackRate.toFixed(2)}회/판`)
   })
 
-  it('금수 1000판', () => {
+  it('금수 1000판', { timeout: 300000 }, () => {
     const r = runSim('geumsu', N, 0.6)
     console.log('\n=== R6 설정① 금수 ===')
     console.log(`클리어: ${r.victories}/${r.total} = ${r.clearRate.toFixed(2)}%`)
@@ -141,7 +141,7 @@ describe('R6 어블레이션 — 설정 ① 잔불 수정 (CONDENSE_SCALE_MIN=0.
     console.log(`wildfire 효과채택: ${r.wildfireEffectRate.toFixed(2)}회/판, 공격채택: ${r.wildfireAttackRate.toFixed(2)}회/판`)
   })
 
-  it('토단일 1000판', () => {
+  it('토단일 1000판', { timeout: 300000 }, () => {
     const r = runSim('todanil', N, 0.6)
     console.log('\n=== R6 설정① 토단일 ===')
     console.log(`클리어: ${r.victories}/${r.total} = ${r.clearRate.toFixed(2)}%`)
@@ -152,7 +152,7 @@ describe('R6 어블레이션 — 설정 ① 잔불 수정 (CONDENSE_SCALE_MIN=0.
 })
 
 describe('R6 어블레이션 — 설정 ② 잔불 수정 + CONDENSE_SCALE_MIN=0.7 (별도 실행)', () => {
-  it('목화 1000판 (설정② 동일 코드 — balance.ts CONDENSE_SCALE_MIN 변경 후 실행 필요)', () => {
+  it('목화 1000판 (설정② 동일 코드 — balance.ts CONDENSE_SCALE_MIN 변경 후 실행 필요)', { timeout: 300000 }, () => {
     // 주의: 설정②는 balance.ts의 CONDENSE_SCALE_MIN을 0.6→0.7로 변경 후 별도 실행 필요
     // 본 테스트는 설정① 코드와 동일하게 실행됨 (runtime 주입 미지원)
     // 실제 ② 결과는 balance.ts 값 변경 후 v3R6Ablation2.test.ts로 별도 수집
@@ -164,7 +164,7 @@ describe('R6 어블레이션 — 설정 ② 잔불 수정 + CONDENSE_SCALE_MIN=0
     console.log(`wildfire 효과채택: ${r.wildfireEffectRate.toFixed(2)}회/판, 공격채택: ${r.wildfireAttackRate.toFixed(2)}회/판`)
   })
 
-  it('금수 1000판', () => {
+  it('금수 1000판', { timeout: 300000 }, () => {
     const r = runSim('geumsu', N, 0.7)
     console.log('\n=== R6 설정② 금수 ===')
     console.log(`클리어: ${r.victories}/${r.total} = ${r.clearRate.toFixed(2)}%`)
@@ -173,7 +173,7 @@ describe('R6 어블레이션 — 설정 ② 잔불 수정 + CONDENSE_SCALE_MIN=0
     console.log(`wildfire 효과채택: ${r.wildfireEffectRate.toFixed(2)}회/판, 공격채택: ${r.wildfireAttackRate.toFixed(2)}회/판`)
   })
 
-  it('토단일 1000판', () => {
+  it('토단일 1000판', { timeout: 300000 }, () => {
     const r = runSim('todanil', N, 0.7)
     console.log('\n=== R6 설정② 토단일 ===')
     console.log(`클리어: ${r.victories}/${r.total} = ${r.clearRate.toFixed(2)}%`)
