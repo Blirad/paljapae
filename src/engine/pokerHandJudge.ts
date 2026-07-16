@@ -161,13 +161,18 @@ export function judgeCombo(
   if (COMBO_RULESET_VERSION === 'recipe' && (selectedCards.length >= 3 && selectedCards.length <= 5)) {
     const recipeId = detectRecipe(selectedCards)
     if (recipeId !== null) {
-      // α 스펙: 촉매(elem1) 정확히 1장 + 연료(elem2) 2~4장 판별 (E2E 지문)
+      // α 정합화 (2026-07-16): 촉매(elem1)/연료(elem2) 고정 + 뒷문 폐쇄
       const recipeEntry = RECIPE_MAP[recipeId]
       const smallSpec = recipeEntry.small
       const largeSpec = recipeEntry.large
       const catalystCount = selectedCards.filter(c => c.element === smallSpec.elem1).length
       const fuelCount = selectedCards.filter(c => c.element === smallSpec.elem2).length
       const isSmall = catalystCount === 1 && fuelCount >= 2 && fuelCount <= 4
+      const isLarge = catalystCount === 2 && fuelCount === 3
+      // 뒷문 폐쇄: 소형/대형 중 하나도 아니면 일반기로 폴백
+      if (!isSmall && !isLarge) {
+        // no-op: fall through to isFusionCombo / isGatherCombo / none
+      } else {
       const spec = isSmall ? smallSpec : largeSpec
       // fusionType 필드 기반 판별 (elem2 고정 후 null 판별 불가 — 2026-07-16 정본화)
       const isHone = recipeEntry.fusionType === 'hone'
@@ -205,6 +210,7 @@ export function judgeCombo(
         finishingElement: spec.elem1,
         description: `${isSmall ? '소형' : '대형'} 레시피 — ${recipeId}`,
       }
+      } // closes else (isSmall || isLarge)
     }
   }
 
@@ -389,12 +395,13 @@ export { GEUK_MAP }
 /**
  * 레시피 검출 함수 (배치 1.5)
  * comboRuleset이 'recipe'일 때만 동작
- * 3장: X원소 1장 + Y원소 2장 (또는 Y1+X2)
- * 5장: X원소 2장 + Y원소 3장 (또는 Y2+X3)
+ * 3장: elem1(촉매) 1장 + elem2(연료) 2장
+ * 5장: elem1(촉매) 2장 + elem2(연료) 3장
  *
  * 2026-07-16 정본화: elem2 null 분기 제거 (모든 레시피 elem2 고정).
+ * 2026-07-16 α정합화: 양방향 제거 — 촉매 = elem1 고정. 역방향(elem2가 촉매) 불성립.
  * E2E 지문: elementCounts[elem1] 및 elementCounts[elem2] 조건으로 특정 원소 쌍만 성립.
- *   예) fusion_keen: geum+mok만 성립 (geum+su는 fusion_spring이므로 불성립).
+ *   예) fusion_keen: geum(촉매)+mok(연료)만 성립. mok2+geum1(역방향) 불성립.
  */
 export function detectRecipe(combo: Card[]): string | null {
   if (COMBO_RULESET_VERSION !== 'recipe') return null
@@ -417,15 +424,13 @@ export function detectRecipe(combo: Card[]): string | null {
     const { elem1, elem2, minCount } = spec
 
     if (combo.length === 3) {
-      // 3장: elem1 1장+elem2 2장 또는 elem2 1장+elem1 2장
+      // 3장: 촉매(elem1) 정확히 1장 + 연료(elem2) 2장 (α정합화 — 역방향 불성립)
       if (elementCounts[elem1] >= 1 && elementCounts[elem2] >= minCount) return recipeId
-      if (elementCounts[elem2] >= 1 && elementCounts[elem1] >= minCount) return recipeId
     }
 
     if (combo.length === 5) {
-      // 5장: elem1 2장+elem2 3장 또는 elem2 2장+elem1 3장
+      // 5장: 촉매(elem1) 정확히 2장 + 연료(elem2) 3장 (α정합화 — 역방향 불성립)
       if (elementCounts[elem1] >= 2 && elementCounts[elem2] >= minCount) return recipeId
-      if (elementCounts[elem2] >= 2 && elementCounts[elem1] >= minCount) return recipeId
     }
   }
 
