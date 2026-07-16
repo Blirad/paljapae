@@ -26,7 +26,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useGameStore } from '../stores/gameStore'
-import { FLOOR_CONFIGS, GEUK_BONUS_MULTIPLIER, TRAIT_CONFIGS, FUSION_TRAIT_MAP, SANG_MAP, SANG_PENALTY_MULTIPLIER, ANTI_GEUK_PENALTY, YIKSEANG_MAP, YIKSEANG_MULT, getCondenseBonus, RELIC_DEFS, PLAYER_BASE_HP, NOURISH_EFFECT_COEFF, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW } from '../engine/balance'
+import { FLOOR_CONFIGS, GEUK_BONUS_MULTIPLIER, TRAIT_CONFIGS, FUSION_TRAIT_MAP, SANG_MAP, SANG_PENALTY_MULTIPLIER, ANTI_GEUK_PENALTY, YIKSEANG_MAP, YIKSEANG_MULT, getCondenseBonus, RELIC_DEFS, PLAYER_BASE_HP, NOURISH_EFFECT_COEFF, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, MAX_DISCARD_PER_USE } from '../engine/balance'
 import type { RelicId } from '../engine/balance'
 // Phase 1.7: FLOOR_ENEMY_ELEMENTS는 floorConfig.enemyPrimaryElement로 대체됨
 import { useGameContext } from '../context/GameContext'
@@ -2050,6 +2050,13 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
   // 버리기 처리
   const handleDiscardCards = useCallback(() => {
     if (selectedCards.length === 0 || discardsLeft <= 0) return
+    // 4장 차단: 1회 버리기 최대 MAX_DISCARD_PER_USE장 — 초과 선택 시 엔진 리젝 전에 UI에서 사전 차단
+    // (유저가 엔진 리젝/throw 경로에 도달할 일이 없도록)
+    if (selectedCards.length > MAX_DISCARD_PER_USE) {
+      setGimmickDialogue(`버리기는 한 번에 ${MAX_DISCARD_PER_USE}장까지만 가능하다.`)
+      setTimeout(() => setGimmickDialogue(null), getDuration(1500))
+      return
+    }
     audioManager.cardDiscardSwish()
     console.log('[SFX] 카드 버리기 스윽', { count: selectedCards.length, timestamp: Date.now() })
     // 5-D CRIT-2 fix: 탁수령(水) 버리기 징벌 대사 — 적 주 기운이 su인 층에서 발동
@@ -2382,6 +2389,36 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           100% { opacity: 0; transform: translateX(-50%) translateY(-12px); }
         }
       `}</style>
+
+      {/* 룰셋 상시 배지 — 좌상단 고정 (재개조건 2a) */}
+      {(() => {
+        const ruleset = getDevComboRuleset()
+        const descentOn = getDevDescentEnabled()
+        const isRecipe = ruleset === 'recipe'
+        const label = isRecipe
+          ? `레시피 시험판 · 강림 ${descentOn ? 'ON' : 'OFF'}`
+          : '팔자 v3r'
+        return (
+          <div style={{
+            position: 'fixed',
+            top: '8px',
+            left: '8px',
+            zIndex: 250,
+            padding: '2px 6px',
+            borderRadius: '3px',
+            backgroundColor: isRecipe ? 'rgba(60,40,10,0.82)' : 'rgba(22,19,15,0.75)',
+            border: isRecipe ? '1px solid rgba(217,164,65,0.55)' : '1px solid rgba(106,101,96,0.4)',
+            fontSize: '9px',
+            letterSpacing: '0.04em',
+            color: isRecipe ? '#D9A441' : '#6A6560',
+            whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+            userSelect: 'none',
+          }}>
+            {label}
+          </div>
+        )
+      })()}
 
       {/* Phase 1.9.5: 특성 최초 발동 툴팁 (10종 융합 특성, B-4 응축 툴팁 대체) */}
       {traitTooltip && (() => {
