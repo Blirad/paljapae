@@ -52,7 +52,7 @@ export default function YongsinDescentBanner({
   // 배너 표시 조건
   const showPending = slotArrived && pendingDescent
   // B-3 잔광: waitWindowRemaining 존재하고 pendingDescent가 false인 경우 (대기창 만료)
-  const showAfterglow = !pendingDescent && (descentState.waitWindowRemaining ?? 0) === 0 && usedCount === 0 && slotArrived === false
+  const showAfterglow = !pendingDescent && descentState.waitWindowRemaining === 0 && usedCount === 0 && slotArrived === false
 
   if (!showPending && !showAfterglow && usedCount === 0) return null
 
