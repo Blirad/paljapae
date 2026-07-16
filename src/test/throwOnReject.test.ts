@@ -1,29 +1,22 @@
 /**
  * throwOnReject.test.ts
- * V3 작업 1: 무한루프 픽스 — 리젝 시 throw 표면화 검증
+ * discard-throw 정식 이관 — 4장 throw + discardsLeft 불변 검증
  *
- * 지시서(ZERA_BALANCE_V3_DISPATCH_20260714.md) 작업 1 DoD:
- *   fullCapBot 내부에서 discardCards가 리젝(MAX_DISCARD_PER_USE=3 초과)되면
- *   throw가 발생하는지 확인.
- *
- * 구현 방식:
- *   discardCards(state, 4장 id) → 엔진이 조용히 무시(return state) → 봇 루프에서 리젝 감지 → throw
- *   simulateFullCapRun을 직접 호출하는 대신, 내부 리젝 감지 로직을
- *   단위 수준에서 검증한다.
- *
- *   구체적으로:
- *     1. discardCards에 4장을 전달하면 상태가 변하지 않음을 확인 (엔진 리젝 검증)
- *     2. 봇 루프의 리젝 감지 조건을 별도 함수로 추출하여 단위 검증
- *     3. 실제 simulateFullCapRun이 내부적으로 throw하는 경로를 mock 없이 검증
+ * 검증 항목:
+ *   1. 4장 throw 조건: discard 시도 시 현 핸드 사이즈 > 3 → throw 발생
+ *   2. discardsLeft 불변: throw 발생해도 discardsLeft 값 변경 안 함 (보존)
+ *   3. 정상 discard (3장 이하): 정상 작동 + discardsLeft 1 감소
+ *   4. discardsLeft 재부팅 로직: 층 전환(advanceToNextFloor) 시 BASE_DISCARDS로 복구
+ *   5. MAX_DISCARD_PER_USE 상수 보호 (값 3 고정)
  */
 
 import { describe, it, expect } from 'vitest'
 import {
   discardCards,
-  playCards,
   createInitialGameState,
+  advanceToNextFloor,
 } from '../engine/paljajeonEngine'
-import { MAX_DISCARD_PER_USE } from '../engine/balance'
+import { MAX_DISCARD_PER_USE, BASE_DISCARDS } from '../engine/balance'
 import type { Card, GameState } from '../types/game'
 
 // ─── 헬퍼 ─────────────────────────────────────────────────────────────────────
@@ -50,29 +43,17 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
   return { ...base, ...overrides }
 }
 
-// ─── 리젝 감지 조건 단위 검증 ──────────────────────────────────────────────────
+// ─── 테스트 1: 4장 throw 조건 ──────────────────────────────────────────────────
 
-/**
- * 봇 루프에서 사용하는 리젝 판별 함수 (V3 작업 1)
- * discardCards 리젝: hand.length / discardsLeft / deck.length 모두 동일
- */
-function isDiscardRejected(prev: GameState, next: GameState): boolean {
-  return (
-    next.hand.length === prev.hand.length &&
-    next.discardsLeft === prev.discardsLeft &&
-    next.deck.length === prev.deck.length
-  )
-}
-
-describe('V3 작업 1 — 무한루프 픽스: 리젝 감지 단위 검증', () => {
-  it('1. discardCards에 4장 전달 시 엔진이 상태를 변경하지 않음 (리젝)', () => {
+describe('discard-throw — 4장 throw 조건', () => {
+  it('1. discardCards에 4장 전달 시 throw 발생 (/거부/ 메시지 포함)', () => {
     expect(MAX_DISCARD_PER_USE).toBe(3)
 
     const cards = [
-      makeCard('mok', 3, 'reject-a'),
-      makeCard('hwa', 3, 'reject-b'),
-      makeCard('to', 3, 'reject-c'),
-      makeCard('geum', 3, 'reject-d'),  // 4번째 — MAX_DISCARD_PER_USE 초과
+      makeCard('mok', 3, 'throw-a'),
+      makeCard('hwa', 3, 'throw-b'),
+      makeCard('to', 3, 'throw-c'),
+      makeCard('geum', 3, 'throw-d'),  // 4번째 — MAX_DISCARD_PER_USE 초과
     ]
     const state = makeState({
       hand: cards,
@@ -81,25 +62,44 @@ describe('V3 작업 1 — 무한루프 픽스: 리젝 감지 단위 검증', () 
       playsLeft: 4,
     })
 
-    const prevHandLen = state.hand.length
-    const prevDiscardsLeft = state.discardsLeft
-    const prevDeckLen = state.deck.length
-
-    // 4장 버리기 시도 → 엔진 리젝 (silent fail)
-    const next = discardCards(state, cards.map(c => c.id))
-
-    // 리젝 = 상태 불변
-    expect(next.hand.length).toBe(prevHandLen)
-    expect(next.discardsLeft).toBe(prevDiscardsLeft)
-    expect(next.deck.length).toBe(prevDeckLen)
+    // 4장 버리기 시도 → 엔진 throw (8e444af clamp 회귀 근절)
+    expect(() => discardCards(state, cards.map(c => c.id))).toThrow(/거부/)
   })
+})
 
-  it('2. isDiscardRejected: 리젝된 상태 쌍에서 true 반환', () => {
+// ─── 테스트 2: discardsLeft 불변 ───────────────────────────────────────────────
+
+describe('discard-throw — discardsLeft 불변', () => {
+  it('2. throw 발생 시 discardsLeft 값 보존 (감소 없음)', () => {
     const cards = [
-      makeCard('mok', 3, 'rej2-a'),
-      makeCard('hwa', 3, 'rej2-b'),
-      makeCard('to', 3, 'rej2-c'),
-      makeCard('geum', 3, 'rej2-d'),
+      makeCard('mok', 3, 'inv-a'),
+      makeCard('hwa', 3, 'inv-b'),
+      makeCard('to', 3, 'inv-c'),
+      makeCard('geum', 3, 'inv-d'),
+    ]
+    const state = makeState({
+      hand: cards,
+      deck: makeDeck(10),
+      discardsLeft: 3,
+    })
+
+    const prevDiscardsLeft = state.discardsLeft
+    try { discardCards(state, cards.map(c => c.id)) } catch { /* expected */ }
+
+    // throw 이전에 state 변경 없음 (순수 함수 — 원본 state 불변)
+    expect(state.discardsLeft).toBe(prevDiscardsLeft)
+    expect(state.hand.length).toBe(cards.length)
+  })
+})
+
+// ─── 테스트 3: 정상 discard (3장 이하) ────────────────────────────────────────
+
+describe('discard-throw — 정상 discard', () => {
+  it('3. 3장 이하 버리기 정상 작동: discardsLeft 1 감소 + 패 교체', () => {
+    const cards = [
+      makeCard('mok', 3, 'ok-a'),
+      makeCard('hwa', 3, 'ok-b'),
+      makeCard('to', 3, 'ok-c'),
     ]
     const state = makeState({
       hand: cards,
@@ -108,58 +108,52 @@ describe('V3 작업 1 — 무한루프 픽스: 리젝 감지 단위 검증', () 
     })
 
     const next = discardCards(state, cards.map(c => c.id))
-    expect(isDiscardRejected(state, next)).toBe(true)
+    expect(next.discardsLeft).toBe(2)           // 1 감소
+    expect(next.hand.length).toBe(cards.length) // 교체로 동수 유지
   })
 
-  it('3. isDiscardRejected: 정상 버리기 후 false 반환', () => {
-    const cards3 = [
-      makeCard('mok', 3, 'ok3-a'),
-      makeCard('hwa', 3, 'ok3-b'),
-      makeCard('to', 3, 'ok3-c'),
-    ]
+  it('3b. 1장 버리기: throw 없이 정상 처리', () => {
+    const card = makeCard('su', 5, 'one-a')
     const state = makeState({
-      hand: cards3,
+      hand: [card, makeCard('geum', 2, 'extra-1')],
       deck: makeDeck(10),
-      discardsLeft: 3,
+      discardsLeft: 2,
     })
 
-    // 3장 버리기 — 정상 처리
-    const next = discardCards(state, cards3.map(c => c.id))
-    expect(isDiscardRejected(state, next)).toBe(false)
-    expect(next.discardsLeft).toBe(2)
-  })
-
-  it('4. playCards 리젝 판별 조건: 적 HP / playsLeft / hand 모두 동일 = 리젝', () => {
-    // 실제로 playCards는 리젝 반환을 하지 않고 항상 상태를 변경하므로
-    // 이 테스트는 리젝 판별 조건의 논리적 정확성을 검증한다.
-    // "same enemyHp AND same playsLeft AND same hand.length" 조합이면 리젝으로 판단.
-
-    // 인위적으로 prev/next가 동일한 시나리오를 만들어 조건 검증
-    const card = makeCard('mok', 5, 'play-rej-a')
-    const state = makeState({
-      hand: [card],
-      deck: makeDeck(10),
-      playsLeft: 3,
-    })
-
-    // 동일 상태를 "prev"/"next"로 사용하여 리젝 조건 검증
-    const isPlayRejected = (prev: GameState, next: GameState): boolean =>
-      next.enemyHp === prev.enemyHp &&
-      next.playsLeft === prev.playsLeft &&
-      next.hand.length === prev.hand.length &&
-      next.discardsLeft === prev.discardsLeft
-
-    // 실제로 playCards는 playsLeft를 1 감소시키므로 동일하지 않음 → false
-    const next = playCards(state, [card.id])
-    expect(isPlayRejected(state, next)).toBe(false)
-
-    // 동일 상태 쌍이면 리젝으로 판단
-    expect(isPlayRejected(state, state)).toBe(true)
+    expect(() => discardCards(state, [card.id])).not.toThrow()
+    const next = discardCards(state, [card.id])
+    expect(next.discardsLeft).toBe(1)
   })
 })
 
-describe('V3 작업 1 — MAX_DISCARD_PER_USE 상수 보호', () => {
-  it('MAX_DISCARD_PER_USE === 3 (4장 버리기 리젝 기준)', () => {
+// ─── 테스트 4: discardsLeft 재부팅 (층 전환) ──────────────────────────────────
+
+describe('discard-throw — discardsLeft 재부팅', () => {
+  it('4. 층 전환(advanceToNextFloor) 시 discardsLeft BASE_DISCARDS로 복구', () => {
+    // 1개만 남은 상태로 층 전환
+    const state = makeState({
+      discardsLeft: 1,
+      currentFloor: 1,
+      floorsCleared: 1,
+      hand: makeDeck(8),
+      deck: makeDeck(12),
+      discardPile: [],
+      playsLeft: 0,
+      phase: 'floor-reward',
+      isVictory: false,
+      enemyHp: 0,
+    })
+
+    const next = advanceToNextFloor(state)
+    // 층 전환 후 discardsLeft는 BASE_DISCARDS(=3)로 리셋
+    expect(next.discardsLeft).toBe(BASE_DISCARDS)
+  })
+})
+
+// ─── 테스트 5: MAX_DISCARD_PER_USE 상수 보호 ──────────────────────────────────
+
+describe('discard-throw — 상수 보호', () => {
+  it('5. MAX_DISCARD_PER_USE === 3 (고정값 회귀 방지)', () => {
     expect(MAX_DISCARD_PER_USE).toBe(3)
   })
 })

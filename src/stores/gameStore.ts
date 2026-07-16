@@ -154,8 +154,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
   discardSelectedCards: () => {
     const state = get()
     if (state.selectedCards.length === 0 || state.discardsLeft <= 0) return
-    const newState = discardCards(state, state.selectedCards)
-    set({ ...newState, previewResult: null, selectedCards: [] })
+    try {
+      const newState = discardCards(state, state.selectedCards)
+      set({ ...newState, previewResult: null, selectedCards: [] })
+    } catch {
+      // UI가 MAX_DISCARD_PER_USE 초과를 사전 차단하므로 여기 도달 불가
+      // 방어 코드: throw 발생 시 상태 유지 (사용자에게 오류 노출 방지)
+    }
   },
 
   proceedToNextFloor: (rewardIndex: number, selectedRelicId?: string) => {

@@ -227,6 +227,7 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
 
   // R10: 3종 융합 특성 상태 (상성 계산·강공 계산보다 먼저 선언)
   let newPurifiedElements = state.purifiedElements ?? []
+  let newPurificationImmune = state.purificationImmune ?? false
   let newKeenActive = state.keenActive ?? false
   let newMirrorShieldActive = state.mirrorShieldActive ?? false
 
@@ -585,14 +586,17 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
   // 플레이한 카드는 버림더미로 이동 (리필 전 먼저 계산)
   let newDiscardPile = [...state.discardPile, ...playedCards]
   let reshuffled = false
-  if (newDeck.length < playedCards.length) {
+  // 보충식(수렴 불변): 공격 후 핸드를 항상 HAND_SIZE로 리필 = max(0, 8−잔여)
+  // (1:1 드로우 회귀 복원 — 진행 불능 방지 + 채굴 스택의 8장 기준선 확보)
+  const refillCount = Math.max(0, HAND_SIZE - remainHand.length)
+  if (newDeck.length < refillCount) {
     // 덱 부족: 버림더미(방금 사용한 카드 포함)를 섞어 덱 재구성 (카드 상태 유지)
     const allCards = [...newDeck, ...newDiscardPile]
     newDeck = shuffleDeck(allCards)
     reshuffled = true
   }
   const drawnCards: Card[] = []
-  for (let i = 0; i < playedCards.length && newDeck.length > 0; i++) {
+  for (let i = 0; i < refillCount && newDeck.length > 0; i++) {
     drawnCards.push(newDeck.shift()!)
   }
   let newHand = [...remainHand, ...drawnCards]
@@ -636,14 +640,12 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
           case 'mining': {
             // R5 (balance-v3 §3): 채굴 — 투입값 × synergyMultiplier 기반 드로우
             // floor(투입값 × synergyMultiplier / MINING_DRAW_DIVISOR)장, 최대 MINING_MAX_DRAW
-            // 핸드 상한(HAND_SIZE) 초과 금지 — 남은 핸드 여유분까지만 드로우
+            // 리필된 8장 위에 추가 스택 (핸드 상한 미적용) → 최대 HAND_SIZE+MINING_MAX_DRAW(=11)장
             const baseValueMining = playedCards.reduce((sum, c) => sum + c.value, 0)
-            const handRoom = Math.max(0, HAND_SIZE - newHand.length)
             const drawCount = Math.min(
               Math.floor(baseValueMining * synergyMultiplier / MINING_DRAW_DIVISOR),
               MINING_MAX_DRAW,
               newDeck.length,
-              handRoom,
             )
             const drawnInMining: Card[] = []
             for (let i = 0; i < drawCount; i++) {
@@ -687,6 +689,8 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
               const allElements: Element[] = ['mok', 'hwa', 'to', 'geum', 'su']
               const newlyPurified = allElements.filter(el => !(state.purifiedElements ?? []).includes(el))
               newPurifiedElements = [...allElements]
+              // 투입값 충분(≥임계) → 출정 내 기세 죽음 재발 면역 부여
+              newPurificationImmune = true
               // 해제된 원소 수 × 기본 데미지 × synergyMultiplier
               purificationBonusDamage = Math.round(newlyPurified.length * BASE_PURIFICATION_DAMAGE * synergyMultiplier)
             } else if (floorEnemyEl) {
@@ -811,6 +815,7 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
     emberTurnsLeft: newEmberTurnsLeft,
     // R10: 3종 융합 특성 상태
     purifiedElements: newPurifiedElements,
+    purificationImmune: newPurificationImmune,
     keenActive: newKeenActive,
     mirrorShieldActive: newMirrorShieldActive,
     // Phase 1.9.4: 덱 재순환 배너용 플래그
@@ -830,10 +835,14 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
 export function discardCards(state: GameState, cardIds: string[]): GameState {
   if (state.discardsLeft <= 0) return state
 
-  // B1-4: 1회 버리기당 최대 3장 제한
-  const limitedIds = cardIds.slice(0, MAX_DISCARD_PER_USE)
-  const discarded = state.hand.filter(c => limitedIds.includes(c.id))
-  const remainHand = state.hand.filter(c => !limitedIds.includes(c.id))
+  // B1-4: 1회 버리기당 최대 3장 초과 시 throw (명시적 거부)
+  // UI는 4장 선택 자체를 사전 차단(BattleScreen L2053)하므로 유저가 이 경로에 도달할 일은 없다.
+  // 봇은 이 throw를 상위에서 catch. 조용한 return state 금지 (8e444af clamp 회귀 근절).
+  if (cardIds.length > MAX_DISCARD_PER_USE) {
+    throw new Error(`discardCards 거부: ${cardIds.length}장 > MAX_DISCARD_PER_USE(${MAX_DISCARD_PER_USE})`)
+  }
+  const discarded = state.hand.filter(c => cardIds.includes(c.id))
+  const remainHand = state.hand.filter(c => !cardIds.includes(c.id))
 
   // Phase 1.9.4: 덱 부족 시 재순환 (버리기도 동일 불변 조건 적용)
   const newDiscardPile = [...state.discardPile, ...discarded]
