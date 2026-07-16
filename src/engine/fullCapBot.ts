@@ -550,6 +550,12 @@ export interface FullCapSimOptions {
    * true: trait별 기대값 비교 후 효과/공격 선택
    */
   enableEffectMode?: boolean
+  /**
+   * T20: recipe 모드 gather5 배율 직접 지정 (A벌=6.5, B벌=7.0)
+   * 지정 시 recipeMultipliers['_gather5']에 주입됨
+   * 미지정 시 RECIPE_GATHER5_MULT_A 사용 (기본값)
+   */
+  gather5MultOverride?: number
 }
 
 /**
@@ -702,7 +708,11 @@ function createDeterministicState(
   let recipeMultipliers: Record<string, number> = {}
   if (opts?.elementDist) {
     const preset = identifyRecipePreset(opts.elementDist)
-    recipeMultipliers = RECIPE_MULTIPLIER_BY_PRESET[preset]
+    recipeMultipliers = { ...RECIPE_MULTIPLIER_BY_PRESET[preset] }
+  }
+  // T20: gather5MultOverride 주입 (_gather5 키 — pokerHandJudge.ts에서 읽힘)
+  if (opts?.gather5MultOverride !== undefined) {
+    recipeMultipliers['_gather5'] = opts.gather5MultOverride
   }
 
   return {
@@ -1010,11 +1020,33 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
       if (typeof globalThis !== 'undefined') {
         if (!(globalThis as any).__recipeLog) (globalThis as any).__recipeLog = []
         if (comboResult.name && comboResult.name.startsWith('fusion_')) {
+          // 소형/대형 구분 — description 기반 ('소형 레시피 —' or '대형 레시피 —')
+          const recipeSize = comboResult.description.includes('소형') ? 'small' : 'large'
           ;(globalThis as any).__recipeLog.push({
             recipeId: comboResult.name,
             damage: comboResult.totalScore,
-            size: 'actual',
+            size: recipeSize,
           })
+        }
+        // gather 딜 로그 (작업 A: gather 유형별 데미지 집계용)
+        if (comboResult.type === 'gather') {
+          if (!(globalThis as any).__gatherLog) (globalThis as any).__gatherLog = []
+          ;(globalThis as any).__gatherLog.push({
+            gatherKey: `gather${selectedCards.length}`,
+            damage: comboResult.totalScore,
+          })
+        }
+        // yeonhwan 딜 로그
+        if (comboResult.type === 'ohang-yeonhwan') {
+          if (!(globalThis as any).__yeonhwanLog) (globalThis as any).__yeonhwanLog = []
+          ;(globalThis as any).__yeonhwanLog.push({
+            damage: comboResult.totalScore,
+          })
+        }
+        // none/일반기 로그
+        if (comboResult.type === 'none') {
+          if (!(globalThis as any).__noneLog) (globalThis as any).__noneLog = []
+          ;(globalThis as any).__noneLog.push({ damage: comboResult.totalScore })
         }
       }
       if (comboResult.type === 'fusion-birth' || comboResult.type === 'fusion-hone') {

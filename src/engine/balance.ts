@@ -772,12 +772,13 @@ export interface RecipeMultiplierTable {
  *  금수: spring 15.87% / 나머지 1.1~4.7% / keen 4.55% / pierce 4.61%
  *  토단일: mine 19.59% / pierce 19.53% / harvest 7.93% / kiln 7.85% / wildfire 0%
  *
- * 공식: M = max(lowerBound, min(5.0, 1 + K/(rate%)))
- *  mokHwa/toDanil: K=0.8, lowerBound=2.0
- *  geumSu:         K=0.65, lowerBound=1.6
+ * 공식: M = max(lowerBound, min(cap, 1 + K/(rate%)))
+ *  mokHwa/toDanil: K=0.8, lowerBound=2.0, cap=5.0
+ *  geumSu:         K=0.65, lowerBound=1.6, cap=5.0 (복원 — cap 다이얼 휴면 2026-07-16)
  *
  * 정본화 후 구조 특성: 원소 특정으로 모든 성립률 < 20%
- * → K 공식 전량 상한 5.0 cap (cap 초과 → 5.0 적용)
+ * → mokHwa/toDanil: K 공식 전량 상한 5.0 cap
+ * → geumSu: cap 5.0 복원 — cap 다이얼 휴면 (배율 bottleneck 아님, 역효과 실측)
  * → 예외: wildfire 토단일=0% → 기본값 3.0
  */
 export const RECIPE_MULTIPLIER_BY_PRESET: Record<RecipePresetKey, RecipeMultiplierTable> = {
@@ -798,9 +799,10 @@ export const RECIPE_MULTIPLIER_BY_PRESET: Record<RecipePresetKey, RecipeMultipli
     fusion_pierce:   5.00,  // 1.13% → cap 5.0
     fusion_temper:   5.00,  // 4.54% → cap 5.0
   },
-  // 금수 — K=0.65, lowerBound=1.6 (2026-07-16 이든 확정 K 유지)
+  // 금수 — K=0.65, lowerBound=1.6, cap=5.0 (복원 2026-07-16 이든 판정)
   // 재실측: keen 76.8%(구)→4.55%(정본화). spring 15.87% 최고.
-  // 정본화 후 전량 cap 5.0 (keen 특정으로 성립률 대폭 하락)
+  // cap 5.5/6.0 실험: 역효과(상향할수록 클리어율 하락) — cap 다이얼 휴면 판정.
+  // 대형 레시피 소형/대형 배율 분리 처방 이든 판정 대기.
   geumSu: {
     fusion_forest:   5.00,  // 4.58% → cap 5.0
     fusion_spring:   5.00,  // 15.87% → 1+0.65/0.1587=5.10 → cap 5.0
