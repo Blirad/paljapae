@@ -41,6 +41,29 @@ import PassiveSlot, { PassiveActivationBanner } from './PassiveSlot'
 import { usePassiveAnimation } from '../hooks/usePassiveAnimation'
 import type { Passive } from '../types/passive'
 import ComboGuide from './ComboGuide'
+import RecipeNavigator from './RecipeNavigator'
+import YongsinDescentBanner from './YongsinDescentBanner'
+import { getDevComboRuleset, getDevDescentEnabled } from '../engine/devSettings'
+
+// 레시피 ID → 한글명 (발주서 2-c 정본 명명)
+// 낳는(연료): 숲·샘·광맥·옹기가마·들불 / 벼리는(촉매): 벼림·개간·제방·담금질·주물
+const RECIPE_KO_NAMES: Record<string, string> = {
+  fusion_forest:   '숲',
+  fusion_spring:   '샘',
+  fusion_mine:     '광맥',
+  fusion_kiln:     '옹기가마',
+  fusion_wildfire: '들불',
+  fusion_keen:     '벼림',
+  fusion_harvest:  '개간',
+  fusion_pierce:   '제방',
+  fusion_snipe:    '담금질',
+  fusion_temper:   '주물',
+}
+
+/** recipe ID → 한글명 변환 (v3 모드 이름은 그대로 통과) */
+function resolveComboKoName(comboName: string): string {
+  return RECIPE_KO_NAMES[comboName] ?? comboName
+}
 
 const ELEMENT_LABELS: Record<string, string> = {
   mok: '木', hwa: '火', to: '土', geum: '金', su: '水',
@@ -367,10 +390,12 @@ function buildPreviewText(
   }
 
   // T25: fusion-birth / fusion-hone — 3단 분해식
+  // 2-c 정본 명명: recipe ID → 한글명 변환 (v3 모드 기존 이름은 그대로 통과)
+  const comboDisplayName = resolveComboKoName(comboName)
   const feAttrLabel = `${ELEMENT_KO[fe]}속성`
   const condenseStr = finalDamageWithCondense !== null ? ` → 응축 후 ${finalDamageWithCondense}` : ''
-  const line1 = `${comboName} (${feAttrLabel}) · 기본 ${baseScore} × ${mult} ${affinitySegment} = 예상 ${baseDamage}${condenseStr}`
-  const traitLine = getFusionTraitLine(comboName)  // T18: 융합 특성 1줄
+  const line1 = `${comboDisplayName} (${feAttrLabel}) · 기본 ${baseScore} × ${mult} ${affinitySegment} = 예상 ${baseDamage}${condenseStr}`
+  const traitLine = getFusionTraitLine(comboName)  // T18: 융합 특성 1줄 (ID 기준 그대로)
 
   return { line1, line2: null, line1Color, yongsinLabel, traitLine }
 }
@@ -1184,6 +1209,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     reshuffled,
     favorableElement,
     relics,
+    yongsinDescent,
     toggleCardSelect,
     playSelectedCards,
     discardSelectedCards,
@@ -3842,6 +3868,16 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
             position: 'relative',
           }}
         >
+          {/* 작업 2-d: 용신 강림 배너 최소판 (강림 ON 시만 표시) */}
+          <YongsinDescentBanner
+            descentState={yongsinDescent}
+            descentEnabled={getDevDescentEnabled()}
+            attackCount={attackCount}
+          />
+          {/* 작업 2-b: 레시피 내비게이터 간이판 (recipe 모드 한정) */}
+          {getDevComboRuleset() === 'recipe' && (
+            <RecipeNavigator hand={hand} />
+          )}
           <button
             onClick={handleDiscardCards}
             disabled={selectedCards.length === 0 || discardsLeft <= 0 || isInputLocked}

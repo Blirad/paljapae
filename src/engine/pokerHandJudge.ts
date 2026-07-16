@@ -19,9 +19,9 @@ import {
   RECIPE_MAP,
   RECIPE_SMALL_BIRTH_MULT,
   RECIPE_SMALL_HONE_MULT,
-  RECIPE_LARGE_BIRTH_MULT,
-  RECIPE_LARGE_HONE_MULT,
+  // RECIPE_LARGE_BIRTH_MULT / RECIPE_LARGE_HONE_MULT: fallback only, 대형은 _largeMult 키로 주입됨
   RECIPE_GATHER5_MULT_A,
+  RECIPE_LARGE_MULT_A,
 } from './balance'
 
 // 오행 상극: A가 B를 극한다
@@ -177,15 +177,19 @@ export function judgeCombo(
       // fusionType 필드 기반 판별 (elem2 고정 후 null 판별 불가 — 2026-07-16 정본화)
       const isHone = recipeEntry.fusionType === 'hone'
 
-      // 사주별 배율 주입: recipeMultipliers가 존재하면 우선, 없으면 기본값
+      // 사주별 배율 주입 — 소형/대형 분리 (대형 필살기 승격)
+      // 소형: recipeMultipliers[recipeId] (cap 5.0) 또는 기본값
+      // 대형: recipeMultipliers['_largeMult'] (A벌/B벌 주입) 또는 RECIPE_LARGE_MULT_A
+      // v3 모드에서는 이 분기 진입하지 않으므로 대형 무풍 보장
       let multiplier: number
-      if (recipeMultipliers?.[recipeId] !== undefined) {
+      if (isLarge) {
+        // 대형 5장 — 별도 상수 (소형 cap 5.0과 완전 분리)
+        multiplier = recipeMultipliers?.['_largeMult'] ?? RECIPE_LARGE_MULT_A
+      } else if (recipeMultipliers?.[recipeId] !== undefined) {
         multiplier = recipeMultipliers[recipeId]
       } else {
-        // Fallback to global constants
-        multiplier = isSmall
-          ? (isHone ? RECIPE_SMALL_HONE_MULT : RECIPE_SMALL_BIRTH_MULT)
-          : (isHone ? RECIPE_LARGE_HONE_MULT : RECIPE_LARGE_BIRTH_MULT)
+        // Fallback to global constants (소형 전용)
+        multiplier = isHone ? RECIPE_SMALL_HONE_MULT : RECIPE_SMALL_BIRTH_MULT
       }
 
       const totalScore = Math.round(baseScore * multiplier)
