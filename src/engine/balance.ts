@@ -687,6 +687,54 @@ export const DESCENT_VARIANT: DescentVariant = 'slot'
 export const DESCENT_GLOW_FULL_MULT = 1.8     // 풀강림 (슬롯+용신)
 export const DESCENT_GLOW_AFTERGLOW_MULT = 1.25 // 잔광 (대기창 만료 시)
 
+// ─── v4 재기준선: HP 레버 (이든 판정 2026-07-17, 옵션 A 채택) ──────────────────
+/**
+ * v4 HP 스케일 상수 — 균일 스케일 기준값 (v4 분기 전용)
+ *
+ * 설계 원칙:
+ *  - 레버 = 적 HP 단일 (적 공격력·반격 불변)
+ *  - v4 모드에서만 적용 — v3/recipe FLOOR_CONFIGS HP 불변
+ *  - 균일 스케일 우선 시도 후 격차 ≤15%p 미달 시 층별 차등 도입
+ *
+ * 역산 추정 과정 (초기 → 실측 이진 탐색):
+ *  Step 1: 초기 추정 V4_HP_SCALE = 2.0
+ *    - 근거: v4 §2+§3 적용 후 클리어율 76~81% (v3 HP 동결 시)
+ *      목표 25~40%, 4~5장 배율 v3 대비 +28~57% → HP ×2.0 역산
+ *    - 실측: 목화1.7% / 금수3.0% / 토단일0.1% — 클리어율 과소 (HP 과대)
+ *  Step 2: V4_HP_SCALE = 1.3
+ *    - 실측: 목화42.3% / 금수42.7% / 토단일27.0% — 격차15.7%p (≤15% FAIL)
+ *  Step 3: V4_HP_SCALE = 1.35 (균일)
+ *    - 실측: 목화34.6% / 금수36.4% / 토단일20.7% — 격차15.7%p 고정, 토단일 25% 미달
+ *  결론: 균일 스케일로 격차 15.7%p 고정 → 층별 차등 도입 필요
+ *    원인: 토단일은 4층(보스: 금+목)에서 토가 금을 생(×0.5 피해)하여 화력 대폭 감소
+ *           → 4층 HP 하향 + 1~3층 HP 상향으로 격차 조정
+ *
+ * ⚠️ 역산 예측은 초기 추정용 — 1000판×3프리셋 실측이 이긴다
+ */
+export const V4_HP_SCALE = 1.35  // 균일 기준값 (참조용 — 실제 적용은 V4_FLOOR_HP_TABLE)
+
+/**
+ * v4 층별 HP 테이블 — 층별 차등 (균일 스케일 격차 15.7%p 초과로 차등 전환)
+ *
+ * 차등 근거:
+ *  - 토단일이 4층(보스: 금+목)에서 토→금 상생(×0.5) + damage-reduction 30% 이중 패널티
+ *  - 4층 HP 하향(×1.15): 토단일 4층 클리어율 상승
+ *  - 1~3층 HP 상향(×1.40): 목화/금수 클리어율 하향 → 격차 축소
+ *  - v3 HP 원본 불변 보장 — additive 정의
+ *
+ * 설계값:
+ *  - 1층: 220 × 1.40 = 308
+ *  - 2층: 445 × 1.40 = 623
+ *  - 3층: 680 × 1.40 = 952
+ *  - 4층: 540 × 1.15 = 621
+ */
+export const V4_FLOOR_HP_TABLE: Record<number, number> = {
+  1: Math.round(220 * 1.40),  // 308
+  2: Math.round(445 * 1.40),  // 623
+  3: Math.round(680 * 1.40),  // 952
+  4: Math.round(540 * 1.15),  // 621
+}
+
 // ─── G3 v4: 자유 성립·투입 장수 위계 배율 (이든 판정 2026-07-17) ─────────────
 /**
  * v4 계단식 배율표 (투입 장수 → 배율)
@@ -703,6 +751,93 @@ export const V4_TIER_MULTIPLIERS: Record<number, number> = {
   3: 3.0,
   4: 4.0,
   5: 5.5,
+}
+
+// ─── G3 v4 §3: 황금비 곡선 — 비율 보정 계수 (이든 판정 2026-07-17) ────────────
+/**
+ * 장수별 정점 조합 (촉매수, 연료수)
+ * 정점 = 황금비(연료:촉매 ≈ 3:2)를 장수 제약 내에서 최대한 근사한 조합.
+ * 2장: 보정 면제 (항상 ×1.0)
+ * 3장: 촉1+연2 (연료:촉매 = 2:1)
+ * 4장: 촉2+연2 (균등 — 짝수 장은 균형이 정점)
+ * 5장: 촉2+연3 (연료:촉매 = 3:2, 황금비 정확 일치)
+ */
+export const V4_PEAKS: Record<number, { catPeak: number; fuelPeak: number }> = {
+  3: { catPeak: 1, fuelPeak: 2 },
+  4: { catPeak: 2, fuelPeak: 2 },
+  5: { catPeak: 2, fuelPeak: 3 },
+}
+
+/** 비율 보정 계수 값 */
+export const V4_RATIO_CORRECTION = {
+  peak: 1.0,   // 정점: ×1.0
+  step1: 0.85, // 한 계단 이탈: ×0.85
+  step2: 0.7,  // 두 계단 이탈(바닥): ×0.70
+} as const
+
+/**
+ * v4 §3 황금비 곡선 — 이탈 계단 계산
+ *
+ * 계단 정의:
+ *   d = cat - catPeak  (총 장수 고정이므로 fuel 편차의 음수)
+ *   d > 0: 촉매 과다(연료 부족) / d < 0: 연료 과다(촉매 부족) / d = 0: 정점
+ *
+ *   이탈 크기는 정점 비율(catPeak:fuelPeak)로 정규화하여 계단을 산정한다.
+ *   - 촉매 과다(d > 0): steps_raw = ceil(d × catPeak / fuelPeak)
+ *   - 연료 과다(d < 0): steps_raw = ceil(|d| × fuelPeak / catPeak)
+ *
+ *   단, 정점이 균등 비율(catPeak === fuelPeak, 4장에서 발생)인 경우
+ *   촉매 과다 방향 계단에 1을 가산한다. 이는 균등 정점에서 촉매가 늘면
+ *   황금비(3:2)에서 역방향으로 이탈하는 효과가 가중되기 때문이다.
+ *
+ *   계단 상한: 2 (바닥 이하 없음)
+ *
+ * 옹기가마 기준 전표 검증 (촉=화/연=토):
+ *   화1토1(2장)=면제×1.0 / 화1토2(3장정점)=×1.0 / 화2토1(3장)=×0.85
+ *   화1토3(4장)=×0.85 / 화2토2(4장정점)=×1.0 / 화3토1(4장)=×0.70
+ *   화1토4(5장)=×0.70 / 화2토3(5장정점)=×1.0 / 화3토2(5장)=×0.85 / 화4토1(5장)=×0.70
+ *
+ * @param cat   촉매 장수
+ * @param fuel  연료 장수
+ * @param N     총 투입 장수 (= cat + fuel)
+ * @returns 이탈 계단 수 (0=정점, 1=한 계단, 2=두 계단/바닥)
+ */
+export function getV4RatioCorrectionSteps(cat: number, fuel: number, N: number): number {
+  if (N < 3) return 0  // 2장: 면제
+  const peak = V4_PEAKS[N]
+  if (!peak) return 0
+  const { catPeak, fuelPeak } = peak
+  const d = cat - catPeak
+  if (d === 0) return 0
+
+  let stepsRaw: number
+  if (d > 0) {
+    // 촉매 과다
+    stepsRaw = Math.ceil(d * catPeak / fuelPeak)
+    // 균등 정점(4장: catPeak===fuelPeak)에서 촉매 과다 시 1 계단 추가
+    if (catPeak === fuelPeak) stepsRaw += 1
+  } else {
+    // 연료 과다
+    stepsRaw = Math.ceil((-d) * fuelPeak / catPeak)
+  }
+  return Math.min(2, stepsRaw)
+}
+
+/**
+ * v4 §3 황금비 곡선 — 비율 보정계수 반환
+ * E2E 지문: const correction = V4_RATIO_CORRECTION[...] (단일 테이블 참조)
+ *
+ * @param cat   촉매 장수
+ * @param fuel  연료 장수
+ * @param N     총 투입 장수 (= cat + fuel)
+ * @returns 비율 보정계수 (1.0 / 0.85 / 0.70)
+ */
+export function getV4RatioCorrection(cat: number, fuel: number, N: number): number {
+  if (N < 3) return V4_RATIO_CORRECTION.peak  // 2장 면제
+  const steps = getV4RatioCorrectionSteps(cat, fuel, N)
+  if (steps === 0) return V4_RATIO_CORRECTION.peak
+  if (steps === 1) return V4_RATIO_CORRECTION.step1
+  return V4_RATIO_CORRECTION.step2
 }
 
 /**
