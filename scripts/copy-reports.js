@@ -55,4 +55,19 @@ for (const f of tasksFiles) {
   }
 }
 
-console.log(`\ncopy-reports: ${workspaceFiles.length + tasksFiles.length}개 파일 → public/reports/`)
+// 복사 대상 3: paljapae/docs/ 의 SPEC·LEDGER·HANDOVER류 (Claude 원문 대조 인프라 대상)
+// lore·세계관·스토리 파일은 EXCLUDE_PATTERNS로 영구 미노출 (공개 금지 목록 승계)
+const docsRoot = resolve(__dirname, '../docs')
+const docsFiles = existsSync(docsRoot)
+  ? readdirSync(docsRoot)
+      .filter(f => f.endsWith('.md'))
+      .filter(f => /^SPEC_/.test(f) || /^LEDGER_/.test(f) || /^HANDOVER_/.test(f))
+      .filter(f => !isExcluded(f))
+  : []
+
+for (const f of docsFiles) {
+  copyFileSync(join(docsRoot, f), join(DEST, f))
+  console.log(`copied: docs/${f}`)
+}
+
+console.log(`\ncopy-reports: ${workspaceFiles.length + tasksFiles.length + docsFiles.length}개 파일 → public/reports/`)
