@@ -58,6 +58,7 @@ import {
   MAX_DISCARD_PER_USE,
   RECIPE_MULTIPLIER_BY_PRESET,
   identifyRecipePreset,
+  getFloorHp,
 } from './balance'
 import { getFavorableElement } from './manseryeok'
 
@@ -728,12 +729,14 @@ function createDeterministicState(
     recipeMultipliers['_largeMult'] = opts.largeMultOverride
   }
 
+  // v4 모드 시 V4_FLOOR_HP_TABLE 주입, 그 외 floorConfig.enemyHp 유지
+  const initEnemyHp = getFloorHp(floorIndex)
   return {
     currentFloor: floorConfig.floor,
     playerHp: PLAYER_BASE_HP,
     playerMaxHp: PLAYER_BASE_HP,
-    enemyHp: floorConfig.enemyHp,
-    enemyMaxHp: floorConfig.enemyHp,
+    enemyHp: initEnemyHp,
+    enemyMaxHp: initEnemyHp,
     hand,
     deck: remainDeck,
     discardPile: [],
@@ -822,11 +825,13 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
       const reshuffledDeck = shuffleDeck(allCards, seed)
       const hand = reshuffledDeck.slice(0, HAND_SIZE)
       const floorConfig = FLOOR_CONFIGS[floor - 1]
+      // v4 모드 시 V4_FLOOR_HP_TABLE 주입, 그 외 floorConfig.enemyHp 유지
+      const floorEnemyHp = getFloorHp(floor - 1)
       state = {
         ...state,
         currentFloor: floor,
-        enemyHp: floorConfig.enemyHp,
-        enemyMaxHp: floorConfig.enemyHp,
+        enemyHp: floorEnemyHp,
+        enemyMaxHp: floorEnemyHp,
         hand,
         deck: reshuffledDeck.slice(HAND_SIZE),
         discardPile: [],

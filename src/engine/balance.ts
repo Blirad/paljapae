@@ -735,6 +735,24 @@ export const V4_FLOOR_HP_TABLE: Record<number, number> = {
   4: Math.round(540 * 1.15),  // 621
 }
 
+/**
+ * 층 HP 헬퍼 — COMBO_RULESET_VERSION 분기를 단일 출처에서 처리
+ *
+ * @param floorIndex  0-indexed 층 인덱스 (FLOOR_CONFIGS 배열 인덱스)
+ * @param versionOverride  테스트 주입용 버전 오버라이드 (생략 시 COMBO_RULESET_VERSION 사용)
+ * @returns 실제 적용할 적 HP
+ *   - v4 모드: V4_FLOOR_HP_TABLE[floorIndex + 1] (1-indexed 키)
+ *   - v3 / recipe 모드: FLOOR_CONFIGS[floorIndex].enemyHp (불변)
+ */
+export function getFloorHp(floorIndex: number, versionOverride?: 'v3' | 'recipe' | 'v4'): number {
+  const version = versionOverride ?? COMBO_RULESET_VERSION
+  if (version === 'v4') {
+    const hp = V4_FLOOR_HP_TABLE[floorIndex + 1]
+    if (hp !== undefined) return hp
+  }
+  return FLOOR_CONFIGS[floorIndex].enemyHp
+}
+
 // ─── G3 v4: 자유 성립·투입 장수 위계 배율 (이든 판정 2026-07-17) ─────────────
 /**
  * v4 계단식 배율표 (투입 장수 → 배율)

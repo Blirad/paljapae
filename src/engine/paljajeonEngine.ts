@@ -9,7 +9,7 @@ import {
   GEUK_MAP,
   detectElementClash,
 } from './pokerHandJudge'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, MAX_DISCARD_PER_USE, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, OHANG_YEONHWAN_MULTIPLIER, SANGGWAN_MAX_PER_RUN, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, EMBER_DURATION, EMBER_MULTIPLIER, BASE_PURIFICATION_DAMAGE, ENABLE_YONGSIN_DESCENT, DESCENT_VARIANT, DESCENT_GLOW_FULL_MULT, DESCENT_GLOW_AFTERGLOW_MULT, COMBO_RULESET_VERSION, YIKSEANG_MAP, YIKSEANG_MULT } from './balance'
+import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, MAX_DISCARD_PER_USE, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, OHANG_YEONHWAN_MULTIPLIER, SANGGWAN_MAX_PER_RUN, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, EMBER_DURATION, EMBER_MULTIPLIER, BASE_PURIFICATION_DAMAGE, ENABLE_YONGSIN_DESCENT, DESCENT_VARIANT, DESCENT_GLOW_FULL_MULT, DESCENT_GLOW_AFTERGLOW_MULT, COMBO_RULESET_VERSION, YIKSEANG_MAP, YIKSEANG_MULT, getFloorHp } from './balance'
 // 폐기된 dual/wait3 변형 상수 — balance.ts에서 삭제됨. 코드 경로 유지용 하드코딩.
 const DESCENT_DUAL_SLOT_MULT = 2.0    // B-2 dual: 슬롯 적중 배율 (폐기)
 const DESCENT_DUAL_NONSLOT_MULT = 1.3 // B-2 dual: 비슬롯 배율 (폐기)
@@ -131,12 +131,14 @@ export function createInitialGameState(floorIndex = 0, heroProfile?: SavedHeroPr
     : undefined
 
   // balance.ts 수치 그대로 사용 (기믹은 전투 중 별도 로직으로 적용)
+  // v4 모드 시 getFloorHp(floorIndex)로 V4_FLOOR_HP_TABLE 값 주입, 그 외 floorConfig.enemyHp 유지
+  const initEnemyHp = getFloorHp(floorIndex)
   return {
     currentFloor: floorConfig.floor,
     playerHp: PLAYER_BASE_HP,
     playerMaxHp: PLAYER_BASE_HP,
-    enemyHp: floorConfig.enemyHp,
-    enemyMaxHp: floorConfig.enemyHp,
+    enemyHp: initEnemyHp,
+    enemyMaxHp: initEnemyHp,
     hand,
     deck: remainDeck,
     discardPile: [],
@@ -978,12 +980,14 @@ export function advanceToNextFloor(state: GameState): GameState {
   const deck = shuffleDeck(allCards.length > 0 ? allCards : createFixedDeck())
   const hand = deck.slice(0, HAND_SIZE)
   const remainDeck = deck.slice(HAND_SIZE)
+  // v4 모드 시 V4_FLOOR_HP_TABLE 주입, 그 외 floorConfig.enemyHp 유지
+  const nextEnemyHp = getFloorHp(nextFloor - 1)
 
   return {
     ...state,
     currentFloor: nextFloor,
-    enemyHp: floorConfig.enemyHp,
-    enemyMaxHp: floorConfig.enemyHp,
+    enemyHp: nextEnemyHp,
+    enemyMaxHp: nextEnemyHp,
     hand,
     deck: remainDeck,
     discardPile: [],
