@@ -28,7 +28,7 @@ import { getDevComboRuleset, getDevDescentEnabled } from './devSettings'
 
 // --- 기운 모으기 배율 (같은 기운 N장)
 export const GATHER_MULTIPLIERS: Record<number, number> = {
-  2: 1.5,
+  2: 1.3,
   3: 2.5,
   4: 4.0,   // B1-6: 벼리는(×3.5) 동률 해소
   5: 5.0,

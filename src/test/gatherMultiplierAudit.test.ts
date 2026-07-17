@@ -54,7 +54,7 @@ describe('T20 E2E 지문 — [E2E-1] v3 모드 gather5=×5.0 동결', () => {
     console.log(`  4장: ×${GATHER_MULTIPLIERS[4]}`)
     console.log(`  5장: ×${GATHER_MULTIPLIERS[5]} (v3 동결 — recipe 모드는 별도 override)`)
 
-    expect(GATHER_MULTIPLIERS[2]).toBe(1.5)
+    expect(GATHER_MULTIPLIERS[2]).toBe(1.3)
     expect(GATHER_MULTIPLIERS[3]).toBe(2.5)
     expect(GATHER_MULTIPLIERS[4]).toBe(4.0)
     expect(GATHER_MULTIPLIERS[5]).toBe(5.0)

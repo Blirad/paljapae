@@ -21,9 +21,9 @@ function makeCard(element: Card['element'], polarity: Card['polarity'], value: n
 
 describe('Phase 1.9 QA — 새 조합 체계 + 응축 + 극/반극', () => {
   describe('1. 기운 모으기 배율 정확성', () => {
-    it('2장 → 1.5배', () => {
+    it('2장 → 1.3배', () => {
       const result = judgeCombo([makeCard('mok', 'yang', 5), makeCard('mok', 'yin', 6)])
-      expect(result.multiplier).toBe(1.5)
+      expect(result.multiplier).toBe(1.3)
     })
 
     it('3장 → 2.5배', () => {
@@ -53,7 +53,7 @@ describe('Phase 1.9 QA — 새 조합 체계 + 응축 + 극/반극', () => {
       const result = judgeCombo([makeCard('mok', 'yang', 5), makeCard('mok', 'yin', 6)])
       expect(result.eumyangBonusApplied).toBe(true)
       const baseScore = 11
-      const withMult = Math.round(baseScore * 1.5) // 16
+      const withMult = Math.round(baseScore * 1.3) // 14
       const withBonus = Math.round(withMult * (1 + EUMYANG_HARMONY_BONUS)) // 19
       expect(result.totalScore).toBe(withBonus)
     })
@@ -62,7 +62,7 @@ describe('Phase 1.9 QA — 새 조합 체계 + 응축 + 극/반극', () => {
       const result = judgeCombo([makeCard('mok', 'yang', 5), makeCard('mok', 'yang', 6)])
       expect(result.eumyangBonusApplied).toBe(false)
       const baseScore = 11
-      const expected = Math.round(baseScore * 1.5)
+      const expected = Math.round(baseScore * 1.3)
       expect(result.totalScore).toBe(expected)
     })
   })
@@ -194,7 +194,7 @@ describe('Phase 1.9 QA — 새 조합 체계 + 응축 + 극/반극', () => {
 
       const gather = judgeCombo([makeCard('mok', 'yang', 5), makeCard('mok', 'yin', 5)])
       expect(gather.type).toBe('gather')
-      expect(gather.multiplier).toBe(1.5)
+      expect(gather.multiplier).toBe(1.3)
 
       const none = judgeCombo([makeCard('mok', 'yang', 1), makeCard('hwa', 'yin', 1), makeCard('to', 'yang', 1)])
       expect(none.type).toBe('none')
