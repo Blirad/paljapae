@@ -820,7 +820,7 @@ export const V4_RATIO_CORRECTION = {
  * @param N     총 투입 장수 (= cat + fuel)
  * @returns 이탈 계단 수 (0=정점, 1=한 계단, 2=두 계단/바닥)
  */
-export function getV4RatioCorrectionSteps(cat: number, fuel: number, N: number): number {
+export function getV4RatioCorrectionSteps(cat: number, _fuel: number, N: number): number {
   if (N < 3) return 0  // 2장: 면제
   const peak = V4_PEAKS[N]
   if (!peak) return 0

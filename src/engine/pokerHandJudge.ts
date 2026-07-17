@@ -23,6 +23,7 @@ import {
   RECIPE_GATHER5_MULT_A,
   RECIPE_LARGE_MULT_A,
   V4_TIER_MULTIPLIERS,
+  getV4RatioCorrection,
 } from './balance'
 
 // 오행 상극: A가 B를 극한다
@@ -238,18 +239,24 @@ export function judgeCombo(
     }
   }
 
-  // G3 v4: 자유 성립·투입 장수 위계 — 2026-07-17
+  // G3 v4: 자유 성립·투입 장수 위계 + §3 황금비 곡선 — 2026-07-17
   //   성립 조건: 정확히 2원소 조합 (v3 isFusionCombo 경로 재사용, 장수 자유 2~5장)
   //   3원소 이상 잡탕 → 일반기(none) 폴백
-  //   배율: getV4TierMultiplier(장수) — 계단식 위계절벽
+  //   배율: §2 getV4TierMultiplier(장수) × §3 getV4RatioCorrection(촉,연,N)
   //   양자택일 효과: 전 장수(2~5장) 개방 — 효과 값은 장수 비례(투입값 기반, B1-2 방식 그대로)
   if (COMBO_RULESET_VERSION === 'v4') {
     if (isFusionCombo(selectedCards)) {
-      // 2원소 조합 성립: 계단식 배율 적용
+      // 2원소 조합 성립: 계단식 배율 × 황금비 보정 적용
       const count = selectedCards.length
       const [el1, el2] = Array.from(new Set(selectedCards.map((c) => c.element))) as Element[]
       const fusion = findFusionCombo(el1, el2)!
-      const multiplier = getV4TierMultiplier(count)
+      const tierMult = getV4TierMultiplier(count)
+      // §3 황금비 곡선: 촉매(element1)·연료(element2) 장수 카운트
+      const catCount = selectedCards.filter(c => c.element === fusion.element1).length
+      const fuelCount = selectedCards.filter(c => c.element === fusion.element2).length
+      // E2E 지문: const ratioCorrection = getV4RatioCorrection(catCount, fuelCount, count)
+      const ratioCorrection = getV4RatioCorrection(catCount, fuelCount, count)
+      const multiplier = Math.round(tierMult * ratioCorrection * 100) / 100
       const prefix = getV4NamePrefix(count)
       const name = prefix ? `${prefix}${fusion.name}` : fusion.name
       return {
@@ -262,7 +269,8 @@ export function judgeCombo(
         description: `v4 융합 ${count}장 (×${multiplier}) — ${name}`,
       }
     }
-    // v4에서 gather·오행연환은 이하 기존 판정으로 폴스루 (불변 지시)
+    // v4에서 gather·오행연환은 이하 기존 판정으로 폴스루
+    // gather5(5장)는 이하 분기에서 RECIPE_GATHER5_MULT_A(6.5) 적용됨
     // 3원소 이상 잡탕은 isGatherCombo false → none 폴백 (이하 동일 로직)
   }
 
@@ -287,11 +295,13 @@ export function judgeCombo(
     // 3. 기운 모으기
     const element = selectedCards[0].element
     const count = selectedCards.length
-    // T20: recipe 모드에서 gather5(5장) 필살기 계층 배율 override
+    // T20: recipe/v4 모드에서 gather5(5장) 필살기 계층 배율 override
     // ⚠️ GATHER_MULTIPLIERS[5]=5.0 은 v3 모드 동결값 — 직접 수정 금지
     // recipeMultipliers['_gather5'] 주입 시 그 값 우선 (B벌=7.0 측정용)
+    // §4 위계 확정: 대모으기(gather5) = ×6.5 — recipe 및 v4 공통 (T20 확정값)
+    // E2E 지문: gather5 ×6.5 참조 — RECIPE_GATHER5_MULT_A
     const gather5Mult = recipeMultipliers?.['_gather5'] ?? RECIPE_GATHER5_MULT_A
-    const multiplier = (COMBO_RULESET_VERSION === 'recipe' && count === 5)
+    const multiplier = ((COMBO_RULESET_VERSION === 'recipe' || COMBO_RULESET_VERSION === 'v4') && count === 5)
       ? gather5Mult
       : (GATHER_MULTIPLIERS[count] ?? 1)
     const hasHarmony = hasEumyangHarmony(selectedCards)

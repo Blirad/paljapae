@@ -2618,9 +2618,13 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
         const ruleset = getDevComboRuleset()
         const descentOn = getDevDescentEnabled()
         const isRecipe = ruleset === 'recipe'
-        const label = isRecipe
-          ? `레시피 시험판 · 강림 ${descentOn ? 'ON' : 'OFF'}`
-          : '팔자 v3r'
+        const isV4 = ruleset === 'v4'
+        const isTestVariant = isRecipe || isV4
+        const label = isV4
+          ? `v4 시험판 · 강림 ${descentOn ? 'ON' : 'OFF'}`
+          : isRecipe
+            ? `레시피 시험판 · 강림 ${descentOn ? 'ON' : 'OFF'}`
+            : '팔자 v3r'
         return (
           <div style={{
             position: 'fixed',
@@ -2629,11 +2633,11 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
             zIndex: 250,
             padding: '2px 6px',
             borderRadius: '3px',
-            backgroundColor: isRecipe ? 'rgba(60,40,10,0.82)' : 'rgba(22,19,15,0.75)',
-            border: isRecipe ? '1px solid rgba(217,164,65,0.55)' : '1px solid rgba(106,101,96,0.4)',
+            backgroundColor: isTestVariant ? 'rgba(60,40,10,0.82)' : 'rgba(22,19,15,0.75)',
+            border: isTestVariant ? '1px solid rgba(217,164,65,0.55)' : '1px solid rgba(106,101,96,0.4)',
             fontSize: '9px',
             letterSpacing: '0.04em',
-            color: isRecipe ? '#D9A441' : '#6A6560',
+            color: isTestVariant ? '#D9A441' : '#6A6560',
             whiteSpace: 'nowrap',
             pointerEvents: 'none',
             userSelect: 'none',

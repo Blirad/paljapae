@@ -21,7 +21,7 @@
 const LS_RULESET_KEY = 'paljajeon_dev_ruleset'
 const LS_DESCENT_KEY = 'paljajeon_dev_descent'
 
-type ComboRuleset = 'v3' | 'recipe'
+type ComboRuleset = 'v3' | 'recipe' | 'v4'
 
 /** URL 쿼리 파라미터에서 개발 설정 읽기 (최초 로드 시 한 번만) */
 function applyUrlParams(): void {
@@ -30,7 +30,7 @@ function applyUrlParams(): void {
     const params = new URLSearchParams(window.location.search)
     const ruleset = params.get('ruleset')
     const descent = params.get('descent')
-    if (ruleset === 'recipe' || ruleset === 'v3') {
+    if (ruleset === 'recipe' || ruleset === 'v3' || ruleset === 'v4') {
       localStorage.setItem(LS_RULESET_KEY, ruleset)
     }
     if (descent === 'true' || descent === 'false') {
@@ -50,6 +50,7 @@ export function getDevComboRuleset(): ComboRuleset {
   try {
     const val = localStorage.getItem(LS_RULESET_KEY)
     if (val === 'recipe') return 'recipe'
+    if (val === 'v4') return 'v4'
   } catch {
     // ignore
   }
