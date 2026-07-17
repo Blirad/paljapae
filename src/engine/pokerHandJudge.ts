@@ -22,6 +22,7 @@ import {
   // RECIPE_LARGE_BIRTH_MULT / RECIPE_LARGE_HONE_MULT: fallback only, 대형은 _largeMult 키로 주입됨
   RECIPE_GATHER5_MULT_A,
   RECIPE_LARGE_MULT_A,
+  V4_TIER_MULTIPLIERS,
 } from './balance'
 
 // 오행 상극: A가 B를 극한다
@@ -107,6 +108,25 @@ export function isFusionCombo(cards: Card[]): boolean {
   if (elements.size !== 2) return false
   const [el1, el2] = Array.from(elements) as Element[]
   return findFusionCombo(el1, el2) !== null
+}
+
+/**
+ * G3 v4: 투입 장수 계급 배율 산출 (이든 판정 2026-07-17)
+ * 2장 → ×1.5 / 3장 → ×3.0 / 4장 → ×4.0 / 5장 → ×5.5
+ * 범위 밖(0~1, 6+)이면 ×1.0 폴백 (판정 오류 방지)
+ */
+export function getV4TierMultiplier(cardCount: number): number {
+  return V4_TIER_MULTIPLIERS[cardCount] ?? 1.0
+}
+
+/**
+ * G3 v4: 접두 명명 산출
+ * 2장 → '소' / 5장 → '대' / 3~4장 → '' (접두 없음)
+ */
+function getV4NamePrefix(cardCount: number): string {
+  if (cardCount === 2) return '소'
+  if (cardCount === 5) return '대'
+  return ''
 }
 
 /** 오행연환 검사: 5기운 전부, 정확히 5장 */
@@ -216,6 +236,34 @@ export function judgeCombo(
       }
       } // closes else (isSmall || isLarge)
     }
+  }
+
+  // G3 v4: 자유 성립·투입 장수 위계 — 2026-07-17
+  //   성립 조건: 정확히 2원소 조합 (v3 isFusionCombo 경로 재사용, 장수 자유 2~5장)
+  //   3원소 이상 잡탕 → 일반기(none) 폴백
+  //   배율: getV4TierMultiplier(장수) — 계단식 위계절벽
+  //   양자택일 효과: 전 장수(2~5장) 개방 — 효과 값은 장수 비례(투입값 기반, B1-2 방식 그대로)
+  if (COMBO_RULESET_VERSION === 'v4') {
+    if (isFusionCombo(selectedCards)) {
+      // 2원소 조합 성립: 계단식 배율 적용
+      const count = selectedCards.length
+      const [el1, el2] = Array.from(new Set(selectedCards.map((c) => c.element))) as Element[]
+      const fusion = findFusionCombo(el1, el2)!
+      const multiplier = getV4TierMultiplier(count)
+      const prefix = getV4NamePrefix(count)
+      const name = prefix ? `${prefix}${fusion.name}` : fusion.name
+      return {
+        type: fusion.type === 'birth' ? 'fusion-birth' : 'fusion-hone',
+        name,
+        baseScore,
+        multiplier,
+        totalScore: Math.round(baseScore * multiplier),
+        finishingElement: fusion.result,
+        description: `v4 융합 ${count}장 (×${multiplier}) — ${name}`,
+      }
+    }
+    // v4에서 gather·오행연환은 이하 기존 판정으로 폴스루 (불변 지시)
+    // 3원소 이상 잡탕은 isGatherCombo false → none 폴백 (이하 동일 로직)
   }
 
   // 배치 1.5-A-1 (2026-07-16): v3 융합 판정은 ruleset==='v3'에서만.

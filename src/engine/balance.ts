@@ -649,14 +649,18 @@ export function getRandomFloorElements(rng: () => number): Array<{
  * comboRuleset 토글 플래그
  * 'v3': 기존 체계 (융합 10쌍 무명 "치기", 배율 미분화)
  * 'recipe': 신규 체계 (융합 10쌍 명명 레시피, 4계층 위계)
- * 배포: v3 기본값 (recipe는 배치 1.5 재기준선 게이트 후 활성화)
+ * 'v4': G3 신규 체계 (자유 성립·투입 장수 위계 — 이든 판정 2026-07-17)
+ *       2원소 조합, 장수 자유 (v3 isFusionCombo 재사용)
+ *       배율: 2장×1.5 / 3장×3.0 / 4장×4.0 / 5장×5.5 (계단식 위계절벽)
+ *       접두 명명: 2장=소 / 5장=대 / 3~4장=접두 없음
+ * 배포: v3 기본값 (v4는 G3 게이트 후 활성화)
  *
  * 배치 1.5-A-1 (2026-07-16): 모듈 로드 시 프로토 스위치(getDevComboRuleset)로 초기화.
  *   - 프로토 브라우저: ?ruleset=recipe → localStorage → 'recipe' (판정 경로 실제 진입)
  *   - 프로덕션/SSR/테스트: window 없음 → 'v3' 기본값 (기존 동작 동일)
  *   - export const 유지 → 테스트 vi.mock 오버라이드 그대로 호환
  */
-export const COMBO_RULESET_VERSION: 'v3' | 'recipe' = getDevComboRuleset()
+export const COMBO_RULESET_VERSION: 'v3' | 'recipe' | 'v4' = getDevComboRuleset()
 
 /**
  * 강림제 활성화 플래그
@@ -682,6 +686,24 @@ export const DESCENT_VARIANT: DescentVariant = 'slot'
 // B-3 잔광 배율 상수
 export const DESCENT_GLOW_FULL_MULT = 1.8     // 풀강림 (슬롯+용신)
 export const DESCENT_GLOW_AFTERGLOW_MULT = 1.25 // 잔광 (대기창 만료 시)
+
+// ─── G3 v4: 자유 성립·투입 장수 위계 배율 (이든 판정 2026-07-17) ─────────────
+/**
+ * v4 계단식 배율표 (투입 장수 → 배율)
+ * 2장: ×1.5  (접두: 소, 예: 소들불)
+ * 3장: ×3.0  (접두 없음)
+ * 4장: ×4.0  (접두 없음)
+ * 5장: ×5.5  (접두: 대, 예: 대들불)
+ *
+ * 주의: v3·recipe 기존 배율 대체하지 않음 — v4 분기에서만 사용.
+ * gather·오행연환·강림·역생 배율 불변.
+ */
+export const V4_TIER_MULTIPLIERS: Record<number, number> = {
+  2: 1.5,
+  3: 3.0,
+  4: 4.0,
+  5: 5.5,
+}
 
 /**
  * 10쌍 레시피 판정 맵
