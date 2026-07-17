@@ -143,7 +143,6 @@ describe('배치 1.5 최종 재측정 — 1000판 × 3프리셋 × 양 룰셋', 
       })
 
       // sanity: 판당 발동수 ≤ 19 (물리적 최대값)
-      const recipeLog = (globalThis as any).__recipeLog || []
       const activationsPerGame = recipeLog.length / RUNS
       expect(activationsPerGame).toBeLessThanOrEqual(19)
 

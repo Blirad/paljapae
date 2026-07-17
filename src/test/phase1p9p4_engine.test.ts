@@ -197,32 +197,34 @@ describe('수정 3: 10종 융합 특성 발동', () => {
     expect(newState.lastTraitTriggered).toBe('nourish')
   })
 
-  it('채굴(광맥) — 土+金 융합 후 손패 1장 증가', () => {
+  it('채굴(광맥) — 土+金 융합 후 수렴 리필 + 채굴 스택', () => {
     const toCard = makeCard('to', 'yang', 5, 'to-m')
     const geumCard = makeCard('geum', 'yin', 5, 'geum-m')
     const deck = Array.from({ length: 5 }, (_, i) => makeCard('mok', 'yang', 1, `dk-m-${i}`))
     const state = makeState({ hand: [toCard, geumCard], deck, playsLeft: 3 })
-    const handBefore = state.hand.length
     const newState = playCards(state, [toCard.id, geumCard.id])
-    // 채굴: floor(baseValue/MINING_DRAW_DIVISOR)장 추가 드로우 = floor((5+5)/5) = 2
-    // 2장 플레이 → 2장 리필 + 채굴 2장 추가
-    expect(newState.hand.length).toBe(handBefore - 2 + 2 + 2)
+    // 수렴 리필: remain=0, 리필 max(0,8-0)=8, deck 5 + discard 2 = 7 (reshuffle) → draw 7
+    // 채굴: floor(10/5)=2장 추가 시도, deck 0 → draw 0
+    // 최종 핸드 = 7 (수렴식 제약)
+    expect(newState.hand.length).toBe(7)
     expect(newState.lastTraitTriggered).toBe('mining')
   })
 
   it('담금질(담금불) — 水+火 융합 후 쓴 카드 값 영구 +1', () => {
     // 담금질(quench): "이번 공격에 쓴 카드들의 값이 1 영구히 오른다"
-    // su(value=3) + hwa(value=3) 사용 → discardPile에 su(4), hwa(4)로 저장됨
+    // su(value=3) + hwa(value=3) 사용 → 값 +1 영구 적용
+    // 수렴 리필(remain=0→8장 리필) 시 reshuffle 발생 → 카드가 deck에 재편입됨
     const suCard = makeCard('su', 'yang', 3, 'su-q')
     const hwaCard = makeCard('hwa', 'yin', 3, 'hwa-q')
     const deck = Array.from({ length: 5 }, (_, i) => makeCard('geum', 'yang', 2, `dk-q-${i}`))
     const state = makeState({ hand: [suCard, hwaCard], deck, playsLeft: 3 })
     const newState = playCards(state, [suCard.id, hwaCard.id])
-    // 담금질: 쓴 카드(su, hwa)가 discardPile에 value+1로 저장됨
-    const suInDiscard = newState.discardPile.find(c => c.id === 'su-q')
-    const hwaInDiscard = newState.discardPile.find(c => c.id === 'hwa-q')
-    expect(suInDiscard?.value).toBe(4)   // 3 → 4
-    expect(hwaInDiscard?.value).toBe(4)  // 3 → 4
+    // reshuffle 시 카드가 hand/deck에 재분배 → 전체 풀에서 찾기
+    const allCards = [...newState.hand, ...newState.deck, ...newState.discardPile]
+    const suAfter = allCards.find(c => c.id === 'su-q')
+    const hwaAfter = allCards.find(c => c.id === 'hwa-q')
+    expect(suAfter?.value).toBe(4)   // 3 → 4
+    expect(hwaAfter?.value).toBe(4)  // 3 → 4
     expect(newState.lastTraitTriggered).toBe('quench')
   })
 

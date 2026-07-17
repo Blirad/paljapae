@@ -11,6 +11,8 @@
  */
 
 import { describe, it, expect, vi } from 'vitest'
+import fs from 'fs'
+import path from 'path'
 import type { Element } from '../types/game'
 
 vi.mock('../engine/balance', async () => {
@@ -61,11 +63,23 @@ const FORMATION_RATES: Record<string, Record<string, number>> = {
   },
 }
 
-const K = 0.8  // 기준점: 40% ↔ 3.0 → K = 0.4 × 2.0 = 0.8
+// K = 사주별 "레시피 총 화력 다이얼" — 승격 2026-07-16
+// mokHwa: 32.9% 안정 → K=0.8 동결
+// geumSu: 40.6% 과열 → K=0.60 처방 (1000판 35.0% PASS)
+// toDanil: K 다이얼 미작동 (성립률 낮아 모두 cap5.0) → 별도 처방 대기
+const K_BY_PRESET: Record<string, number> = {
+  mokHwa: 0.8,
+  geumSu: 0.60,  // 2026-07-16 확정 — 40.6%→35.0% 과열 해소
+  toDanil: 0.8,  // K 다이얼 무효 — cap5.0 구조. 별도 처방 필요
+}
 
-function computeMultiplier(formationRate: number): number {
+function computeMultiplier(formationRate: number, preset?: string): number {
   if (formationRate === 0) return 3.0  // 성립률 0인 레시피는 최대 배율
-  return 1 + K / (formationRate / 100)
+  const k = preset ? (K_BY_PRESET[preset] ?? 0.8) : 0.8
+  const mult = 1 + k / (formationRate / 100)
+  // 금수 처방: 하한 1.6 (기존 2.0 → 1.6)
+  const lowerBound = preset === 'geumSu' ? 1.6 : 2.0
+  return Math.min(Math.max(mult, lowerBound), 5.0)
 }
 
 const PRESETS = [
@@ -122,7 +136,7 @@ describe('recipe 차등 배율 — 10쌍 배율표', () => {
         const table: Record<string, number> = {}
         for (const recipe of RECIPE_NAMES) {
           const rate = FORMATION_RATES[preset.key]?.[recipe] ?? 0
-          table[recipe] = computeMultiplier(rate)
+          table[recipe] = computeMultiplier(rate, preset.key)
         }
         multiplierTables[preset.key] = table
       }
@@ -204,6 +218,12 @@ describe('recipe 차등 배율 — 10쌍 배율표', () => {
       console.log('  금수 fusion_keen 76.79% → ×2.04 (기존 ×3.0 → ×2.0 근처, 과도 완화)')
       console.log('  목화 fusion_harvest 48.75% → ×2.64 (적정 유지)')
       console.log('  토단일 병렬 분포 → 균등 배율 적용')
+
+      // 파일 출력
+      const fileOutput = results.map(r =>
+        `${r.label.padEnd(8)}: ${r.clearRate.toFixed(2).padStart(7)}% (기준 ${r.baselineClear.toFixed(2)}% → ${r.delta})`
+      ).join('\n')
+      fs.writeFileSync(path.join(process.cwd(), 'RECIPE_RESULTS.txt'), fileOutput)
 
       for (const r of results) {
         expect(r.clearRate).toBeGreaterThanOrEqual(0)

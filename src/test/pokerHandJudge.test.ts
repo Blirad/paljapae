@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'vitest'
 import { judgeHand, judgeCombo, isGatherCombo, isFusionCombo, isOhangYeonhwan } from '../engine/pokerHandJudge'
-import { findFusionCombo } from '../engine/balance'
+import { findFusionCombo, GATHER_MULTIPLIERS } from '../engine/balance'
 import type { Card } from '../types/game'
 
 function makeCard(element: Card['element'], polarity: Card['polarity'], value: number, id?: string): Card {
@@ -50,14 +50,14 @@ describe('Phase 1.9 조합 판정: 오행연환', () => {
 })
 
 describe('Phase 1.9 조합 판정: 기운 모으기', () => {
-  it('같은 기운 2장 → 기운 모으기 (배율 ×1.5)', () => {
+  it('같은 기운 2장 → 기운 모으기 (배율 ×1.3)', () => {
     const cards = [
       makeCard('mok', 'yang', 5),
       makeCard('mok', 'yin', 6),
     ]
     const result = judgeHand(cards)
     expect(result.rank).toBe('gather')
-    expect(result.multiplier).toBe(1.5)
+    expect(result.multiplier).toBe(GATHER_MULTIPLIERS[2])  // §1-c: 1.3 확정
     expect(isGatherCombo(cards)).toBe(true)
   })
 
@@ -105,8 +105,8 @@ describe('Phase 1.9 조합 판정: 기운 모으기', () => {
     const result = judgeCombo(cards)
     expect(result.eumyangBonusApplied).toBe(true)
     const baseScore = 5 + 6  // 11
-    const withMultiplier = Math.round(baseScore * 1.5)  // 16
-    const withBonus = Math.round(withMultiplier * 1.2)  // 19
+    const withMultiplier = Math.round(baseScore * GATHER_MULTIPLIERS[2])  // §1-c: ×1.3 = 14
+    const withBonus = Math.round(withMultiplier * 1.2)  // 17
     expect(result.totalScore).toBe(withBonus)
   })
 
@@ -118,7 +118,7 @@ describe('Phase 1.9 조합 판정: 기운 모으기', () => {
     const result = judgeCombo(cards)
     expect(result.eumyangBonusApplied).toBe(false)
     const baseScore = 5 + 6
-    const expected = Math.round(baseScore * 1.5)
+    const expected = Math.round(baseScore * GATHER_MULTIPLIERS[2])  // §1-c: ×1.3
     expect(result.totalScore).toBe(expected)
   })
 })

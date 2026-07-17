@@ -26,12 +26,13 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useGameStore } from '../stores/gameStore'
-import { FLOOR_CONFIGS, GEUK_BONUS_MULTIPLIER, TRAIT_CONFIGS, FUSION_TRAIT_MAP, SANG_MAP, SANG_PENALTY_MULTIPLIER, ANTI_GEUK_PENALTY, YIKSEANG_MAP, YIKSEANG_MULT, getCondenseBonus, RELIC_DEFS, PLAYER_BASE_HP, NOURISH_EFFECT_COEFF, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, MAX_DISCARD_PER_USE } from '../engine/balance'
+import { FLOOR_CONFIGS, GEUK_BONUS_MULTIPLIER, TRAIT_CONFIGS, FUSION_TRAIT_MAP, SANG_MAP, SANG_PENALTY_MULTIPLIER, ANTI_GEUK_PENALTY, YIKSEANG_MAP, YIKSEANG_MULT, getCondenseBonus, RELIC_DEFS, PLAYER_BASE_HP, NOURISH_EFFECT_COEFF, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, MAX_DISCARD_PER_USE, RECIPE_MAP } from '../engine/balance'
 import type { RelicId } from '../engine/balance'
 // Phase 1.7: FLOOR_ENEMY_ELEMENTS는 floorConfig.enemyPrimaryElement로 대체됨
 import { useGameContext } from '../context/GameContext'
 import { audioManager } from '../services/audioManager'
 import { judgeHand, detectElementClash, calcGeukBonusMultiplier, detectYeokgeukPenalty, determinePrimaryElement, judgeCombo } from '../engine/pokerHandJudge'
+import type { ComboJudgeResult } from '../engine/pokerHandJudge'
 import { getCondenseAvailability } from '../engine/paljajeonEngine'
 import type { Element } from '../types/game'
 import TalismanBar from './TalismanBar'
@@ -202,6 +203,61 @@ function getFusionTraitLine(comboName: string): string | undefined {
   return `${config.name} — ${config.tooltipBody.split('.')[0]}`
 }
 
+// §3-b G2: 핸드에서 가장 근접한 레시피 찾기 (소형 기준)
+function findNearestRecipe(
+  hand: Array<{ element: Element; value: number }>,
+  _recipeMultipliers?: Record<string, number>,
+): { name: string; missingElement: string; missingCount: number } | null {
+  // 핸드의 원소 카운트 집계
+  const handCount: Partial<Record<Element, number>> = {}
+  for (const card of hand) {
+    handCount[card.element] = (handCount[card.element] ?? 0) + 1
+  }
+
+  let bestName: string | null = null
+  let bestMissingCount = Infinity
+  let bestMissingElement = ''
+
+  for (const [recipeId, spec] of Object.entries(RECIPE_MAP)) {
+    // 소형 레시피: elem1 1장 + elem2 (minCount)장 이상
+    const { elem1, elem2, minCount } = spec.small
+    const have1 = handCount[elem1 as Element] ?? 0
+    const have2 = handCount[elem2 as Element] ?? 0
+    const need1 = Math.max(0, 1 - have1)
+    const need2 = Math.max(0, minCount - have2)
+    const totalMissing = need1 + need2
+
+    if (totalMissing > 0 && totalMissing < bestMissingCount) {
+      bestMissingCount = totalMissing
+      bestName = RECIPE_KO_NAMES[recipeId] ?? recipeId
+      // 부족한 원소: elem2가 더 많이 부족한 경우 elem2, 아니면 elem1
+      bestMissingElement = need2 >= need1 ? ELEMENT_KO[elem2 as Element] : ELEMENT_KO[elem1 as Element]
+    }
+  }
+
+  if (!bestName || bestMissingCount === 0 || bestMissingCount > 3) return null
+  return { name: bestName, missingElement: bestMissingElement, missingCount: bestMissingCount }
+}
+
+// §2: G2 바닥 명명 5종 — UI 레이어 계층 라벨 (엔진 배율 불변)
+// 홑(1장) / 섞어치기(이종 잡탕) / 짝(동종2장,소형레시피) / 겹치기(동종3~4장,대형레시피) / 대모으기(동종5장)
+function getTierLabel(result: ComboJudgeResult, cardCount: number): string {
+  if (result.type === 'ohang-yeonhwan') return '오행연환'
+  if (result.type === 'gather') {
+    if (cardCount === 5) return '대모으기'
+    if (cardCount === 4) return '겹치기'
+    if (cardCount === 3) return '겹치기'
+    if (cardCount === 2) return '짝'  // §1-c: 동종2장 → "짝" (엔진 배율 GATHER_MULTIPLIERS[2]=1.3 확정)
+  }
+  if (result.type === 'fusion-birth' || result.type === 'fusion-hone') {
+    // 대형 레시피: description에 '대형' 포함 여부로 판별
+    const isLargeRecipe = result.description?.includes('대형')
+    if (isLargeRecipe) return '겹치기'
+    return '짝'  // 소형 레시피
+  }
+  return '홑'
+}
+
 function buildPreviewText(
   cards: Array<{ element: Element; value: number; polarity: string; id: string }>,
   enemyElement: Element,
@@ -209,6 +265,8 @@ function buildPreviewText(
     hasAllFive?: boolean
     condensedMultiplier?: number  // 응축 활성 시 예상 최종 데미지 미리보기용
     favorableElement?: Element  // 용신 원소
+    recipeMultipliers?: Record<string, number>  // §1-a: 사주별 레시피 배율 전달
+    hand?: Array<{ element: Element; value: number }>  // §3-b: 근접 레시피 계산용 핸드
   },
 ): {
   line1: string
@@ -219,12 +277,13 @@ function buildPreviewText(
   isIdle?: boolean
   isYeonhwanReady?: boolean
   isInvalidCombo?: boolean
+  needsTierFlash?: boolean  // §2-b: 짝/겹치기 계층 — tierNameFlash 애니메이션 1회
   yongsinLabel?: string  // "용신 ×1.3" or "용신(연환) ×1.5"
   traitLine?: string  // T18: 융합 특성 1줄 미리보기
   affinityLine?: string  // T14-A: 타격 원소 vs 적 원소 상성 배율 1줄
   affinityLineColor?: string  // T14-A: 상성 배율 색상
 } | null {
-  const { hasAllFive = false, condensedMultiplier = 0, favorableElement } = options ?? {}
+  const { hasAllFive = false, condensedMultiplier = 0, favorableElement, recipeMultipliers, hand } = options ?? {}
 
   // 상태 ⑤: 연환 가능 (선택 0장이어도 핸드에 5기운 있으면 표시)
   if (hasAllFive && cards.length === 0) {
@@ -236,17 +295,21 @@ function buildPreviewText(
     }
   }
 
-  // 상태 ①: 선택 0장
+  // 상태 ①: 선택 0장 — §3-b: 근접 레시피 표시 (hand 있을 때)
   if (cards.length === 0) {
+    const nearestRecipe = hand ? findNearestRecipe(hand, recipeMultipliers) : null
+    const line2 = nearestRecipe
+      ? `근접: ${nearestRecipe.name} (${nearestRecipe.missingElement} ${nearestRecipe.missingCount}장 부족)`
+      : null
     return {
       line1: PREVIEW_IDLE,
-      line2: null,
+      line2,
       line1Color: '#8B9BB4',
       isIdle: true,
     }
   }
 
-  // 상태 ② 1장 낱장
+  // 상태 ② 1장 낱장 — §2: "홑" 명명
   if (cards.length === 1) {
     const card = cards[0]
     const isDeadGeuki = GEUK_MAP[enemyElement] === card.element
@@ -255,21 +318,23 @@ function buildPreviewText(
       ? Math.round(baseVal * (1 + condensedMultiplier))
       : null
     return {
-      line1: `낱장 — 공격력 ${baseVal}${withCondense !== null ? ` → 예상 ${withCondense} (응축)` : ''}`,
+      line1: `홑 · 공격력 ${baseVal}${withCondense !== null ? ` → 예상 ${withCondense} (응축)` : ''}`,
       line2: null,
       line1Color: '#FFFDF7',
     }
   }
 
-  const comboResult = judgeCombo(cards as any)
+  // §1-a: recipeMultipliers 전달하여 사주별 배율 반영
+  const comboResult = judgeCombo(cards as any, recipeMultipliers)
 
-  // 상태 ④: 무효 조합
+  // 상태 ④: 무효 조합 → §2-c: "섞어치기" 일반기 명명 (빨간 경고 폐지, 실패 아님)
   if (comboResult.type === 'none') {
+    const totalVal = cards.reduce((sum, c) => sum + c.value, 0)
     return {
-      line1: '이 기운들은 조합이 맺어지지 않는다 — 같은 기운끼리, 또는 맞는 짝을 골라라.',
+      line1: `섞어치기 · 공격력 ${totalVal}`,
       line2: null,
-      line1Color: '#C63D2F',
-      isInvalidCombo: true,
+      line1Color: '#D8CCB4',
+      isInvalidCombo: false,
     }
   }
 
@@ -297,12 +362,12 @@ function buildPreviewText(
   const enemyGeuksMe = affinity === 'anti-geuk'
   const yikseangEnemy = affinity === 'yikseang'
 
-  // 상태 ⑤: 연환 — T25: 3단 분해식 + 예상 데미지
+  // 상태 ⑤: 연환 — §2: "오행연환" 명명 (기존 유지)
   if (comboResult.type === 'ohang-yeonhwan') {
     const yeonhwanBase = comboResult.baseScore
     const yeonhwanExpected = Math.round(yeonhwanBase * 8)
     return {
-      line1: `오행연환 (중립) · 기본 ${yeonhwanBase} × 8 × - = 예상 ${yeonhwanExpected}`,
+      line1: `오행연환 · 기본 ${yeonhwanBase} × 8 = 예상 ${yeonhwanExpected}`,
       line2: null,
       line1Color: '#C8A8E8',
       isYeonhwanReady: true,
@@ -328,7 +393,7 @@ function buildPreviewText(
       affinityLine = `${feHanja} → ${ELEMENT_LABELS[enemyElement]} ${reason} (+50%)`
       affinityLineColor = '#4A9B6E'
     } else if (affinity === 'saeng') {
-      affinityLine = `${feHanja} → ${ELEMENT_LABELS[enemyElement]} ${ELEMENT_KO[fe]}이 ${ELEMENT_KO[enemyElement]}을 먹인다 (-50%)`
+      affinityLine = `${feHanja} → ${ELEMENT_LABELS[enemyElement]} 제 몸을 태워 바친다 (-50%)`  // §6: 생(生) 페널티 문구 교체
       affinityLineColor = '#D9A441'
     } else if (affinity === 'anti-geuk') {
       const reason = ELEMENT_ANTI_REASON[enemyElement] ?? '막힌다'
@@ -381,32 +446,56 @@ function buildPreviewText(
     affinitySegment = '× 동기 1.0'
   }
 
-  const baseDamage = Math.round(baseScore * mult * affinityMult)
+  // §1-b: 기운 충돌 감지 — 미리보기에도 동일 적용 (detectElementClash 이미 import됨)
+  const clashes = detectElementClash(cards as any)
+  const clashPenalty = clashes.length > 0 ? 0.7 : 1.0
+
+  const baseDamage = Math.round(baseScore * mult * affinityMult * clashPenalty)
   // 응축 활성 시: 최종 예상 데미지에 응축 배율까지 반영
   const finalDamageWithCondense = condensedMultiplier > 0
     ? Math.round(baseDamage * (1 + condensedMultiplier))
     : null
 
-  // T25: gather 타입 — 3단 분해식
+  // §2: gather 타입 — 계층명 적용
   if (comboResult.type === 'gather') {
     const elementName = ELEMENT_KO[cards[0].element]
-    const attrLabel = `${elementName}속성`
-    const line1 = `${elementName} 모으기 ${cards.length} (${attrLabel}) · 기본 ${baseScore} × ${mult} ${affinitySegment} = 예상 ${baseDamage}`
-    const line2Str = finalDamageWithCondense !== null
-      ? `응축 후 예상 ${finalDamageWithCondense}`
-      : null
-    return { line1, line2: line2Str, line1Color, yongsinLabel }
+    const tierLabel = getTierLabel(comboResult, cards.length)
+    // §1-c: 동종 2장 → "짝" 표시 (엔진 배율 GATHER_MULTIPLIERS[2]=1.3 확정)
+    if (cards.length === 2) {
+      return {
+        line1: `짝 · ${elementName}2장 · 공격력 ${baseDamage}`,
+        line2: null,
+        line1Color,
+        yongsinLabel,
+        needsTierFlash: true,  // §2-b: 짝 계층 글자 반짝
+      }
+    }
+    // 5장 대모으기
+    if (cards.length === 5) {
+      const line1 = `대모으기 · ${elementName} ${cards.length}장 · 예상 ${baseDamage}${affinitySegment !== '× 동기 1.0' ? ` (${affinitySegment})` : ''}`
+      const line2Str = finalDamageWithCondense !== null ? `응축 후 예상 ${finalDamageWithCondense}` : null
+      return { line1, line2: line2Str, line1Color, yongsinLabel }
+    }
+    // 3장·4장 겹치기
+    const line1 = `${tierLabel} · ${elementName} ${cards.length}장 · 예상 ${baseDamage}${affinitySegment !== '× 동기 1.0' ? ` (${affinitySegment})` : ''}`
+    const line2Str = finalDamageWithCondense !== null ? `응축 후 예상 ${finalDamageWithCondense}` : null
+    return { line1, line2: line2Str, line1Color, yongsinLabel, needsTierFlash: true }  // §2-b: 겹치기 글자 반짝
   }
 
-  // T25: fusion-birth / fusion-hone — 3단 분해식
+  // §2: fusion-birth / fusion-hone — 계층명 적용 (짝/겹치기)
   // 2-c 정본 명명: recipe ID → 한글명 변환 (v3 모드 기존 이름은 그대로 통과)
   const comboDisplayName = resolveComboKoName(comboName)
-  const feAttrLabel = `${ELEMENT_KO[fe]}속성`
+  const tierLabel = getTierLabel(comboResult, cards.length)
+  // §1-a: 대형 레시피일 때 "(대형)" 명시
+  const sizeLabel = comboResult.description?.includes('대형') ? ' (대형)' : ''
+  const affinityStr = affinitySegment !== '× 동기 1.0' ? ` (${affinitySegment})` : ''
   const condenseStr = finalDamageWithCondense !== null ? ` → 응축 후 ${finalDamageWithCondense}` : ''
-  const line1 = `${comboDisplayName} (${feAttrLabel}) · 기본 ${baseScore} × ${mult} ${affinitySegment} = 예상 ${baseDamage}${condenseStr}`
+  const line1 = `${tierLabel}${sizeLabel} · ${comboDisplayName} · 예상 ${baseDamage}${affinityStr}${condenseStr}`
   const traitLine = getFusionTraitLine(comboName)  // T18: 융합 특성 1줄 (ID 기준 그대로)
+  // §2-b: 짝(소형)/겹치기(대형) 계층에만 tierNameFlash 적용 (홑/섞어치기/대모으기/오행연환 제외)
+  const needsTierFlash = tierLabel === '짝' || tierLabel === '겹치기'
 
-  return { line1, line2: null, line1Color, yongsinLabel, traitLine }
+  return { line1, line2: null, line1Color, yongsinLabel, traitLine, needsTierFlash }
 }
 
 // ─── B-2: 이종 기운 3장 이상 차단 판정 ────────────────────────────────────
@@ -1323,6 +1412,30 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
   const [heroCharge, setHeroCharge] = useState(false)
   const [spiritOrbs, setSpiritOrbs] = useState<string[]>([]) // 정령 구체 속성 목록
 
+  // §3-c G2: 버리기 후 임시 교체 안내 메시지
+  const [discardNoticeMsg, setDiscardNoticeMsg] = useState<string | null>(null)
+  const discardNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // §3-b G2: 드로우 하이라이트 (근접 레시피 부족 원소 카드 1초 강조)
+  const [highlightCardIds, setHighlightCardIds] = useState<string[]>([])
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const prevHandRef = useRef<Array<{ id: string; element: Element }>>([])
+
+  // §3-c G2: 버리기 맥락 라인 ("버려서 [레시피명] 노려라")
+  const [discardContextMsg, setDiscardContextMsg] = useState<string | null>(null)
+
+  // §4 G2: ComboResolveOverlay 상태
+  type ResolveStep = 'idle' | 'base' | 'tier' | 'affinity' | 'final'
+  const [resolveStep, setResolveStep] = useState<ResolveStep>('idle')
+  const [resolveInfo, setResolveInfo] = useState<{
+    base: number
+    tierLabel: string
+    tierMult: number
+    affinityLabel: string
+    affinityMult: number
+    final: number
+  } | null>(null)
+
   // Phase 1.7: 조합 도감 오버레이
   const [showComboGuide, setShowComboGuide] = useState(false)
 
@@ -1479,7 +1592,8 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
         const elKo = ELEMENT_KO[yeokgeukEl]
         const enemyElKo = ELEMENT_KO[enemyElement]
         setTimeout(() => {
-          showBanner(`주의: 패에 ${elKo} 카드가 있지만, 적의 ${enemyElKo} 앞에서 힘을 쓰지 못합니다.`)
+          // §6 G2: 역극 문구 B안 교체
+          showBanner(`기운이 역류한다 — ${elKo}이(가) ${enemyElKo} 앞에서 ×0.75`)
         }, 800)
       }
     }
@@ -1603,6 +1717,54 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
       console.log('[UX] 첫 버리기 툴팁', { timestamp: Date.now() })
     }
   }, [selectedCards.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // §3-b G2: 드로우 하이라이트 — 새 카드 중 근접 레시피 부족 원소 카드 1초 강조
+  useEffect(() => {
+    const prevIds = new Set(prevHandRef.current.map(c => c.id))
+    const newCards = hand.filter(c => !prevIds.has(c.id))
+    prevHandRef.current = hand
+
+    if (newCards.length > 0) {
+      const storeRecipeMultipliers = useGameStore.getState().recipeMultipliers
+      const nearest = findNearestRecipe(hand, storeRecipeMultipliers)
+      if (nearest) {
+        const missingEl = Object.entries(ELEMENT_KO).find(([, v]) => v === nearest.missingElement)?.[0] as Element | undefined
+        if (missingEl) {
+          const matchIds = newCards.filter(c => c.element === missingEl).map(c => c.id)
+          if (matchIds.length > 0) {
+            if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current)
+            setHighlightCardIds(matchIds)
+            highlightTimerRef.current = setTimeout(() => setHighlightCardIds([]), 1000)
+          }
+        }
+      }
+    }
+  }, [hand]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // §3-c G2: 버리기 맥락 라인 계산 — 핸드에서 1장 버리면 레시피 성립되는 경우
+  useEffect(() => {
+    if (discardsLeft <= 0) {
+      setDiscardContextMsg(null)
+      return
+    }
+    const storeRecipeMultipliers = useGameStore.getState().recipeMultipliers
+    const nearest = findNearestRecipe(hand, storeRecipeMultipliers)
+    if (nearest && nearest.missingCount === 1) {
+      // 불필요 카드(근접 레시피 재료가 아닌 카드)가 있는지 확인
+      // nearest 레시피의 elem1, elem2를 찾아 그 원소가 아닌 카드가 핸드에 있으면 버릴 수 있음
+      const recipeEntry = Object.entries(RECIPE_MAP).find(([id]) => (RECIPE_KO_NAMES[id] ?? id) === nearest.name)
+      if (recipeEntry) {
+        const spec = recipeEntry[1]
+        const needed = new Set<string>([spec.small.elem1, spec.small.elem2])
+        const hasUnnecessary = hand.some(c => !needed.has(c.element))
+        if (hasUnnecessary) {
+          setDiscardContextMsg(`버려서 ${nearest.name} 노려라`)
+          return
+        }
+      }
+    }
+    setDiscardContextMsg(null)
+  }, [hand, discardsLeft]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // G1 수정 #4 — 첫 극 성립 안내 (previewResult에 극 관련 족보)
   useEffect(() => {
@@ -1913,10 +2075,8 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
       if (!yeokgeukHintShownRef.current) {
         yeokgeukHintShownRef.current = true
       }
-      // Phase 1.8: 역극 카드 툴팁 (2초)
-      const cardElKo = ELEMENT_KO[card.element]
-      const enemyElKo = ELEMENT_KO[enemyElement]
-      const tooltipText = `오늘 ${cardElKo}의 기운은 힘을 못 쓴다 — 적의 ${enemyElKo}이/가 누르기 때문.`
+      // §6 G2: 역극 카드 툴팁 — B안 문구 교체
+      const tooltipText = `기운이 역류한다 ×0.75`
       if (yeokgeukTooltipTimerRef.current) clearTimeout(yeokgeukTooltipTimerRef.current)
       setYeokgeukTooltip({ cardId, text: tooltipText })
       yeokgeukTooltipTimerRef.current = setTimeout(() => setYeokgeukTooltip(null), 2000)
@@ -1928,6 +2088,64 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
   // 출수 처리
   const handlePlayCards = useCallback((effectMode?: boolean) => {
     if (selectedCards.length === 0 || playsLeft <= 0) return
+
+    // §4 G2: ComboResolveOverlay — 조합 타입이 'none'이 아닐 때 순차 연출
+    // selectedCardObjs는 렌더 레벨 변수이므로 여기서 직접 계산
+    const _selectedCardObjs = hand.filter(c => selectedCards.includes(c.id))
+    const comboForOverlay = _selectedCardObjs.length >= 2
+      ? judgeCombo(_selectedCardObjs as any, useGameStore.getState().recipeMultipliers)
+      : null
+    if (comboForOverlay && comboForOverlay.type !== 'none') {
+      const repEl = comboForOverlay.finishingElement
+      const affinity = calcAffinity(repEl, enemyElement)
+      const affinityMult = getAffinityMultiplier(affinity)
+      const tierLabel = getTierLabel(comboForOverlay, _selectedCardObjs.length)
+      const tierMult = comboForOverlay.multiplier
+      // §4/§1-b: resolveInfo.final에 충돌 패널티 포함
+      const clashesOverlay = detectElementClash(_selectedCardObjs as any)
+      const clashPenaltyOverlay = clashesOverlay.length > 0 ? 0.7 : 1.0
+      const finalDmg = Math.round(comboForOverlay.baseScore * tierMult * affinityMult * clashPenaltyOverlay)
+      const affinityLabel = affinity === 'geuk' ? `극 ${GEUK_BONUS_MULTIPLIER}`
+        : affinity === 'anti-geuk' ? `역극 ${ANTI_GEUK_PENALTY}`
+        : affinity === 'yikseang' ? `역생 ${YIKSEANG_MULT}`
+        : affinity === 'saeng' ? `생 ${SANG_PENALTY_MULTIPLIER}`
+        : `동기 1.0`
+      const overlayInfo = {
+        base: comboForOverlay.baseScore,
+        tierLabel,
+        tierMult,
+        affinityLabel,
+        affinityMult,
+        final: finalDmg,
+      }
+
+      // §4: 계층별 차등 연출 — 일반기(홑/섞어치기/짝)는 즉시 final 표시
+      const isBasicTier = ['홑', '섞어치기', '짝'].includes(tierLabel)
+      if (isBasicTier) {
+        setResolveInfo(overlayInfo)
+        setResolveStep('final')
+        setTimeout(() => {
+          setResolveStep('idle')
+          setResolveInfo(null)
+        }, getDuration(600))
+      } else {
+        // 기술기(겹치기) 이상 — 순차 연출 총 450ms (G2: 600 → 450)
+        setResolveInfo(overlayInfo)
+        setResolveStep('base')
+        setTimeout(() => setResolveStep('tier'), getDuration(150))
+        setTimeout(() => setResolveStep('affinity'), getDuration(300))
+        setTimeout(() => {
+          setResolveStep('final')
+          // 단계 4 등장 시 타격음
+          audioManager.cardLand()
+          console.log('[SFX] ComboResolveOverlay 최종 타격음', { timestamp: Date.now() })
+        }, getDuration(450))
+        setTimeout(() => {
+          setResolveStep('idle')
+          setResolveInfo(null)
+        }, getDuration(900))
+      }
+    }
 
     if (previewResult && previewResult.rank !== 'none') {
       const rank = previewResult.rank
@@ -1978,7 +2196,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     }
 
     playSelectedCards(effectMode)
-  }, [selectedCards, playsLeft, previewResult, getDuration, playSelectedCards, currentFloor])
+  }, [selectedCards, playsLeft, previewResult, getDuration, playSelectedCards, currentFloor, hand, enemyElement]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // A4: 훈수 버튼 — 최강 조합 1.5초 하이라이트
   const handleHint = useCallback(() => {
@@ -2065,8 +2283,13 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
       setGimmickDialogue('버린 패가 독이 되어 돌아온다.')
       setTimeout(() => setGimmickDialogue(null), getDuration(1500))
     }
+    // §3-c G2: 버리기 후 "N장 교체됨" 1초 임시 메시지
+    const discardCount = selectedCards.length
+    if (discardNoticeTimerRef.current) clearTimeout(discardNoticeTimerRef.current)
+    setDiscardNoticeMsg(`${discardCount}장 교체됨`)
+    discardNoticeTimerRef.current = setTimeout(() => setDiscardNoticeMsg(null), 1000)
     discardSelectedCards()
-  }, [selectedCards, discardsLeft, discardSelectedCards, currentFloor, enemyPhaseSwitch])
+  }, [selectedCards, discardsLeft, discardSelectedCards, currentFloor, enemyPhaseSwitch, getDuration])
 
   const enemyHpPercent = Math.max(0, (enemyHp / enemyMaxHp) * 100)
   const playerHpPercent = Math.max(0, (playerHp / playerMaxHp) * 100)
@@ -3128,59 +3351,34 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
             </div>
           )}
 
-          {/* 스펙 v2 — 상성 미리보기 UI (선택 시점 즉시 갱신) */}
+          {/* §1-b: 위치 A — 상성 색상 뱃지만 유지 (예상 N 텍스트 제거, 단일화) */}
           {selectedCardObjs.length >= 1 && (() => {
             const repEl = getRepresentativeElement(selectedCardObjs)
             const affinity = calcAffinity(repEl, enemyElement)
-            const affinityMult = getAffinityMultiplier(affinity)
-            // 간단한 예상 데미지: comboResult 기반 (단일 카드 포함)
-            const comboR = selectedCardObjs.length >= 2
-              ? judgeCombo(selectedCardObjs as any)
-              : null
-            const baseEstimate = comboR
-              ? Math.round(comboR.baseScore * comboR.multiplier * affinityMult)
-              : Math.round(selectedCardObjs[0].value * affinityMult)
-            const withCondense = (condensedMultiplier ?? 0) > 0
-              ? Math.round(baseEstimate * (1 + (condensedMultiplier ?? 0)))
-              : null
-
             const affinityColor = affinity === 'geuk' ? '#4A9B6E'
               : affinity === 'saeng' ? '#D9A441'
               : affinity === 'anti-geuk' ? '#C63D2F'
+              : affinity === 'yikseang' ? '#7BAFDE'
               : '#6A6560'
-            const affinityLabel = affinity === 'geuk'
-              ? `${ELEMENT_KO[repEl]}이 ${ELEMENT_KO[enemyElement]}을 이긴다 (×1.5)`
-              : affinity === 'saeng'
-              ? `${ELEMENT_KO[repEl]}이 ${ELEMENT_KO[enemyElement]}을 먹인다 (×0.5)`
-              : affinity === 'anti-geuk'
-              ? `${ELEMENT_KO[enemyElement]}이 ${ELEMENT_KO[repEl]}을 누른다 (×0.75)`
-              : '동기 또는 중립 (×1.0)'
-
             return (
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px',
-                padding: '4px 8px',
-                backgroundColor: 'rgba(22,19,15,0.7)',
-                border: `1px solid ${affinityColor}40`,
+                gap: '6px',
+                padding: '3px 8px',
+                backgroundColor: 'rgba(22,19,15,0.5)',
+                border: `1px solid ${affinityColor}30`,
                 borderRadius: '3px',
                 flexWrap: 'wrap',
                 justifyContent: 'center',
               }}>
-                {/* 대표 원소 → 적 원소 */}
+                {/* 원소→원소 시각 뱃지 (상성 색상 유지) */}
                 <span style={{ color: ELEMENT_COLORS[repEl], fontSize: '11px', fontWeight: 700 }}>
                   {ELEMENT_LABELS[repEl]}
                 </span>
                 <span style={{ color: '#4A4540', fontSize: '10px' }}>→</span>
                 <span style={{ color: ELEMENT_COLORS[enemyElement], fontSize: '11px', fontWeight: 700 }}>
                   {ELEMENT_LABELS[enemyElement]}
-                </span>
-                <span style={{ color: affinityColor, fontSize: '11px', fontWeight: 600, letterSpacing: '0.03em' }}>
-                  {affinityLabel}
-                </span>
-                <span style={{ color: '#8B9BB4', fontSize: '11px' }}>
-                  {withCondense !== null ? `예상 ${baseEstimate} → 응축 후 ${withCondense}` : `예상 ${baseEstimate}`}
                 </span>
               </div>
             )
@@ -3253,8 +3451,120 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           </div>
         )}
 
+        {/* §4 G2: ComboResolveOverlay — 조합 확정 시 분해식 순차 연출 (최대 450ms, 스킵 가능) */}
+        {resolveStep !== 'idle' && resolveInfo && (() => {
+          const isFinalTier = ['대모으기', '오행연환'].includes(resolveInfo.tierLabel)
+          return (
+            <div
+              onClick={() => {
+                // §4: final 단계에서 클릭 → 즉시 idle 전환 (스킵)
+                if (resolveStep === 'final') {
+                  setResolveStep('idle')
+                  setResolveInfo(null)
+                }
+              }}
+              style={{
+                background: 'rgba(12,10,8,0.95)',
+                border: '1px solid rgba(216,204,180,0.3)',
+                borderRadius: '4px',
+                padding: '8px 12px',
+                minHeight: '44px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                gap: '6px',
+                flexWrap: 'wrap',
+                cursor: resolveStep === 'final' ? 'pointer' : 'default',
+              }}
+            >
+              {/* 단계 1: 기본 데미지 (0ms) */}
+              <span style={{
+                color: '#D8CCB4',
+                fontSize: '13px',
+                fontWeight: 600,
+                opacity: 1,
+                transition: 'opacity 100ms ease',
+              }}>
+                기본 {resolveInfo.base}
+              </span>
+              {/* 단계 2: 계층명 × 배율 (+150ms) */}
+              {(resolveStep === 'tier' || resolveStep === 'affinity' || resolveStep === 'final') && (
+                <>
+                  <span style={{ color: '#4A4540', fontSize: '12px' }}>×</span>
+                  <span style={{
+                    color: '#FFD98A',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    animation: 'previewBounce 220ms ease-out',
+                  }}>
+                    {resolveInfo.tierLabel} {resolveInfo.tierMult}
+                  </span>
+                </>
+              )}
+              {/* 단계 3: 상성 × 배율 (+300ms) */}
+              {(resolveStep === 'affinity' || resolveStep === 'final') && (
+                <>
+                  <span style={{ color: '#4A4540', fontSize: '12px' }}>×</span>
+                  <span style={{
+                    color: resolveInfo.affinityMult > 1 ? '#4A9B6E'
+                      : resolveInfo.affinityMult < 1 ? '#C63D2F'
+                      : '#7BAFDE',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    animation: 'previewBounce 220ms ease-out',
+                  }}>
+                    {resolveInfo.affinityLabel}
+                  </span>
+                </>
+              )}
+              {/* 단계 4: 최종 데미지 (+450ms) — 필살기는 금색 강화 스타일 */}
+              {resolveStep === 'final' && (
+                <>
+                  <span style={{ color: '#4A4540', fontSize: '12px' }}>=</span>
+                  <span style={{
+                    color: isFinalTier ? '#FFD98A' : '#FFFFFF',
+                    fontSize: isFinalTier ? '18px' : '15px',
+                    fontWeight: 800,
+                    transform: 'scale(1.2)',
+                    display: 'inline-block',
+                    animation: 'previewBounce 220ms ease-out',
+                    textShadow: isFinalTier
+                      ? '0 0 12px rgba(255,217,138,0.9), 0 0 24px rgba(217,164,65,0.6)'
+                      : 'none',
+                  }}>
+                    {resolveInfo.final}
+                  </span>
+                  {resolveStep === 'final' && (
+                    <span style={{ color: '#4A4540', fontSize: '10px', marginLeft: '4px' }}>탭하여 넘기기</span>
+                  )}
+                </>
+              )}
+            </div>
+          )
+        })()}
+
+        {/* §3-c: 버리기 후 교체 안내 메시지 (1초) */}
+        {discardNoticeMsg && (
+          <div style={{
+            background: 'rgba(28,23,16,0.9)',
+            border: '1px solid rgba(216,204,180,0.2)',
+            borderRadius: '4px',
+            padding: '8px 12px',
+            minHeight: '44px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            <span style={{ fontSize: '13px', color: '#D9A441', letterSpacing: '0.04em' }}>
+              {discardNoticeMsg}
+            </span>
+          </div>
+        )}
+
         {/* Phase 1.9.2: 미리보기 패널 (6종 상태 + 차단 안내) */}
-        {(() => {
+        {resolveStep === 'idle' && !discardNoticeMsg && (() => {
           // blockMsg 우선: 이종 3장 차단 시도 안내
           if (blockMsg) {
             return (
@@ -3274,10 +3584,12 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
             )
           }
 
+          // §1-a: recipeMultipliers 전달 — 사주별 배율 반영 (들불 소형×5.0/대형×5.5)
+          const storeRecipeMultipliers = useGameStore.getState().recipeMultipliers
           const preview = buildPreviewText(
             selectedCardObjs,
             enemyElement,
-            { hasAllFive: hasAllFiveElements, condensedMultiplier: condensedMultiplier ?? 0, favorableElement },
+            { hasAllFive: hasAllFiveElements, condensedMultiplier: condensedMultiplier ?? 0, favorableElement, recipeMultipliers: storeRecipeMultipliers, hand },
           )
 
           // condenseInfo: 토 타격 조합
@@ -3352,6 +3664,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           const isIdleState = preview.isIdle
           const isYeonhwan = preview.isYeonhwanReady
           const isInvalid = preview.isInvalidCombo
+          const needsTierFlash = preview.needsTierFlash
 
           return (
             <div
@@ -3364,7 +3677,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                justifyContent: 'center',
+                justifyContent: 'flex-start',
                 flexShrink: 0,
                 gap: '4px',
               }}
@@ -3375,14 +3688,20 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                   textAlign: 'center',
                 }}
               >
-                <span style={{
-                  color: preview.line1Color,
-                  fontSize: isIdleState || isInvalid ? '12px' : '13px',
-                  fontStyle: isIdleState ? 'italic' : 'normal',
-                  fontWeight: (!isIdleState && !isInvalid) ? 600 : 400,
-                  letterSpacing: '0.04em',
-                  animation: isYeonhwan ? 'textPulse 1.5s ease-in-out infinite' : undefined,
-                }}>
+                <span
+                  key={preview.line1}  // §2-b: key 변경으로 재마운트 → animation 1회 재실행
+                  style={{
+                    color: preview.line1Color,
+                    fontSize: isIdleState || isInvalid ? '12px' : '13px',
+                    fontStyle: isIdleState ? 'italic' : 'normal',
+                    fontWeight: (!isIdleState && !isInvalid) ? 600 : 400,
+                    letterSpacing: '0.04em',
+                    animation: isYeonhwan
+                      ? 'textPulse 1.5s ease-in-out infinite'
+                      : needsTierFlash ? 'tierNameFlash 0.35s ease-out' : undefined,
+                    display: 'inline',
+                  }}
+                >
                   {isYeonhwan && !preview.line1.startsWith('오행연환') && '✦ '}{preview.line1}
                 </span>
               </div>
@@ -3664,9 +3983,11 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                     : `rotate(${angle}deg) translateY(${isSelected ? -14 : 0}px)`,
                   transition: isRejectAnim
                     ? `transform 0.1s ease-out`
-                    : `transform ${getCssDuration(120)} ease-out, border-color ${getCssDuration(120)} ease-out`,
+                    : `transform ${getCssDuration(120)} ease-out, border-color ${getCssDuration(120)} ease-out, box-shadow 200ms ease-out`,
                   boxShadow: isHinted
                     ? `0 0 12px #D9A441`
+                    : highlightCardIds.includes(card.id)
+                    ? `0 0 0 2px ${ELEMENT_GLOW_COLORS[card.element]}, 0 0 8px ${ELEMENT_GLOW_COLORS[card.element]}`  // §3-b: 드로우 하이라이트 1초
                     : isYeonhwanCandidate && !isSelected
                     ? `0 0 8px #FFD98A, 0 0 16px rgba(255,217,138,0.4)`
                     : isDropTarget && dragState.fusionPreview?.type !== 'reject'
@@ -3941,6 +4262,19 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
             }}
           >
             버리기 (공격과 별개 · 남은 {discardsLeft}회)
+            {/* §3-c G2: 버리기 맥락 라인 */}
+            {discardContextMsg && (
+              <div style={{
+                fontSize: '11px',
+                color: '#8FB8DE',
+                letterSpacing: '0.04em',
+                marginTop: '2px',
+                textAlign: 'center',
+                fontWeight: 400,
+              }}>
+                {discardContextMsg}
+              </div>
+            )}
           </button>
           {/* B1-1: 양자택일 + Phase 1.9.2: 토 타격 조합 선택 시 2분할 */}
           {(() => {
