@@ -29,37 +29,42 @@ describe('G3 v4 §3 황금비 곡선 — 옹기가마 수용 전표 10쌍 검증
     expect(finalMult(1, 2)).toBeCloseTo(3.00, 2)
   })
 
-  it('화2토1 (3장 촉매과다) = ×2.55', () => {
-    expect(finalMult(2, 1)).toBeCloseTo(2.55, 2)
+  it('화2토1 (3장 촉매과다) = ×2.10 — A벌 step1=0.70 (구 2.55=×0.85)', () => {
+    // 3.0 × 0.70 = 2.10
+    expect(finalMult(2, 1)).toBeCloseTo(2.10, 2)
   })
 
-  it('화1토3 (4장 연료과다, 이탈1) = ×3.40', () => {
-    expect(finalMult(1, 3)).toBeCloseTo(3.40, 2)
+  it('화1토3 (4장 연료과다, 이탈1) = ×2.80 — A벌 step1=0.70 (구 3.40=×0.85)', () => {
+    // 4.0 × 0.70 = 2.80
+    expect(finalMult(1, 3)).toBeCloseTo(2.80, 2)
   })
 
   it('화2토2 (4장 정점) = ×4.00', () => {
     expect(finalMult(2, 2)).toBeCloseTo(4.00, 2)
   })
 
-  it('화3토1 (4장 촉매과다, 이탈2) = ×2.80', () => {
-    expect(finalMult(3, 1)).toBeCloseTo(2.80, 2)
+  it('화3토1 (4장 촉매과다, 이탈2) = ×1.80 — A벌 step2=0.45 (구 2.80=×0.70)', () => {
+    // 4.0 × 0.45 = 1.80
+    expect(finalMult(3, 1)).toBeCloseTo(1.80, 2)
   })
 
-  it('화1토4 (5장 연료과다, 이탈2) = ×3.85', () => {
-    expect(finalMult(1, 4)).toBeCloseTo(3.85, 2)
+  it('화1토4 (5장 연료과다, 이탈2) = ×2.48 — A벌 step2=0.45 (구 3.85=×0.70)', () => {
+    // 5.5 × 0.45 = 2.475 → 2.48
+    expect(finalMult(1, 4)).toBeCloseTo(2.48, 2)
   })
 
   it('화2토3 (5장 정점) = ×5.50', () => {
     expect(finalMult(2, 3)).toBeCloseTo(5.50, 2)
   })
 
-  it('화3토2 (5장 촉매과다, 이탈1) = ×4.68', () => {
-    // 5.5 × 0.85 = 4.675 → 반올림 4.68
-    expect(finalMult(3, 2)).toBeCloseTo(4.68, 2)
+  it('화3토2 (5장 촉매과다, 이탈1) = ×3.85 — A벌 step1=0.70 (구 4.68=×0.85)', () => {
+    // 5.5 × 0.70 = 3.85
+    expect(finalMult(3, 2)).toBeCloseTo(3.85, 2)
   })
 
-  it('화4토1 (5장 촉매과다, 이탈2) = ×3.85 — DoD 필수 지문', () => {
-    expect(finalMult(4, 1)).toBeCloseTo(3.85, 2)
+  it('화4토1 (5장 촉매과다, 이탈2) = ×2.48 — A벌 step2=0.45 (구 3.85=×0.70)', () => {
+    // 5.5 × 0.45 = 2.475 → 2.48
+    expect(finalMult(4, 1)).toBeCloseTo(2.48, 2)
   })
 })
 
@@ -112,15 +117,15 @@ describe('G3 v4 §3 — 비율 보정계수 직접 검증', () => {
     expect(getV4RatioCorrection(2, 3, 5)).toBe(1.0)
   })
 
-  it('한 계단 이탈은 ×0.85', () => {
-    expect(getV4RatioCorrection(2, 1, 3)).toBe(0.85)
-    expect(getV4RatioCorrection(1, 3, 4)).toBe(0.85)
-    expect(getV4RatioCorrection(3, 2, 5)).toBe(0.85)
+  it('한 계단 이탈은 ×0.70 — A벌 (구 0.85)', () => {
+    expect(getV4RatioCorrection(2, 1, 3)).toBe(0.70)
+    expect(getV4RatioCorrection(1, 3, 4)).toBe(0.70)
+    expect(getV4RatioCorrection(3, 2, 5)).toBe(0.70)
   })
 
-  it('두 계단 이탈(바닥)은 ×0.70', () => {
-    expect(getV4RatioCorrection(3, 1, 4)).toBe(0.7)
-    expect(getV4RatioCorrection(1, 4, 5)).toBe(0.7)
-    expect(getV4RatioCorrection(4, 1, 5)).toBe(0.7)
+  it('두 계단 이탈(바닥)은 ×0.45 — A벌 (구 0.70)', () => {
+    expect(getV4RatioCorrection(3, 1, 4)).toBe(0.45)
+    expect(getV4RatioCorrection(1, 4, 5)).toBe(0.45)
+    expect(getV4RatioCorrection(4, 1, 5)).toBe(0.45)
   })
 })

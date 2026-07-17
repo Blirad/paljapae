@@ -52,16 +52,18 @@ describe('G3 v4 judgeCombo — §3 황금비 보정 통합 (옹기가마 전표 
     expect(result.multiplier).toBeCloseTo(3.00, 2)
   })
 
-  it('화2토1 (3장 촉매과다) → multiplier=2.55', () => {
+  it('화2토1 (3장 촉매과다) → multiplier=2.10 — A벌 step1=0.70 (구 2.55=×0.85)', () => {
     const cards = makeCards([{ element: 'hwa', count: 2 }, { element: 'to', count: 1 }])
     const result = judgeCombo(cards)
-    expect(result.multiplier).toBeCloseTo(2.55, 2)
+    // 3.0 × 0.70 = 2.10
+    expect(result.multiplier).toBeCloseTo(2.10, 2)
   })
 
-  it('화1토3 (4장 연료과다, 이탈1) → multiplier=3.40', () => {
+  it('화1토3 (4장 연료과다, 이탈1) → multiplier=2.80 — A벌 step1=0.70 (구 3.40=×0.85)', () => {
     const cards = makeCards([{ element: 'hwa', count: 1 }, { element: 'to', count: 3 }])
     const result = judgeCombo(cards)
-    expect(result.multiplier).toBeCloseTo(3.40, 2)
+    // 4.0 × 0.70 = 2.80
+    expect(result.multiplier).toBeCloseTo(2.80, 2)
   })
 
   it('화2토2 (4장 정점) → multiplier=4.00', () => {
@@ -70,16 +72,18 @@ describe('G3 v4 judgeCombo — §3 황금비 보정 통합 (옹기가마 전표 
     expect(result.multiplier).toBeCloseTo(4.00, 2)
   })
 
-  it('화3토1 (4장 촉매과다, 이탈2) → multiplier=2.80', () => {
+  it('화3토1 (4장 촉매과다, 이탈2) → multiplier=1.80 — A벌 step2=0.45 (구 2.80=×0.70)', () => {
     const cards = makeCards([{ element: 'hwa', count: 3 }, { element: 'to', count: 1 }])
     const result = judgeCombo(cards)
-    expect(result.multiplier).toBeCloseTo(2.80, 2)
+    // 4.0 × 0.45 = 1.80
+    expect(result.multiplier).toBeCloseTo(1.80, 2)
   })
 
-  it('화1토4 (5장 연료과다, 이탈2) → multiplier=3.85', () => {
+  it('화1토4 (5장 연료과다, 이탈2) → multiplier=2.48 — A벌 step2=0.45 (구 3.85=×0.70)', () => {
     const cards = makeCards([{ element: 'hwa', count: 1 }, { element: 'to', count: 4 }])
     const result = judgeCombo(cards)
-    expect(result.multiplier).toBeCloseTo(3.85, 2)
+    // 5.5 × 0.45 = 2.475 → 2.48
+    expect(result.multiplier).toBeCloseTo(2.48, 2)
   })
 
   it('화2토3 (5장 정점) → multiplier=5.50', () => {
@@ -88,16 +92,18 @@ describe('G3 v4 judgeCombo — §3 황금비 보정 통합 (옹기가마 전표 
     expect(result.multiplier).toBeCloseTo(5.50, 2)
   })
 
-  it('화3토2 (5장 촉매과다, 이탈1) → multiplier=4.68', () => {
+  it('화3토2 (5장 촉매과다, 이탈1) → multiplier=3.85 — A벌 step1=0.70 (구 4.68=×0.85)', () => {
     const cards = makeCards([{ element: 'hwa', count: 3 }, { element: 'to', count: 2 }])
     const result = judgeCombo(cards)
-    expect(result.multiplier).toBeCloseTo(4.68, 2)
+    // 5.5 × 0.70 = 3.85
+    expect(result.multiplier).toBeCloseTo(3.85, 2)
   })
 
-  it('화4토1 (5장 촉매과다, 이탈2) → multiplier=3.85 — DoD 필수 지문', () => {
+  it('화4토1 (5장 촉매과다, 이탈2) → multiplier=2.48 — A벌 step2=0.45 DoD 지문 (구 3.85=×0.70)', () => {
     const cards = makeCards([{ element: 'hwa', count: 4 }, { element: 'to', count: 1 }])
     const result = judgeCombo(cards)
-    expect(result.multiplier).toBeCloseTo(3.85, 2)
+    // 5.5 × 0.45 = 2.475 → 2.48
+    expect(result.multiplier).toBeCloseTo(2.48, 2)
   })
 })
 

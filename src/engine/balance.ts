@@ -786,12 +786,38 @@ export const V4_PEAKS: Record<number, { catPeak: number; fuelPeak: number }> = {
   5: { catPeak: 2, fuelPeak: 3 },
 }
 
-/** 비율 보정 계수 값 */
+/**
+ * 비율 보정 계수 값 — A벌 채택 (이든 확정 2026-07-18)
+ * 구 값: step1=0.85, step2=0.70
+ * A벌: step1=0.70, step2=0.45 (비정점 페널티 강화)
+ * 제라 측정(ZERA_PALJAJEON_V4_SPARSITY_RESTORE_RESULT_20260718.md) — 게이트 PASS (클리어율 34.9%, 격차 3.0%p)
+ */
 export const V4_RATIO_CORRECTION = {
-  peak: 1.0,   // 정점: ×1.0
-  step1: 0.85, // 한 계단 이탈: ×0.85
-  step2: 0.7,  // 두 계단 이탈(바닥): ×0.70
+  peak: 1.0,   // 정점: ×1.0 (불변)
+  step1: 0.70, // 한 계단 이탈: ×0.70 (구 0.85 → A벌 0.70)
+  step2: 0.45, // 두 계단 이탈(바닥): ×0.45 (구 0.70 → A벌 0.45)
 } as const
+
+/** 측정 이력 보존용 — A벌 (프로덕션 반영 완료, V4_RATIO_CORRECTION과 동일) */
+export const V4_RATIO_CORRECTION_A = {
+  peak: 1.0,
+  step1: 0.70,
+  step2: 0.45,
+} as const
+
+/** 측정 이력 보존용 — B벌 (미채택) */
+export const V4_RATIO_CORRECTION_B = {
+  peak: 1.0,
+  step1: 0.75,  // 한 계단: 현행 0.85 → 0.75
+  step2: 0.50,  // 두 계단 바닥: 현행 0.70 → 0.50
+} as const
+
+/** 비율 보정 테이블 타입 */
+export type V4RatioCorrectionTable = {
+  readonly peak: number
+  readonly step1: number
+  readonly step2: number
+}
 
 /**
  * v4 §3 황금비 곡선 — 이탈 계단 계산
@@ -848,14 +874,20 @@ export function getV4RatioCorrectionSteps(cat: number, _fuel: number, N: number)
  * @param cat   촉매 장수
  * @param fuel  연료 장수
  * @param N     총 투입 장수 (= cat + fuel)
- * @returns 비율 보정계수 (1.0 / 0.85 / 0.70)
+ * @param table 비율 보정 테이블 (미입력 시 기본 V4_RATIO_CORRECTION 사용)
+ * @returns 비율 보정계수
  */
-export function getV4RatioCorrection(cat: number, fuel: number, N: number): number {
-  if (N < 3) return V4_RATIO_CORRECTION.peak  // 2장 면제
+export function getV4RatioCorrection(
+  cat: number,
+  fuel: number,
+  N: number,
+  table: V4RatioCorrectionTable = V4_RATIO_CORRECTION,
+): number {
+  if (N < 3) return table.peak  // 2장 면제 (온보딩 불변)
   const steps = getV4RatioCorrectionSteps(cat, fuel, N)
-  if (steps === 0) return V4_RATIO_CORRECTION.peak
-  if (steps === 1) return V4_RATIO_CORRECTION.step1
-  return V4_RATIO_CORRECTION.step2
+  if (steps === 0) return table.peak
+  if (steps === 1) return table.step1
+  return table.step2
 }
 
 /**
