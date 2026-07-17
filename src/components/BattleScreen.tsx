@@ -1341,6 +1341,9 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
   const [shakeActive, setShakeActive] = useState(false)
   const [shakeAmplitude, setShakeAmplitude] = useState(4)
   const [scorePopups, setScorePopups] = useState<ScorePopItem[]>([])
+  // v4 정점 전용 연출 상태
+  const [peakFxActive, setPeakFxActive] = useState(false)
+  const [peakFxFinalDmg, setPeakFxFinalDmg] = useState(0)
   const [elementalSeq, setElementalSeq] = useState<ElementalSeqState>({
     active: false,
     phase: 0,
@@ -2139,6 +2142,14 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           // 단계 4 등장 시 타격음
           audioManager.cardLand()
           console.log('[SFX] ComboResolveOverlay 최종 타격음', { timestamp: Date.now() })
+          // v4 정점 전용 연출 분기 (isRatioPeak)
+          if (comboForOverlay.isRatioPeak) {
+            setPeakFxFinalDmg(overlayInfo.final)
+            setPeakFxActive(true)
+            setTimeout(() => {
+              setPeakFxActive(false)
+            }, getDuration(550))
+          }
         }, getDuration(450))
         setTimeout(() => {
           setResolveStep('idle')
@@ -2610,6 +2621,18 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           20%  { transform: translateX(-50%) scale(1); }
           70%  { opacity: 1; }
           100% { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+        }
+        @keyframes peakBannerIn {
+          0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.82); }
+          30%  { opacity: 1; transform: translate(-50%, -50%) scale(1.06); }
+          60%  { opacity: 1; transform: translate(-50%, -50%) scale(1.0); }
+          85%  { opacity: 1; transform: translate(-50%, -50%) scale(1.0); }
+          100% { opacity: 0; transform: translate(-50%, -50%) scale(0.96); }
+        }
+        @keyframes peakStarBurst {
+          0%   { opacity: 1; transform: translate(0, 0) scale(1.2); }
+          60%  { opacity: 0.7; }
+          100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0.4); }
         }
       `}</style>
 
@@ -3436,6 +3459,13 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           ))}
         </div>
 
+        {/* v4 정점 전용 연출 */}
+        <PeakFxBanner
+          active={peakFxActive}
+          finalDmg={peakFxFinalDmg}
+          getCssDuration={getCssDuration}
+        />
+
         {/* Phase 1.8: 기운 잇기 팝업 */}
         {chainPopup && (
           <div style={{
@@ -3458,6 +3488,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
         {/* §4 G2: ComboResolveOverlay — 조합 확정 시 분해식 순차 연출 (최대 450ms, 스킵 가능) */}
         {resolveStep !== 'idle' && resolveInfo && (() => {
           const isFinalTier = ['대모으기', '오행연환'].includes(resolveInfo.tierLabel)
+          const isPeakFx = peakFxActive
           return (
             <div
               onClick={() => {
@@ -3465,6 +3496,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                 if (resolveStep === 'final') {
                   setResolveStep('idle')
                   setResolveInfo(null)
+                  setPeakFxActive(false)
                 }
               }}
               style={{
@@ -3537,7 +3569,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                       ? '0 0 12px rgba(255,217,138,0.9), 0 0 24px rgba(217,164,65,0.6)'
                       : 'none',
                   }}>
-                    {resolveInfo.final}
+                    {isPeakFx ? `★ ${resolveInfo.final} ★` : resolveInfo.final}
                   </span>
                   {resolveStep === 'final' && (
                     <span style={{ color: '#4A4540', fontSize: '10px', marginLeft: '4px' }}>탭하여 넘기기</span>
@@ -4555,6 +4587,104 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           passives={passives}
           flashCardId={activationState.flashCardId}
         />
+      </div>
+    </>
+  )
+}
+
+// ── v4 정점 전용 연출 컴포넌트 ──────────────────────────────────────────────
+
+const STAR_DIRECTIONS = [
+  { dx: 0, dy: -70 },
+  { dx: 49, dy: -49 },
+  { dx: 70, dy: 0 },
+  { dx: 49, dy: 49 },
+  { dx: 0, dy: 70 },
+  { dx: -49, dy: 49 },
+  { dx: -70, dy: 0 },
+  { dx: -49, dy: -49 },
+]
+
+function PeakStarBurst({ getCssDuration }: { getCssDuration: (ms: number) => string }) {
+  return (
+    <>
+      {STAR_DIRECTIONS.map((dir, idx) => (
+        <div
+          key={idx}
+          style={{
+            position: 'fixed',
+            top: '30%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 209,
+            pointerEvents: 'none',
+            fontSize: '14px',
+            color: '#FFD98A',
+            '--dx': `${dir.dx}px`,
+            '--dy': `${dir.dy}px`,
+            animation: `peakStarBurst ${getCssDuration(400)} ease-out forwards`,
+            animationDelay: `${idx * 20}ms`,
+          } as React.CSSProperties}
+        >
+          ★
+        </div>
+      ))}
+    </>
+  )
+}
+
+function PeakFxBanner({
+  active,
+  finalDmg,
+  getCssDuration,
+}: {
+  active: boolean
+  finalDmg: number
+  getCssDuration: (ms: number) => string
+}) {
+  if (!active) return null
+  return (
+    <>
+      <PeakStarBurst getCssDuration={getCssDuration} />
+      <div
+        style={{
+          position: 'fixed',
+          top: '30%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          zIndex: 210,
+          pointerEvents: 'none',
+          background: 'rgba(12,10,8,0.97)',
+          border: '2px solid #D9A441',
+          borderRadius: '4px',
+          padding: '14px 20px',
+          maxWidth: '240px',
+          textAlign: 'center',
+          animation: `peakBannerIn ${getCssDuration(550)} ease-out forwards`,
+        }}
+      >
+        <div style={{
+          color: '#FFD98A',
+          fontSize: '22px',
+          fontWeight: 800,
+          letterSpacing: '0.06em',
+          textShadow: '0 0 14px rgba(255,217,138,0.9), 0 0 28px rgba(217,164,65,0.5)',
+        }}>
+          정화 ⭐ 강타
+        </div>
+        <div style={{
+          borderTop: '1px solid rgba(217,164,65,0.35)',
+          margin: '8px 0 6px',
+        }} />
+        <div style={{
+          color: '#FFFFFF',
+          fontSize: '28px',
+          fontWeight: 800,
+          letterSpacing: '0.04em',
+          textShadow: '0 0 10px rgba(255,255,255,0.6)',
+        }}>
+          ★ {finalDmg} ★
+        </div>
       </div>
     </>
   )
