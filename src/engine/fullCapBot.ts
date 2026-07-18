@@ -1156,8 +1156,10 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
       // T13-R2: 연환 발생 추적 (comboResult.type 기준)
       if (comboResult.type === 'ohang-yeonhwan') {
         traitCounts['ohang-yeonhwan'] = (traitCounts['ohang-yeonhwan'] ?? 0) + 1
-        // §4: 어환 발동 별도 집계
-        if (comboResult.isEohwan) {
+        // §4: 어환 계단형 별도 집계
+        if (comboResult.isCheonjiEohwan) {
+          traitCounts['cheonji-eohwan'] = (traitCounts['cheonji-eohwan'] ?? 0) + 1
+        } else if (comboResult.isEohwan) {
           traitCounts['eohwan'] = (traitCounts['eohwan'] ?? 0) + 1
         }
       }

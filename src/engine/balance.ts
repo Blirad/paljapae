@@ -360,8 +360,12 @@ export const FUSION_TRAIT_MAP: Record<string, string> = {
 export const OHANG_YEONHWAN_MULTIPLIER = 8
 
 // --- 어환(御環) 배율 (배치 2 §4 연환 2단 — 2026-07-18 이든 지시)
-// 왕 + 여왕 + 상이 3오행 (5장·5원소) → ×12. 기본 연환의 상위 판정.
+// 왕족(왕 또는 여왕) 1장 + 상이 4오행 (5장·5원소) → ×12. 기본 연환의 상위 판정.
 export const EOHWAN_MULTIPLIER = 12
+
+// --- 천지어환(天地御環) 배율 (배치 2 §4 어환 계단형 — 2026-07-18 이든 G5 최종)
+// 왕 + 여왕 동시 포함 + 상이 3오행 (5장·5원소) → ×15. 어환의 전설 상위 판정.
+export const CHEONJI_EOHWAN_MULTIPLIER = 15
 
 // --- 상생상극 매트릭스 배율 (스펙 v2 — 단일 출처)
 // 극(剋): 내가 적을 극 → ×1.5

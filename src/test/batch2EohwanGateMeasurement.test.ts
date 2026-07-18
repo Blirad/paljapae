@@ -42,7 +42,7 @@ vi.mock('../engine/balance', async () => {
 
 const { simulateFullCapRun, selectTalismanBySaju } = await import('../engine/fullCapBot')
 const { getFavorableElement } = await import('../engine/manseryeok')
-const { V4_FLOOR_HP_TABLE } = await import('../engine/balance')
+const { V4_FLOOR_HP_TABLE, CHEONJI_EOHWAN_MULTIPLIER } = await import('../engine/balance')
 
 // ─── 프리셋 3종 (v4SparsityRestore.test.ts 정본 그대로) ──────────────────────
 const PRESETS = [
@@ -91,9 +91,10 @@ function measureCombo(preset: typeof PRESETS[0]) {
   })
 
   let condVictories = 0      // 조건부(프로덕션) — 게이트 1·2용
-  let pairAppeared = 0       // A군에서 왕+여왕 모두 획득한 시드 수
-  let pairVictoriesA = 0     // 그 시드들의 A 결과 (왕+여왕 보유)
+  let pairAppeared = 0       // A군에서 왕족 1장 이상 획득한 시드 수
+  let pairVictoriesA = 0     // 그 시드들의 A 결과 (왕족 1장 이상 보유)
   let pairVictoriesB = 0     // 동일 시드의 B 결과 (왕족 배제)
+  let cheonjiEohwanCount = 0 // 천지어환(×15) 발동 횟수
   let eohwanCount = 0        // 어환(×12) 발동 횟수
   let yeonhwanCount = 0      // 기본 연환(×8) 발동 횟수
   let totalAttacks = 0
@@ -106,14 +107,15 @@ function measureCombo(preset: typeof PRESETS[0]) {
     const condR = simulateFullCapRun(seed, baseOpts({ royalValue: 10, royalForceAcquire: false }))
     if (condR.victory) condVictories++
     const tc = condR.traitCounts ?? {}
-    eohwanCount += tc['eohwan'] ?? 0
-    yeonhwanCount += (tc['ohang-yeonhwan'] ?? 0) - (tc['eohwan'] ?? 0)  // 기본연환 = 전체 연환 - 어환
+    cheonjiEohwanCount += tc['cheonji-eohwan'] ?? 0  // 천지어환
+    eohwanCount += (tc['eohwan'] ?? 0) - (tc['cheonji-eohwan'] ?? 0)  // 어환 = 전체 - 천지어환
+    yeonhwanCount += (tc['ohang-yeonhwan'] ?? 0) - (tc['eohwan'] ?? 0) - (tc['cheonji-eohwan'] ?? 0)  // 기본연환 = 전체 - 어환 - 천지어환
     for (const fs of (condR.floorStats ?? [])) totalAttacks += fs.attackCount
 
-    // A군 (강제 획득 — 왕+여왕 모두) — royalForceAcquireCount=2 + royalValue로 왕족 생성
-    const aR = simulateFullCapRun(seed, baseOpts({ royalValue: 10, royalForceAcquire: true, royalForceAcquireCount: 2 }))
-    const acquiredBoth = (aR.royalObtainedCount ?? 0) >= 2  // 왕+여왕 모두 획득 여부
-    if (acquiredBoth) {
+    // A군 (강제 획득 — 왕족 1장) — royalForceAcquireCount=1 + royalValue로 왕족 생성
+    const aR = simulateFullCapRun(seed, baseOpts({ royalValue: 10, royalForceAcquire: true, royalForceAcquireCount: 1 }))
+    const acquiredRoyal = (aR.royalObtainedCount ?? 0) >= 1  // 왕족 1장 이상 획득 여부
+    if (acquiredRoyal) {
       // B군 (배제) — 동일 시드, 왕족 미생성 (royalValue 없음 = 왕족 불생성)
       const bR = simulateFullCapRun(seed, baseOpts({}))
       pairAppeared++
@@ -127,9 +129,10 @@ function measureCombo(preset: typeof PRESETS[0]) {
   const clearRateB = pairAppeared > 0 ? (pairVictoriesB / pairAppeared) * 100 : 0
   const pureDelta = clearRateA - clearRateB
   const pairAppearedRate = (pairAppeared / RUNS) * 100
+  const cheonjiEohwanRate = totalAttacks > 0 ? (cheonjiEohwanCount / totalAttacks) * 100 : 0
   const eohwanRate = totalAttacks > 0 ? (eohwanCount / totalAttacks) * 100 : 0
   const yeonhwanRate = totalAttacks > 0 ? (yeonhwanCount / totalAttacks) * 100 : 0
-  const totalChainRate = totalAttacks > 0 ? ((eohwanCount + yeonhwanCount) / totalAttacks) * 100 : 0
+  const totalChainRate = totalAttacks > 0 ? ((cheonjiEohwanCount + eohwanCount + yeonhwanCount) / totalAttacks) * 100 : 0
   const gatePass = clearRate >= GATE_MIN && clearRate <= GATE_MAX
 
   return {
@@ -141,9 +144,11 @@ function measureCombo(preset: typeof PRESETS[0]) {
     clearRateA,
     clearRateB,
     pureDelta,
+    cheonjiEohwanCount,
     eohwanCount,
     yeonhwanCount,
     totalAttacks,
+    cheonjiEohwanRate,
     eohwanRate,
     yeonhwanRate,
     totalChainRate,
@@ -168,7 +173,7 @@ describe('배치 2 §4 연환 2단 (어환 ×12) 게이트 측정 (1000판 × 3�
         console.log(`  [어환] ${preset.label} 1000판 측정 중...`)
         const r = measureCombo(preset)
         results.push(r)
-        console.log(`  [어환] ${preset.label}: ${r.clearRate.toFixed(1)}% — ${r.gatePass ? 'PASS' : 'FAIL'} | A/B 등장율 ${r.pairAppearedRate.toFixed(1)}% | A군 CR ${r.clearRateA.toFixed(1)}% | B군 CR ${r.clearRateB.toFixed(1)}% | 순수Δ ${r.pureDelta.toFixed(1)}%p | 어환 ${r.eohwanRate.toFixed(2)}% | 기연 ${r.yeonhwanRate.toFixed(2)}%`)
+        console.log(`  [어환] ${preset.label}: ${r.clearRate.toFixed(1)}% — ${r.gatePass ? 'PASS' : 'FAIL'} | 왕족율 ${r.pairAppearedRate.toFixed(1)}% | A군 CR ${r.clearRateA.toFixed(1)}% | B군 CR ${r.clearRateB.toFixed(1)}% | 순수Δ ${r.pureDelta.toFixed(1)}%p | 천지 ${r.cheonjiEohwanRate.toFixed(2)}% | 어환 ${r.eohwanRate.toFixed(2)}% | 기연 ${r.yeonhwanRate.toFixed(2)}%`)
       }
 
       const rates = results.map(r => r.clearRate)
@@ -178,26 +183,27 @@ describe('배치 2 §4 연환 2단 (어환 ×12) 게이트 측정 (1000판 × 3�
       const allPass = results.every(r => r.gatePass)
       const spreadPass = spread <= GATE_SPREAD
 
-      // 어환 발동률 분석
+      // 어환 발동률 분석 (3단계 위계)
+      const totalCheonjiEohwan = results.reduce((s, r) => s + r.cheonjiEohwanCount, 0)
       const totalEohwan = results.reduce((s, r) => s + r.eohwanCount, 0)
       const totalYeonhwan = results.reduce((s, r) => s + r.yeonhwanCount, 0)
       const totalAttacks = results.reduce((s, r) => s + r.totalAttacks, 0)
+      const cheonjiEohwanRate = totalAttacks > 0 ? (totalCheonjiEohwan / totalAttacks) * 100 : 0
       const eohwanRate = totalAttacks > 0 ? (totalEohwan / totalAttacks) * 100 : 0
       const yeonhwanRate = totalAttacks > 0 ? (totalYeonhwan / totalAttacks) * 100 : 0
-      const totalChainRate = totalAttacks > 0 ? ((totalEohwan + totalYeonhwan) / totalAttacks) * 100 : 0
+      const totalChainRate = totalAttacks > 0 ? ((totalCheonjiEohwan + totalEohwan + totalYeonhwan) / totalAttacks) * 100 : 0
 
-      // 어환 위계 작동 확인: 어환이 기본 연환보다 훨씬 희소해야 함
-      // (왕+여왕+3오행 5장 = 정확한 구성 필요)
-      const eohwanHierarchyOK = eohwanRate > 0 && eohwanRate < yeonhwanRate
+      // 위계 작동 확인: 천지어환 ≤ 어환 ≤ 기본연환 (희소 순서)
+      const hierarchyOK = (cheonjiEohwanRate <= eohwanRate) && (eohwanRate <= yeonhwanRate)
 
       console.log(`\n[어환] 격차: ${spread.toFixed(1)}%p — ${spreadPass ? 'PASS' : 'FAIL'}`)
-      console.log(`[어환] 전체 연환 성립률: 어환 ${eohwanRate.toFixed(2)}% + 기본연환 ${yeonhwanRate.toFixed(2)}% = ${totalChainRate.toFixed(2)}%`)
-      console.log(`[어환] 위계 작동 (어환 < 기본연환): ${eohwanHierarchyOK ? 'OK' : 'CONFIRM_NEEDED'}`)
+      console.log(`[어환] 전체 연환 3단계: 천지 ${cheonjiEohwanRate.toFixed(2)}% + 어환 ${eohwanRate.toFixed(2)}% + 기본 ${yeonhwanRate.toFixed(2)}% = ${totalChainRate.toFixed(2)}%`)
+      console.log(`[어환] 위계 작동 (천지 ≤ 어환 ≤ 기본): ${hierarchyOK ? 'OK' : 'CONFIRM_NEEDED'}`)
 
       // ── 게이트 종합 판정 ──────────────────────────────────────────────────────
       const gate1Pass = allPass  // 전원 25~40%
       const gate2Pass = spreadPass  // 격차 ≤15%p
-      const gate3Pass = eohwanRate > 0 && eohwanHierarchyOK  // 어환 발동 + 위계 확인
+      const gate3Pass = (cheonjiEohwanRate > 0 || eohwanRate > 0) && hierarchyOK  // 어환(천지 또는 일반) 발동 + 위계 확인
       const overallPass = gate1Pass && gate2Pass && gate3Pass
 
       console.log('\n════════════════════════════════════════════════════')
@@ -264,13 +270,13 @@ describe('배치 2 §4 연환 2단 (어환 ×12) 게이트 측정 (1000판 × 3�
 
 ## 측정 결과 (1000판 × 3프리셋, 강제 A/B)
 
-| 프리셋 | 클리어율(조건부) | A/B 왕+여왕률 | A군 CR | B군 CR | 순수Δ(A−B) | 어환률 | 기본연환률 |
-|--------|---------|-----------|--------|--------|---------|---------|-----------|
-${results.map(presetTableRow).join('\n')}
+| 프리셋 | 클리어율(조건부) | 왕족율 | A군 CR | B군 CR | 순수Δ(A−B) | 천지어환 | 어환 | 기본연환 |
+|--------|---------|--------|--------|--------|---------|---------|---------|-----------|
+${results.map(r => `| ${r.label.padEnd(6)} | ${f1(r.clearRate)}% (${gate(r.gatePass)}) | ${f1(r.pairAppearedRate)}% | ${f1(r.clearRateA)}% | ${f1(r.clearRateB)}% | ${f1(r.pureDelta)}%p | ${f2(r.cheonjiEohwanRate)}% | ${f2(r.eohwanRate)}% | ${f2(r.yeonhwanRate)}% |`).join('\n')}
 
 - **격차**: ${f1(spread)}%p — ${gate(spreadPass)} (기준 ≤15%p)
-- **어환 발동률**: ${f2(eohwanRate)}% (전체 연환: 어환 ${f2(eohwanRate)}% + 기본연환 ${f2(yeonhwanRate)}% = ${f2(totalChainRate)}%)
-- **위계 작동**: 어환(희소) < 기본연환(빈도) — ${eohwanHierarchyOK ? '정상' : '확인필요'}
+- **어환 3단계**: 천지 ${f2(cheonjiEohwanRate)}% + 어환 ${f2(eohwanRate)}% + 기본 ${f2(yeonhwanRate)}% = ${f2(totalChainRate)}%
+- **위계 작동**: 천지 ≤ 어환 ≤ 기본 — ${hierarchyOK ? '정상' : '확인필요'}
 
 ---
 

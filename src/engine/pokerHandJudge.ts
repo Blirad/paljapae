@@ -15,6 +15,7 @@ import {
   findFusionCombo,
   OHANG_YEONHWAN_MULTIPLIER,
   EOHWAN_MULTIPLIER,
+  CHEONJI_EOHWAN_MULTIPLIER,
   COMBO_RULESET_VERSION,
   RECIPE_MAP,
   RECIPE_SMALL_BIRTH_MULT,
@@ -66,7 +67,8 @@ export interface ComboJudgeResult {
   isRatioPeak?: boolean
   hasKingUpgrade?: boolean   // 배치 2 §2: 왕 승격 적용 여부
   hasQueenAmplify?: boolean  // 배치 2 §2: 여왕 증폭 적용 여부
-  isEohwan?: boolean         // 배치 2 §4: 어환(왕+여왕+3오행) ×12 발동 여부
+  isEohwan?: boolean         // 배치 2 §4: 어환(왕족1장+4오행) ×12 발동 여부
+  isCheonjiEohwan?: boolean  // 배치 2 §4: 천지어환(왕+여왕+3오행) ×15 발동 여부
 }
 
 /** 카드 합계 계산 */
@@ -175,17 +177,39 @@ export function isOhangYeonhwan(cards: Card[]): boolean {
 }
 
 /**
- * 어환(御環) 검사: 오행연환 조건 + 왕 + 여왕 포함 (배치 2 §4 연환 2단)
+ * 천지어환(天地御環) 검사: 왕 + 여왕 동시 + 상이 3오행 (배치 2 §4 어환 계단형 — 2026-07-18)
  *
- * 5장·5원소·값합 25+ AND 왕 1장 이상 AND 여왕 1장 이상.
- * 5원소 제약으로 왕과 여왕은 반드시 서로 다른 오행 (동오행 시 5원소 불성립).
- * 기본 연환의 상위 판정 — 어환 성립 시 연환 판정에 도달하지 않음.
+ * 5장·5원소·값합 25+ AND 왕 1장 AND 여왕 1장 AND 상이 3원소만 포함.
+ * 왕과 여왕이 2원소, 나머지가 3원소 → 전설 계층.
+ * 최상위 우선순위 — 천지어환 성립 시 어환/연환 판정에 도달하지 않음.
  */
-export function isEohwan(cards: Card[]): boolean {
-  if (!isOhangYeonhwan(cards)) return false
+export function isCheonjiEohwan(cards: Card[]): boolean {
+  if (cards.length !== 5) return false
+  const elements = new Set(cards.map((c) => c.element))
+  if (elements.size !== 5) return false  // 5원소 필수
+  if (sumCardValues(cards) < YEONHWAN_MIN_SUM) return false  // 값합 25+ 필수
   const hasKing = cards.some(c => c.royalType === 'king')
   const hasQueen = cards.some(c => c.royalType === 'queen')
   return hasKing && hasQueen
+}
+
+/**
+ * 어환(御環) 검사: 왕족 1장(왕 또는 여왕) + 상이 4오행 (배치 2 §4 어환 계단형 — 2026-07-18)
+ *
+ * 5장·5원소·값합 25+ AND (왕 또는 여왕) 1장 이상 AND 천지어환 조건 미충족.
+ * 왕족 1장이 가능하므로 발동 가능성 높음 (천지어환의 아래 계층).
+ * 어환 성립 시 연환 판정에 도달하지 않음.
+ */
+export function isEohwan(cards: Card[]): boolean {
+  if (cards.length !== 5) return false
+  const elements = new Set(cards.map((c) => c.element))
+  if (elements.size !== 5) return false  // 5원소 필수
+  if (sumCardValues(cards) < YEONHWAN_MIN_SUM) return false  // 값합 25+ 필수
+  // 천지어환 조건 먼저 확인 (천지어환이 어환을 포함하므로 제외)
+  if (isCheonjiEohwan(cards)) return false
+  // 왕족 1장 이상 (왕 또는 여왕)
+  const hasRoyal = cards.some(c => c.royalType === 'king' || c.royalType === 'queen')
+  return hasRoyal
 }
 
 /**
@@ -220,9 +244,22 @@ export function judgeCombo(
   const baseScore = sumCardValues(selectedCards)
 
   // 조합 판정 (우선순위 순서)
-  // 배치 2 §4: 어환을 먼저 검사 → 연환 (어환 조건 충족 시 상위 우선)
+  // 배치 2 §4: 천지어환 → 어환 → 연환 (상위 우선)
+  if (isCheonjiEohwan(selectedCards)) {
+    // 0. 천지어환(天地御環) — 왕+여왕+3오행 (전설, ×15)
+    return {
+      type: 'ohang-yeonhwan',
+      name: '천지어환',
+      baseScore,
+      multiplier: CHEONJI_EOHWAN_MULTIPLIER,
+      totalScore: Math.round(baseScore * CHEONJI_EOHWAN_MULTIPLIER),
+      finishingElement: 'mok',  // 임시 (모든 기운이 관여하므로)
+      description: '왕좌의 양극이 천지의 고리를 이룬다 — 천지어환(天地御環)',
+      isCheonjiEohwan: true,
+    }
+  }
   if (isEohwan(selectedCards)) {
-    // 0. 어환(御環) — 왕+여왕+3오행 (연환의 상위 판정, ×12)
+    // 1. 어환(御環) — 왕족1장+4오행 (희귀, ×12)
     return {
       type: 'ohang-yeonhwan',
       name: '어환',
@@ -230,12 +267,12 @@ export function judgeCombo(
       multiplier: EOHWAN_MULTIPLIER,
       totalScore: Math.round(baseScore * EOHWAN_MULTIPLIER),
       finishingElement: 'mok',  // 임시 (모든 기운이 관여하므로)
-      description: '왕과 여왕이 오행의 고리를 완성한다 — 어환(御環)',
+      description: '왕족의 힘이 오행의 고리를 강화한다 — 어환(御環)',
       isEohwan: true,
     }
   }
   if (isOhangYeonhwan(selectedCards)) {
-    // 1. 오행연환 (기본, ×8)
+    // 2. 오행연환 (기본, ×8)
     return {
       type: 'ohang-yeonhwan',
       name: '오행연환',
