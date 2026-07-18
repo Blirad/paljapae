@@ -4345,7 +4345,11 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
               if (!isFusion || !selectedComboResult) return ''
               const baseValue = selectedCardObjs.reduce((sum, c) => sum + c.value, 0)
               const comboName = selectedComboResult.name ?? ''
-              const traitId = FUSION_TRAIT_MAP[comboName]
+              // v4 prefix('소', '대') 제거 후 traits 조회 (v4 모드에서 2/5장은 prefix 붙음)
+              const baseComboName = (comboName.startsWith('소') || comboName.startsWith('대'))
+                ? comboName.slice(1)
+                : comboName
+              const traitId = FUSION_TRAIT_MAP[baseComboName]
 
               switch (traitId) {
                 // === 낳는(연료) 5종 ===

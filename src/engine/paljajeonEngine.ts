@@ -1048,7 +1048,11 @@ export function getCondenseAvailability(
   if (COMBO_RULESET_VERSION === 'recipe') return null
   if (finishingElement !== 'to') return null
   if (!comboName) return null
-  if (comboName === '옹기가마') return 'great'
+  // v4 prefix('소', '대') 제거 후 조합명 비교 (v4 2/5장은 prefix 붙음)
+  const baseComboName = (comboName.startsWith('소') || comboName.startsWith('대'))
+    ? comboName.slice(1)
+    : comboName
+  if (baseComboName === '옹기가마') return 'great'
   return null
 }
 
