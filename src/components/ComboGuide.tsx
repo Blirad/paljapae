@@ -188,18 +188,6 @@ function TabGather() {
           <div style={{ flex: 2, padding: '8px 8px', color: '#D8CCB4', fontSize: '13px' }}>{row.desc}</div>
         </div>
       ))}
-      <div style={{
-        marginTop: '16px',
-        padding: '8px',
-        backgroundColor: 'rgba(74,155,110,0.1)',
-        border: '1px solid #4A9B6E',
-        borderRadius: '2px',
-      }}>
-        <div style={{ color: '#7BD4A3', fontSize: '12px', fontWeight: 600, marginBottom: '4px' }}>음양 조화 보너스</div>
-        <div style={{ color: '#D8CCB4', fontSize: '12px', lineHeight: '1.6' }}>
-          같은 기운 조합에 양(陽)·음(陰)이 섞여 있으면<br />공격력 +20% 추가
-        </div>
-      </div>
     </div>
   )
 }

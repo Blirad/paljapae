@@ -30,9 +30,9 @@ describe('v4 HP 배선 — getFloorHp versionOverride 검증', () => {
       expect(getFloorHp(2, 'v4')).toBe(952)
     })
 
-    it('4층: getFloorHp(3, "v4") === V4_FLOOR_HP_TABLE[4] (621)', () => {
+    it('4층: getFloorHp(3, "v4") === V4_FLOOR_HP_TABLE[4] (680)', () => {
       expect(getFloorHp(3, 'v4')).toBe(V4_FLOOR_HP_TABLE[4])
-      expect(getFloorHp(3, 'v4')).toBe(621)
+      expect(getFloorHp(3, 'v4')).toBe(680)
     })
   })
 
@@ -53,7 +53,7 @@ describe('v4 HP 배선 — getFloorHp versionOverride 검증', () => {
       expect(getFloorHp(0, 'v4')).not.toBe(getFloorHp(0, 'v3'))
     })
 
-    it('4층: v4(621) !== v3(540)', () => {
+    it('4층: v4(680) !== v3(540)', () => {
       expect(getFloorHp(3, 'v4')).not.toBe(getFloorHp(3, 'v3'))
     })
   })

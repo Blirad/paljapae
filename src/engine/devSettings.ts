@@ -44,17 +44,17 @@ function applyUrlParams(): void {
 // 모듈 로드 시 URL 파라미터 적용
 applyUrlParams()
 
-/** comboRuleset 읽기 — 기본값: 'v3' */
+/** comboRuleset 읽기 — 기본값: 'v4' (2026-07-18 이든 정식 전환) */
 export function getDevComboRuleset(): ComboRuleset {
-  if (typeof window === 'undefined') return 'v3'
+  if (typeof window === 'undefined') return 'v4'
   try {
     const val = localStorage.getItem(LS_RULESET_KEY)
     if (val === 'recipe') return 'recipe'
-    if (val === 'v4') return 'v4'
+    if (val === 'v3') return 'v3'
   } catch {
     // ignore
   }
-  return 'v3'
+  return 'v4'
 }
 
 /** comboRuleset 쓰기 */
@@ -67,16 +67,16 @@ export function setDevComboRuleset(ruleset: ComboRuleset): void {
   }
 }
 
-/** ENABLE_YONGSIN_DESCENT 읽기 — 기본값: false */
+/** ENABLE_YONGSIN_DESCENT 읽기 — 기본값: true (2026-07-18 이든 정식 전환) */
 export function getDevDescentEnabled(): boolean {
-  if (typeof window === 'undefined') return false
+  if (typeof window === 'undefined') return true
   try {
     const val = localStorage.getItem(LS_DESCENT_KEY)
-    if (val === 'true') return true
+    if (val === 'false') return false
   } catch {
     // ignore
   }
-  return false
+  return true
 }
 
 /** ENABLE_YONGSIN_DESCENT 쓰기 */

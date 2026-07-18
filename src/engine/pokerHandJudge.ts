@@ -13,7 +13,6 @@ import type { Card, Element, HandJudgeResult } from '../types/game'
 import {
   GATHER_MULTIPLIERS,
   findFusionCombo,
-  EUMYANG_HARMONY_BONUS,
   OHANG_YEONHWAN_MULTIPLIER,
   COMBO_RULESET_VERSION,
   RECIPE_MAP,
@@ -24,6 +23,10 @@ import {
   RECIPE_LARGE_MULT_A,
   V4_TIER_MULTIPLIERS,
   getV4RatioCorrection,
+  getV4RatioCorrectionSteps,
+  V4_RATIO_CORRECTION,
+  type V4RatioCorrectionTable,
+  getGather5Multiplier,
 } from './balance'
 
 // 오행 상극: A가 B를 극한다
@@ -48,6 +51,20 @@ export interface ComboJudgeResult {
   finishingElement: Element       // 타격 속성 (극 판정 기준)
   description: string             // 한글 설명
   eumyangBonusApplied?: boolean   // 음양 조화 보너스 적용 여부
+  /**
+   * v4 §3 황금비 정점 플래그 (작업 2 — 2026-07-18)
+   * true: 실제 황금비 정점 (N≥3 AND steps===0)
+   * false: 비정점 또는 2장 면제 정점(N=2)
+   * undefined: v4 융합 판정 외 경로 (gather/yeonhwan/none/recipe 등)
+   *
+   * 2장 면제(N<3)와 진짜 정점(N≥3 정점) 구분:
+   *   N=2 → isRatioPeak=false (면제 — 배율은 peak이지만 황금비 정점 사건 아님)
+   *   N≥3, steps=0 → isRatioPeak=true (진짜 정점 — 연출 대상)
+   *   N≥3, steps>0 → isRatioPeak=false (비정점)
+   */
+  isRatioPeak?: boolean
+  hasKingUpgrade?: boolean   // 배치 2 §2: 왕 승격 적용 여부
+  hasQueenAmplify?: boolean  // 배치 2 §2: 여왕 증폭 적용 여부
 }
 
 /** 카드 합계 계산 */
@@ -130,11 +147,29 @@ function getV4NamePrefix(cardCount: number): string {
   return ''
 }
 
-/** 오행연환 검사: 5기운 전부, 정확히 5장 */
+/**
+ * 오행연환 최소 카드값 합계 임계치 (작업 3 — 2026-07-18 이든 지시)
+ * "아무 낱장 5원소 5장" 성립 방지 — 좋은 5장을 모아야 성립.
+ * 이든 추정: 값 게이트 전 성립률 ~65% → 게이트 후 ~30%대 하향 목표.
+ */
+export const YEONHWAN_MIN_SUM = 25
+
+/**
+ * 오행연환 검사: 5기운 전부(size===5) + 총합 값 ≥ YEONHWAN_MIN_SUM
+ *
+ * 폴백 경로: 5원소이지만 값 미달(sumCardValues < 25) → false 반환.
+ * judgeCombo 우선순위상 오행연환 판정 실패 → 다음 분기(v4 융합/모으기)로 폴스루.
+ * 단, 5원소 5장은 isFusionCombo(2원소 조건 미충족) = false 이므로 결국 none(일반기) 폴백.
+ * 즉: 값 미달 5원소 5장 → none (잡탕으로 취급).
+ *
+ * 봇·엔진 양쪽 판정 일관성: isOhangYeonhwan은 단일 함수이므로
+ * fullCapBot(봇)과 paljajeonEngine(엔진) 모두 이 함수를 통해 판정 → 자동 일관성.
+ */
 export function isOhangYeonhwan(cards: Card[]): boolean {
   if (cards.length !== 5) return false
   const elements = new Set(cards.map((c) => c.element))
-  return elements.size === 5
+  if (elements.size !== 5) return false
+  return sumCardValues(cards) >= YEONHWAN_MIN_SUM
 }
 
 /**
@@ -143,10 +178,16 @@ export function isOhangYeonhwan(cards: Card[]): boolean {
  * @param recipeMultipliers 사주별 레시피 배율표 (선택사항, 배치 1.5)
  *   - undefined: 전역 고정 배율 사용 (기본값)
  *   - Record: state.recipeMultipliers로 주입된 배율표 (런 중 고정)
+ * @param ratioCorrectionTable v4 §3 황금비 보정 테이블 (선택사항)
+ *   - undefined: 기본 V4_RATIO_CORRECTION (현행) 사용
+ *   - V4_RATIO_CORRECTION_A / _B: 희소성 복원 측정용 주입 (2026-07-18)
+ * @param gatherUsedInBattle α 수확 체감 — 동일 전투 내 gather5 활성화 횟수 (선택사항, 기본=0)
  */
 export function judgeCombo(
   selectedCards: Card[],
   recipeMultipliers?: Record<string, number>,
+  ratioCorrectionTable?: V4RatioCorrectionTable,
+  gatherUsedInBattle: number = 0,
 ): ComboJudgeResult {
   if (selectedCards.length === 0) {
     return {
@@ -254,11 +295,30 @@ export function judgeCombo(
       // §3 황금비 곡선: 촉매(element1)·연료(element2) 장수 카운트
       const catCount = selectedCards.filter(c => c.element === fusion.element1).length
       const fuelCount = selectedCards.filter(c => c.element === fusion.element2).length
-      // E2E 지문: const ratioCorrection = getV4RatioCorrection(catCount, fuelCount, count)
-      const ratioCorrection = getV4RatioCorrection(catCount, fuelCount, count)
+
+      // 배치 2 §2: 왕 효과 — 비율 판정 한 계단 승격
+      const hasKing = selectedCards.some(c => c.royalType === 'king')
+      let ratioSteps = count < 3 ? -1 : getV4RatioCorrectionSteps(catCount, fuelCount, count)
+      if (hasKing && ratioSteps > 0) {
+        ratioSteps = Math.max(0, ratioSteps - 1)  // 한 계단 승격 (step2→step1, step1→peak)
+      }
+      // 승격된 steps로 직접 보정값 산출
+      let ratioCorrection: number
+      if (count < 3) {
+        ratioCorrection = ratioCorrectionTable?.peak ?? V4_RATIO_CORRECTION.peak
+      } else if (ratioSteps === 0) {
+        ratioCorrection = ratioCorrectionTable?.peak ?? V4_RATIO_CORRECTION.peak
+      } else if (ratioSteps === 1) {
+        ratioCorrection = ratioCorrectionTable?.step1 ?? V4_RATIO_CORRECTION.step1
+      } else {
+        ratioCorrection = ratioCorrectionTable?.step2 ?? V4_RATIO_CORRECTION.step2
+      }
+
       const multiplier = Math.round(tierMult * ratioCorrection * 100) / 100
       const prefix = getV4NamePrefix(count)
       const name = prefix ? `${prefix}${fusion.name}` : fusion.name
+      const isRatioPeak = count >= 3 && ratioSteps === 0
+      const hasQueen = selectedCards.some(c => c.royalType === 'queen')
       return {
         type: fusion.type === 'birth' ? 'fusion-birth' : 'fusion-hone',
         name,
@@ -267,6 +327,9 @@ export function judgeCombo(
         totalScore: Math.round(baseScore * multiplier),
         finishingElement: fusion.result,
         description: `v4 융합 ${count}장 (×${multiplier}) — ${name}`,
+        isRatioPeak,
+        hasKingUpgrade: hasKing && count >= 3,
+        hasQueenAmplify: hasQueen,
       }
     }
     // v4에서 gather·오행연환은 이하 기존 판정으로 폴스루
@@ -300,14 +363,17 @@ export function judgeCombo(
     // recipeMultipliers['_gather5'] 주입 시 그 값 우선 (B벌=7.0 측정용)
     // §4 위계 확정: 대모으기(gather5) = ×6.5 — recipe 및 v4 공통 (T20 확정값)
     // E2E 지문: gather5 ×6.5 참조 — RECIPE_GATHER5_MULT_A
-    const gather5Mult = recipeMultipliers?.['_gather5'] ?? RECIPE_GATHER5_MULT_A
+    // α 수확 체감: gather5 3회차 이상 발동 시 배율 감소 (6.5 → 5.0 → 4.0)
+    let gather5Mult = recipeMultipliers?.['_gather5'] ?? RECIPE_GATHER5_MULT_A
+    if ((COMBO_RULESET_VERSION === 'recipe' || COMBO_RULESET_VERSION === 'v4') && count === 5) {
+      // gatherUsedInBattle > 0 이면 α 배율 적용
+      gather5Mult = getGather5Multiplier(gatherUsedInBattle)
+    }
     const multiplier = ((COMBO_RULESET_VERSION === 'recipe' || COMBO_RULESET_VERSION === 'v4') && count === 5)
       ? gather5Mult
       : (GATHER_MULTIPLIERS[count] ?? 1)
-    const hasHarmony = hasEumyangHarmony(selectedCards)
-    const harmonyBonus = hasHarmony ? EUMYANG_HARMONY_BONUS : 0
-    const totalScoreBase = Math.round(baseScore * multiplier)
-    const totalScore = Math.round(totalScoreBase * (1 + harmonyBonus))
+    // 배치 2 §1: 음양 조화 +20% 폐지 — 평민에서 음양 속성 삭제됨
+    const totalScore = Math.round(baseScore * multiplier)
 
     const elementNames: Record<Element, string> = {
       mok: '나무',
@@ -317,7 +383,6 @@ export function judgeCombo(
       su: '물',
     }
     const gatherName = `${elementNames[element]} 모으기 ${count}`
-    const harmonyText = hasHarmony ? ' (음양 조화 +20%)' : ''
 
     return {
       type: 'gather',
@@ -326,8 +391,8 @@ export function judgeCombo(
       multiplier,
       totalScore,
       finishingElement: element,
-      description: `${gatherName}${harmonyText}`,
-      eumyangBonusApplied: hasHarmony,
+      description: gatherName,
+      eumyangBonusApplied: false,
     }
   } else {
     // 유효하지 않은 조합
@@ -350,9 +415,10 @@ export function judgeCombo(
  *
  * Phase 1.9 — 조합 이름 추가: 응축 조건 판정 시 사용
  * 배치 1.5 — recipeMultipliers 옵션 추가: 사주별 배율 주입
+ * α 수확 체감 — gatherUsedInBattle 옵션 추가: gather5 동일 전투 내 활성화 횟수
  */
-export function judgeHand(selectedCards: Card[], recipeMultipliers?: Record<string, number>): HandJudgeResult {
-  const result = judgeCombo(selectedCards, recipeMultipliers)
+export function judgeHand(selectedCards: Card[], recipeMultipliers?: Record<string, number>, gatherUsedInBattle: number = 0): HandJudgeResult {
+  const result = judgeCombo(selectedCards, recipeMultipliers, undefined, gatherUsedInBattle)
   return {
     rank: result.type as any,  // ComboType → HandRank 호환성
     baseScore: result.baseScore,

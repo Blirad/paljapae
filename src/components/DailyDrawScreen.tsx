@@ -61,10 +61,6 @@ function CardVisual({ card, size = 'md' }: { card: Card; size?: 'sm' | 'md' }) {
       <span style={{ color: elColor, fontSize: size === 'sm' ? '11px' : '14px', position: 'absolute', bottom: '4px' }}>
         {ELEMENT_LABELS[card.element]}
       </span>
-      {/* 음양 */}
-      <span style={{ color: '#6A6560', fontSize: '10px', position: 'absolute', top: '4px', right: '4px' }}>
-        {card.polarity === 'yang' ? '●' : '○'}
-      </span>
     </div>
   )
 }

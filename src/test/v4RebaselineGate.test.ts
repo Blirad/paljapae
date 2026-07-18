@@ -87,11 +87,12 @@ describe('v4 재기준선 게이트 — HP 역산 방식', () => {
     expect(V4_HP_SCALE).toBeGreaterThan(1.0)
     console.log(`[v4 재기준선] V4_HP_SCALE 역산 추정값: ${V4_HP_SCALE}`)
 
-    // V4_FLOOR_HP_TABLE 확인 — 층별 차등 적용 (1~3층 ×1.40, 4층 ×1.15)
+    // V4_FLOOR_HP_TABLE 확인 — 층별 차등 적용 (1~3층 ×1.40, 4층 = 680 이든 직접 확정)
+    // (구 설계: 4층 ×1.15 = 621 역산 근거 → 제라 스윕 측정 후 무풍 기준 680으로 이든 확정 2026-07-18)
     expect(V4_FLOOR_HP_TABLE[1]).toBe(Math.round(220 * 1.40))  // 308
     expect(V4_FLOOR_HP_TABLE[2]).toBe(Math.round(445 * 1.40))  // 623
     expect(V4_FLOOR_HP_TABLE[3]).toBe(Math.round(680 * 1.40))  // 952
-    expect(V4_FLOOR_HP_TABLE[4]).toBe(Math.round(540 * 1.15))  // 621
+    expect(V4_FLOOR_HP_TABLE[4]).toBe(680)  // 구 v3 원값 복귀 (무풍 준수, 이든 확정)
     console.log(`[v4 재기준선] V4_FLOOR_HP_TABLE: 1층=${V4_FLOOR_HP_TABLE[1]} / 2층=${V4_FLOOR_HP_TABLE[2]} / 3층=${V4_FLOOR_HP_TABLE[3]} / 4층=${V4_FLOOR_HP_TABLE[4]}`)
 
     // v4 모드에서 FLOOR_CONFIGS가 V4_FLOOR_HP_TABLE로 교체됐는지 확인 (mock 주입)

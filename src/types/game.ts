@@ -15,16 +15,19 @@ export interface Relic {
   description: string
 }
 
+export type RoyalType = 'king' | 'queen'
+
 export interface Card {
   id: string
   element: Element
   polarity: Polarity
-  value: number       // 1~10
+  value: number       // 2~10 (배치 2 §1: 값1 삭제). 왕·여왕: 10~11 (§2 게이트 확정)
   type: CardType
   rarity: Rarity
   name?: string
   flavorText?: string
   lifesteal?: boolean  // lifesteal: 데미지의 30%를 HP 회복으로 전환
+  royalType?: RoyalType  // 배치 2 §2: 왕(양간) / 여왕(음간). 평민=undefined
 }
 
 export type HandRank =
@@ -139,6 +142,8 @@ export interface GameState {
   // sikshin D안: 버리기 사용 시 다음 공격 +15% (1회 소모, 스택 불가 갱신 가능)
   sikshinDiscardBonus?: boolean           // true = 다음 공격에 ×1.15 적용 후 false로 리셋
   // R10: 겁재(劫財) 출정당 1회 제한 추적
+  // 2026-07-18: α 수확 체감 — gather5 반복 발동 시 배율 체감
+  gatherUsedInBattle?: number  // 현재 전투에서 gather5 발동 횟수 (전투 종료 시 리셋)
   geoptaeUsed?: boolean                   // true = 이미 발동됨 (런 내내 유지, 층 전환 시 리셋 금지)
   // B1-1: 잔불(들불 재정의) 상태
   emberDamagePerTurn?: number              // 잔불 턴당 고정 피해 (0 = 비활성)

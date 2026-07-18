@@ -283,7 +283,7 @@ function buildPreviewText(
   affinityLine?: string  // T14-A: 타격 원소 vs 적 원소 상성 배율 1줄
   affinityLineColor?: string  // T14-A: 상성 배율 색상
 } | null {
-  const { hasAllFive = false, condensedMultiplier = 0, favorableElement, recipeMultipliers, hand } = options ?? {}
+  const { hasAllFive = false, condensedMultiplier = 0, recipeMultipliers, hand } = options ?? {}
 
   // 상태 ⑤: 연환 가능 (선택 0장이어도 핸드에 5기운 있으면 표시)
   if (hasAllFive && cards.length === 0) {
@@ -343,17 +343,9 @@ function buildPreviewText(
   const affinity = calcAffinity(repEl, enemyElement)
   const affinityMult = getAffinityMultiplier(affinity)
 
-  // 용신 라벨 계산
-  const yongsinLabel = (() => {
-    if (!favorableElement) return undefined
-    const hasYongsin = cards.some(c => c.element === favorableElement)
-    if (!hasYongsin) return undefined
-    const isChain3Plus = cards.length >= 3
-    const lastCard = cards[cards.length - 1]
-    const lastIsYongsin = lastCard?.element === favorableElement
-    if (isChain3Plus && lastIsYongsin) return '용신(연환) ×1.5'
-    return '용신 ×1.3'
-  })()
+  // [2026-07-18 이든 확정] 용신 상시 ×1.3/×1.5 UI 라벨 폐지.
+  // 정본 B-3: 용신 = 강림 슬롯 도래 시에만 사건. 상시 배율 표기 제거.
+  const yongsinLabel: string | undefined = undefined
 
   const fe = comboResult.finishingElement
   const feHanja = ELEMENT_LABELS[fe]
@@ -4143,14 +4135,6 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                   filter: isGeukiJugeum ? 'saturate(0.6)' : 'none',
                 }}>
                   {ELEMENT_KO[card.element]}
-                </span>
-                <span style={{
-                  color: '#6A6560', fontSize: '9px',
-                  position: 'absolute', top: '3px',
-                  // T4: 기세 오름/죽음 도장(right:4px 20×20)과 겹침 방지 — 도장 표시 시 우측 여백 확보
-                  right: (isGeukiOleum || isGeukiJugeum) ? '26px' : '4px',
-                }}>
-                  {card.polarity === 'yang' ? '●' : '○'}
                 </span>
                 {/* A-1 Phase 1.9: 죽은 기운 카드 剋 표시 제거 (리본으로 대체됨) */}
                 {/* Phase 1.9.5: 그을음 폐지 (단일 특성 전면 폐지) */}

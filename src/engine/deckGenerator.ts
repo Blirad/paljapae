@@ -99,10 +99,10 @@ export function generateSajuDeck(
   ELEMENTS.forEach(el => {
     const count = countByElement[el] ?? 1
     for (let i = 0; i < count; i++) {
-      // 값 1~10 균등 분포에서 랜덤
-      const value = Math.floor(rng() * 10) + 1
-      // 음양 1:1 (홀수 인덱스 = yang, 짝수 = yin)
-      const polarity = i % 2 === 0 ? 'yang' as const : 'yin' as const
+      // 값 2~10 균등 분포 (배치 2 §1: 값 1 삭제)
+      const value = Math.floor(rng() * 9) + 2
+      // 음양 속성 삭제 (배치 2 §1) — 평민은 'yang' 고정 (왕·여왕에서만 음양 존속)
+      const polarity = 'yang' as const
 
       cards.push({
         id: `saju-${el}-${idCounter++}`,

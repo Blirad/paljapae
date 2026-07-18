@@ -9,7 +9,7 @@ import {
   GEUK_MAP,
   detectElementClash,
 } from './pokerHandJudge'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, MAX_DISCARD_PER_USE, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, OHANG_YEONHWAN_MULTIPLIER, SANGGWAN_MAX_PER_RUN, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, EMBER_DURATION, EMBER_MULTIPLIER, BASE_PURIFICATION_DAMAGE, ENABLE_YONGSIN_DESCENT, DESCENT_VARIANT, DESCENT_GLOW_FULL_MULT, DESCENT_GLOW_AFTERGLOW_MULT, COMBO_RULESET_VERSION, YIKSEANG_MAP, YIKSEANG_MULT, getFloorHp } from './balance'
+import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, MAX_DISCARD_PER_USE, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, OHANG_YEONHWAN_MULTIPLIER, SANGGWAN_MAX_PER_RUN, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, EMBER_DURATION, EMBER_MULTIPLIER, BASE_PURIFICATION_DAMAGE, ENABLE_YONGSIN_DESCENT, DESCENT_VARIANT, DESCENT_GLOW_FULL_MULT, DESCENT_GLOW_AFTERGLOW_MULT, COMBO_RULESET_VERSION, YIKSEANG_MAP, YIKSEANG_MULT, getFloorHp } from './balance'
 // 폐기된 dual/wait3 변형 상수 — balance.ts에서 삭제됨. 코드 경로 유지용 하드코딩.
 const DESCENT_DUAL_SLOT_MULT = 2.0    // B-2 dual: 슬롯 적중 배율 (폐기)
 const DESCENT_DUAL_NONSLOT_MULT = 1.3 // B-2 dual: 비슬롯 배율 (폐기)
@@ -67,14 +67,14 @@ export function createFixedDeck(): Card[] {
   const elements: Element[] = ['mok', 'hwa', 'to', 'geum', 'su']
   const cards: Card[] = []
   let id = 0
-  // 각 오행 × 음/양 × 값 1~10 × 1장씩 = 100장 풀에서 20장 샘플
+  // 각 오행 × 값 2~10 × 1장씩 = 45장 풀에서 20장 샘플 (배치 2 §1: 값1 삭제, 음양 삭제)
   for (let e = 0; e < elements.length; e++) {
     for (let v = 1; v <= 4; v++) {
       cards.push({
         id: `card-${id++}`,
         element: elements[e],
-        polarity: v % 2 === 0 ? 'yang' : 'yin',
-        value: v * 2,
+        polarity: 'yang',
+        value: v * 2 + (v > 2 ? 0 : 0),  // 2, 4, 6, 8
         type: 'soldier',
         rarity: 'common',
       })
@@ -183,6 +183,8 @@ export function createInitialGameState(floorIndex = 0, heroProfile?: SavedHeroPr
     geoptaeUsed: false,
     // 배치 1.5: 강림제 초기화
     yongsinDescent: initYongsinDescent(heroProfile, floorIndex),
+    // α 수확 체감: 전투별 gather5 활성화 횟수 추적 (동일 전투 내만 유지, 전투 종료 시 리셋)
+    gatherUsedInBattle: 0,
   }
 }
 
@@ -217,7 +219,9 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
   const playedCards = state.hand.filter(c => cardIds.includes(c.id))
   const remainHand = state.hand.filter(c => !cardIds.includes(c.id))
 
-  const result = judgeHand(playedCards)
+  // α 수확 체감: 동일 전투 내 gather5 활성화 횟수 추적
+  const currentGatherCount = state.gatherUsedInBattle ?? 0
+  const result = judgeHand(playedCards, state.recipeMultipliers, currentGatherCount)
 
   // T8 수정: 오색실 — 배율 전 baseScore에 +15 가산 (15×N 증폭 목적)
   // 연환 발동 + 오색실 보유 시, totalScore를 (baseScore + 15) × 배율로 재계산
@@ -317,23 +321,8 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
   // synergyMultiplier = 용신 배율 × 가호 배율 (시너지 합산)
   let synergyMultiplier = 1.0  // 공격·효과 공통 시너지 배율
 
-  if (state.favorableElement && !isBlocked) {
-    const favEl = state.favorableElement
-    const hasYongsin = playedCards.some(c => c.element === favEl)
-    if (hasYongsin && !ENABLE_YONGSIN_DESCENT) {
-      // 강림제 OFF: 기존 상시 배율 적용 (×1.3 / 연환 마지막 용신 ×1.5)
-      const isChain3Plus = playedCards.length >= 3
-      const lastCard = playedCards[playedCards.length - 1]
-      const lastIsYongsin = lastCard?.element === favEl
-      if (isChain3Plus && lastIsYongsin) {
-        damage = Math.round(damage * YONGSIN_CHAIN_MULTIPLIER)  // ×1.5
-        synergyMultiplier = YONGSIN_CHAIN_MULTIPLIER
-      } else {
-        damage = Math.round(damage * YONGSIN_BONUS_MULTIPLIER)  // ×1.3
-        synergyMultiplier = YONGSIN_BONUS_MULTIPLIER
-      }
-    }
-  }
+  // [2026-07-18 이든 확정] 용신 상시 ×1.3/×1.5 폐지 — 정본 = 강림제 B-3: 슬롯 도래 시에만 사건.
+  // 구세계 상시 보너스 분기 완전 제거. 강림 시스템 활성화 시 하단 descent 블록에서 처리.
 
   // 배치 1.5: 강림제 — 강림 슬롯에서만 ×2.0 (상시 ×1.3 폐지 대체)
   // ENABLE_YONGSIN_DESCENT=true 시: 슬롯 적중+용신 포함 → ×2.0
@@ -468,6 +457,12 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
   // 융합 조합인 경우만 특성 발동 (rank: fusion-birth or fusion-hone)
   const isFusion = result.rank === 'fusion-birth' || result.rank === 'fusion-hone'
   const comboName = result.name
+  // α 수확 체감: gather5(5장 모으기) 활성화 판정
+  const isGather5 = result.rank === 'gather' && playedCards.length === 5
+  let newGatherUsedInBattle = currentGatherCount
+  if (isGather5) {
+    newGatherUsedInBattle = currentGatherCount + 1
+  }
   let newLastTraitTriggered: string | undefined = undefined
   let newCarryoverBurn = state.carryoverBurn ?? 0
 
@@ -608,7 +603,7 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
   if (rustGimmick && rustGimmick.type === 'card-rust' && newHand.length > 0 && afterDamageHp > 0) {
     const rustIdx = Math.floor(Math.random() * newHand.length)
     newHand = newHand.map((c, i) =>
-      i === rustIdx ? { ...c, value: Math.max(1, c.value - rustGimmick.amount) } : c
+      i === rustIdx ? { ...c, value: Math.max(2, c.value - rustGimmick.amount) } : c
     )
   }
 
@@ -616,6 +611,9 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
   let purificationBonusDamage = 0
 
   // Phase 1.9.5: 10종 융합 특성 발동 (피해 적용 후 효과)
+  // 배치 2 §2: 여왕 효과 — 포함된 융합의 효과량 ×1.5
+  const hasQueen = playedCards.some(c => c.royalType === 'queen')
+  const queenAmplify = hasQueen ? 1.5 : 1.0
   if (isFusion && comboName && !isBlocked) {
     const traitId = FUSION_TRAIT_MAP[comboName]
     if (traitId && traitId !== 'snipe') {  // snipe은 위에서 처리
@@ -631,11 +629,11 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
             // effectMode=false (공격 모드): damage × 0.3 × synergyMultiplier 다음 공격 이월 (기존 방식 유지)
             if (effectMode && isFusion && result.rank === 'fusion-birth') {
               const rawBase = playedCards.reduce((sum, c) => sum + c.value, 0)
-              newEmberDamagePerTurn = Math.round(rawBase * EMBER_MULTIPLIER * synergyMultiplier)
+              newEmberDamagePerTurn = Math.round(rawBase * EMBER_MULTIPLIER * synergyMultiplier * queenAmplify)
               newEmberTurnsLeft = EMBER_DURATION
               newCarryoverBurn = 0
             } else {
-              newCarryoverBurn = Math.round(damage * 0.3 * synergyMultiplier)
+              newCarryoverBurn = Math.round(damage * 0.3 * synergyMultiplier * queenAmplify)
             }
             break
           }
@@ -645,7 +643,7 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
             // 리필된 8장 위에 추가 스택 (핸드 상한 미적용) → 최대 HAND_SIZE+MINING_MAX_DRAW(=11)장
             const baseValueMining = playedCards.reduce((sum, c) => sum + c.value, 0)
             const drawCount = Math.min(
-              Math.floor(baseValueMining * synergyMultiplier / MINING_DRAW_DIVISOR),
+              Math.floor(baseValueMining * synergyMultiplier * queenAmplify / MINING_DRAW_DIVISOR),
               MINING_MAX_DRAW,
               newDeck.length,
             )
@@ -662,18 +660,20 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
             break
           }
           case 'harvest': {
-            // 수확: 손의 목·토 카드 값 +1
+            // 수확: 손의 목·토 카드 값 +N (여왕 ×1.5 시 +1→+2)
+            const harvestBoost = Math.round(1 * queenAmplify)
             newHand = newHand.map(c =>
               (c.element === 'mok' || c.element === 'to')
-                ? { ...c, value: c.value + 1 }
+                ? { ...c, value: c.value + harvestBoost }
                 : c
             )
             break
           }
           case 'quench': {
-            // 담금질: 이번 공격에 쓴 카드 값 +1 영구 (덱 재순환 시 유지)
+            // 담금질: 이번 공격에 쓴 카드 값 +N 영구 (여왕 ×1.5 시 +1→+2)
+            const quenchBoost = Math.round(1 * queenAmplify)
             const quenchIds = new Set(cardIds)
-            const quenchUp = (c: Card) => quenchIds.has(c.id) ? { ...c, value: c.value + 1 } : c
+            const quenchUp = (c: Card) => quenchIds.has(c.id) ? { ...c, value: c.value + quenchBoost } : c
             newHand = newHand.map(quenchUp)
             newDeck = newDeck.map(quenchUp)
             newDiscardPile = newDiscardPile.map(quenchUp)
@@ -694,14 +694,14 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
               // 투입값 충분(≥임계) → 출정 내 기세 죽음 재발 면역 부여
               newPurificationImmune = true
               // 해제된 원소 수 × 기본 데미지 × synergyMultiplier
-              purificationBonusDamage = Math.round(newlyPurified.length * BASE_PURIFICATION_DAMAGE * synergyMultiplier)
+              purificationBonusDamage = Math.round(newlyPurified.length * BASE_PURIFICATION_DAMAGE * synergyMultiplier * queenAmplify)
             } else if (floorEnemyEl) {
               // 1종만 해제 (R10 기존 로직 유지)
               const deadEl = GEUK_MAP[floorEnemyEl] as Element | undefined
               if (deadEl && !(state.purifiedElements ?? []).includes(deadEl)) {
                 newPurifiedElements = [...(state.purifiedElements ?? []), deadEl]
                 // 해제 1종 데미지 (상성 무시)
-                purificationBonusDamage = Math.round(BASE_PURIFICATION_DAMAGE * synergyMultiplier)
+                purificationBonusDamage = Math.round(BASE_PURIFICATION_DAMAGE * synergyMultiplier * queenAmplify)
               }
             }
             break
@@ -766,7 +766,7 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
   let finalPlayerHp = newPlayerHp
   if (isFusion && comboName && FUSION_TRAIT_MAP[comboName] === 'nourish' && !isBlocked) {
     const baseHeal = Math.round(state.playerMaxHp * NOURISH_HEAL_PCT)
-    const healAmount = Math.round(baseHeal * synergyMultiplier)
+    const healAmount = Math.round(baseHeal * synergyMultiplier * queenAmplify)
     finalPlayerHp = Math.min(state.playerMaxHp, finalPlayerHp + healAmount)
   }
   // T17: 편재(偏財) 체력 회복 보너스
@@ -830,6 +830,8 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
     geoptaeUsed: newGeoptaeUsed,
     // 배치 1.5: 강림제 상태 전달
     yongsinDescent: newYongsinDescent,
+    // α 수확 체감: gather5 활성화 횟수 업데이트
+    gatherUsedInBattle: newGatherUsedInBattle,
   }
 }
 
@@ -1024,6 +1026,8 @@ export function advanceToNextFloor(state: GameState): GameState {
     activePassiveIds: state.activePassiveIds ?? [],
     // sikshin D안: 층 전환 시 리셋 (출수 시 소멸과 동일)
     sikshinDiscardBonus: false,
+    // α 수확 체감: 층 전환 시 리셋 (새 전투 시작)
+    gatherUsedInBattle: 0,
   }
 }
 

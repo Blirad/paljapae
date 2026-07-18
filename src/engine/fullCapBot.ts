@@ -10,6 +10,7 @@ import {
   judgeCombo,
   GEUK_MAP,
 } from './pokerHandJudge'
+import type { V4RatioCorrectionTable } from './balance'
 import type { Card, Element, GameState } from '../types/game'
 import {
   createFixedDeck,
@@ -35,8 +36,6 @@ import {
   YIKSEANG_MAP,
   YIKSEANG_MULT,
   getCondenseMultiplier,
-  YONGSIN_BONUS_MULTIPLIER,
-  YONGSIN_CHAIN_MULTIPLIER,
   getRandomFloorElements,
   SIKSHIN_BASE_SCORE,
   BIGYEON_ELEMENT_WEIGHT,
@@ -46,7 +45,6 @@ import {
   PYEONJAE_GEUM_WEIGHT,
   JEONGJAE_SU_WEIGHT,
   PYEONIN_TO_WEIGHT,
-  ENABLE_YONGSIN_DESCENT,
   FUSION_TRAIT_MAP,
   NOURISH_HEAL_PCT,
   BASE_PURIFICATION_DAMAGE,
@@ -59,6 +57,10 @@ import {
   RECIPE_MULTIPLIER_BY_PRESET,
   identifyRecipePreset,
   getFloorHp,
+  ROYAL_CARDS,
+  createRoyalCard,
+  countRoyalCards,
+  ROYAL_DECK_CAP,
 } from './balance'
 import { getFavorableElement } from './manseryeok'
 
@@ -87,6 +89,7 @@ function getAffinityMultiplier(repEl: Element, enemyEl: Element): number {
  * affinityBot 대비 추가:
  *  - 용신 보너스 가중치
  * T16-P2: amplifyActive 파라미터 추가 — 증폭부(×2) 효과 반영
+ * α 수확 체감: gatherUsedInBattle 파라미터 추가 — 동일 전투 내 gather5 활성화 횟수
  */
 export function fullCapCalcExpectedDamage(
   combo: Card[],
@@ -95,11 +98,12 @@ export function fullCapCalcExpectedDamage(
   condensedMultiplier?: number,
   yeonhwanUsed?: boolean,
   carryoverBurn?: number,
-  favorableElement?: Element,
+  _favorableElement?: Element,
   amplifyActive?: boolean,
   recipeMultipliers?: Record<string, number>,
+  gatherUsedInBattle: number = 0,
 ): number {
-  const result = judgeCombo(combo, recipeMultipliers)
+  const result = judgeCombo(combo, recipeMultipliers, undefined, gatherUsedInBattle)
   let damage = result.totalScore
 
   if (result.type === 'ohang-yeonhwan' && yeonhwanUsed) {
@@ -126,20 +130,7 @@ export function fullCapCalcExpectedDamage(
     damage = damage * 2
   }
 
-  // [신규 2-4] 용신 보너스 가중치 — 강림 모드에서는 무가중 (슬롯 비공개 원칙)
-  if (favorableElement && !ENABLE_YONGSIN_DESCENT) {
-    const hasYongsin = combo.some(c => c.element === favorableElement)
-    if (hasYongsin) {
-      const isChain3Plus = combo.length >= 3
-      const lastCard = combo[combo.length - 1]
-      const lastIsYongsin = lastCard?.element === favorableElement
-      if (isChain3Plus && lastIsYongsin) {
-        damage = Math.round(damage * YONGSIN_CHAIN_MULTIPLIER)
-      } else {
-        damage = Math.round(damage * YONGSIN_BONUS_MULTIPLIER)
-      }
-    }
-  }
+  // [2026-07-18 이든 확정] 용신 상시 ×1.3/×1.5 폐지. 정본 B-3: 슬롯 도래 시에만 사건.
 
   return damage
 }
@@ -276,6 +267,7 @@ export function fullCapSelectCards(
   playsLeft?: number,         // R4: 잔불 평가식 남은 공격 횟수 전달
   enemyHp?: number,           // R7: 오버킬 할인 — 적 현재 HP
   recipeMultipliers?: Record<string, number>, // 배치 1.5: 사주별 레시피 배율
+  gatherUsedInBattle: number = 0, // α 수확 체감: 동일 전투 내 gather5 활성화 횟수
 ): FullCapPlayDecision {
   // T16-P3: talismans에서 amplifyActive 여부 추출 (증폭부 사용 가능 시 평가에 반영)
   const amplifyActive = (talismans ?? []).includes('jeungpok')
@@ -292,7 +284,7 @@ export function fullCapSelectCards(
   for (let k = 1; k <= maxCards; k++) {
     const combos = combinations(hand, k)
     for (const combo of combos) {
-      const result = judgeCombo(combo, recipeMultipliers)
+      const result = judgeCombo(combo, recipeMultipliers, undefined, gatherUsedInBattle)
 
       // sikshin A안: 낱장(k=1)이고 sikshin 장착 시 — 직접 기대 데미지 계산
       // judgeCombo가 'none'을 반환해도 낱장은 유효 선택지로 평가한다.
@@ -315,10 +307,7 @@ export function fullCapSelectCards(
         if (amplifyActive) {
           baseScore = baseScore * 2
         }
-        // 용신 보너스 적용 — 강림 모드에서는 무가중
-        if (favorableElement && card.element === favorableElement && !ENABLE_YONGSIN_DESCENT) {
-          baseScore = Math.round(baseScore * YONGSIN_BONUS_MULTIPLIER)
-        }
+        // [2026-07-18] 용신 상시 보너스 폐지 (B-3: 슬롯 도래 시에만 사건)
         // 번짐 이월 피해 가산
         if (carryoverBurn && carryoverBurn > 0) {
           baseScore = baseScore + carryoverBurn
@@ -370,7 +359,7 @@ export function fullCapSelectCards(
       }
 
       // T14: 타격 속성(finishingElement) 기준 — 다수결 제거
-      const evalResult = judgeCombo(evalCombo, recipeMultipliers)
+      const evalResult = judgeCombo(evalCombo, recipeMultipliers, undefined, gatherUsedInBattle)
       const repEl = evalResult.finishingElement
       const affinityMult = getAffinityMultiplier(repEl, enemyPrimaryElement)
 
@@ -384,6 +373,7 @@ export function fullCapSelectCards(
         favorableElement,
         amplifyActive,  // T16-P2/P3: 증폭부 효과 반영
         recipeMultipliers, // 배치 1.5: 사주별 레시피 배율
+        gatherUsedInBattle, // α 수확 체감: gather5 동일 전투 내 활성화 횟수
       )
 
       // 통합 최대화: 최종 기대 데미지(콤보 × 상성 × 용신 통합) 순수 최대화
@@ -425,25 +415,11 @@ export function fullCapSelectCards(
         const traitId = FUSION_TRAIT_MAP[result.name] ?? ''
         const baseValue = bestCombo.reduce((sum, c) => sum + c.value, 0)
         const attackDamage = enemyPrimaryElement
-          ? fullCapCalcExpectedDamage(bestCombo, enemyPrimaryElement, enemySubElement, condensedMultiplier, yeonhwanUsed, carryoverBurn, favorableElement, amplifyActive, recipeMultipliers)
+          ? fullCapCalcExpectedDamage(bestCombo, enemyPrimaryElement, enemySubElement, condensedMultiplier, yeonhwanUsed, carryoverBurn, favorableElement, amplifyActive, recipeMultipliers, gatherUsedInBattle)
           : result.totalScore
 
-        // R5 (balance-v3 §3): synergyMultiplier 계산 — 엔진과 동일 방식
-        // 강림 모드에서는 용신 배율 무가중 (슬롯 비공개 원칙)
+        // [2026-07-18] 용신 상시 보너스 폐지 (B-3: 슬롯 도래 시에만 사건)
         let synergyMultiplier = 1.0
-        if (favorableElement && !ENABLE_YONGSIN_DESCENT) {
-          const hasYongsin = bestCombo.some(c => c.element === favorableElement)
-          if (hasYongsin) {
-            const isChain3Plus = bestCombo.length >= 3
-            const lastCard = bestCombo[bestCombo.length - 1]
-            const lastIsYongsin = lastCard?.element === favorableElement
-            if (isChain3Plus && lastIsYongsin) {
-              synergyMultiplier = YONGSIN_CHAIN_MULTIPLIER
-            } else {
-              synergyMultiplier = YONGSIN_BONUS_MULTIPLIER
-            }
-          }
-        }
         // 가호(geoptae): 목 카드 포함 시 ×1.3 (효과에도 적용 — 엔진 R5 규칙)
         if ((activePassiveIds ?? []).includes('geoptae')) {
           const hasMok = bestCombo.some(c => c.element === 'mok')
@@ -566,6 +542,19 @@ export interface FullCapSimOptions {
    * 미지정 시 RECIPE_LARGE_MULT_A 사용 (기본값)
    */
   largeMultOverride?: number
+  /**
+   * v4 §3 황금비 보정 테이블 직접 주입 (희소성 복원 2벌 측정용 — 2026-07-18)
+   * 미지정 시 기본 V4_RATIO_CORRECTION (현행 0.85/0.70) 사용
+   * A벌: V4_RATIO_CORRECTION_A (0.70/0.45)
+   * B벌: V4_RATIO_CORRECTION_B (0.75/0.50)
+   */
+  ratioCorrectionTable?: V4RatioCorrectionTable
+  /**
+   * 배치 2 §2: 왕족 카드 값 (10 or 11)
+   * 지정 시 층 보상에서 왕족 등장 (25% 확률, 덱 상한 ROYAL_DECK_CAP 준수)
+   * 미지정 시 왕족 미생성 (기존 동작)
+   */
+  royalValue?: number
 }
 
 /**
@@ -591,7 +580,7 @@ const R1_FIXED_FLOOR_ELEMENTS: Array<{ primaryElement: Element; subElement: Elem
 function evaluateDeckDamageScore(
   deck: Card[],
   nextEnemyEl: Element | undefined,
-  favorableEl: Element | undefined,
+  _favorableEl: Element | undefined,
 ): number {
   let score = 0
   for (const card of deck) {
@@ -599,9 +588,7 @@ function evaluateDeckDamageScore(
     if (nextEnemyEl) {
       cardWeight *= getAffinityMultiplier(card.element, nextEnemyEl)
     }
-    if (favorableEl && card.element === favorableEl && !ENABLE_YONGSIN_DESCENT) {
-      cardWeight *= YONGSIN_BONUS_MULTIPLIER
-    }
+    // [2026-07-18] 용신 상시 보너스 폐지 (B-3)
     score += cardWeight
   }
   return score
@@ -626,20 +613,37 @@ function selectFloorReward(
   rng: () => number,
   nextEnemyEl?: Element,
   favorableEl?: Element,
+  royalValue?: number,  // 배치 2 §2: 왕족 카드 값 (10 or 11, 없으면 왕족 미생성)
 ): { type: 'add-card'; card: Card } | { type: 'upgrade-card'; targetId: string } | { type: 'remove-card'; targetId: string } {
   const ELEMENTS: Element[] = ['mok', 'hwa', 'to', 'geum', 'su']
 
-  // ── 옵션 a: 카드 획득 — 무작위 카드 1장 생성
-  const elIdx = Math.floor(rng() * ELEMENTS.length)
-  const el = ELEMENTS[elIdx]
-  const value = Math.floor(rng() * 10) + 1
-  const newCard: Card = {
-    id: `reward-${Date.now()}-${Math.floor(rng() * 99999)}`,
-    element: el,
-    polarity: rng() > 0.5 ? 'yang' : 'yin',
-    value,
-    type: 'soldier',
-    rarity: 'common',
+  // ── 옵션 a: 카드 획득
+  // 배치 2 §2: 왕족 등장 확률 25% (덱 상한 미달 시)
+  const currentRoyalCount = countRoyalCards(currentDeck)
+  const canOfferRoyal = royalValue !== undefined && currentRoyalCount < ROYAL_DECK_CAP
+  const royalRoll = rng()
+  let newCard: Card
+
+  if (canOfferRoyal && royalRoll < 0.25) {
+    // 왕족 카드 생성 — 무작위 오행, 왕/여왕 균등
+    const elIdx = Math.floor(rng() * ELEMENTS.length)
+    const el = ELEMENTS[elIdx]
+    const isKing = rng() > 0.5
+    const matchingDef = ROYAL_CARDS.find(d => d.element === el && d.royalType === (isKing ? 'king' : 'queen'))!
+    newCard = createRoyalCard(matchingDef, royalValue, `${Date.now()}-${Math.floor(rng() * 99999)}`)
+  } else {
+    // 평민 카드 생성 (§1: 값 2~10, polarity yang 고정)
+    const elIdx = Math.floor(rng() * ELEMENTS.length)
+    const el = ELEMENTS[elIdx]
+    const value = Math.floor(rng() * 9) + 2  // 2~10
+    newCard = {
+      id: `reward-${Date.now()}-${Math.floor(rng() * 99999)}`,
+      element: el,
+      polarity: 'yang',
+      value,
+      type: 'soldier',
+      rarity: 'common',
+    }
   }
 
   // ── 옵션 b: 카드 강화 — 기대 데미지 최고 카드 선택
@@ -866,6 +870,8 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         geoptaeUsed: state.geoptaeUsed ?? false,
         // 배치 1.5: 레시피 배율 — 출정 시작 시 고정, 층 전환 시 유지
         recipeMultipliers: state.recipeMultipliers,
+        // α 수확 체감: 층(전투) 전환 시 리셋
+        gatherUsedInBattle: 0,
       }
     } else {
       state = { ...state, playerHp }
@@ -888,7 +894,7 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
           const nextElemConfig = nextFloorIdx < 4 ? floorElements[nextFloorIdx] : undefined
           const nextEnemyEl = nextElemConfig?.primaryElement
           // R4.5 3택 선택 → 영속 덱(allCurrentCards)에 즉시 반영
-          const rewardResult = selectFloorReward(allCurrentCards, rng, nextEnemyEl, resolvedFavorableElement)
+          const rewardResult = selectFloorReward(allCurrentCards, rng, nextEnemyEl, resolvedFavorableElement, opts?.royalValue)
           let rewardOption: RewardOption
           if (rewardResult.type === 'add-card') {
             rewardOption = { type: 'add-card', card: rewardResult.card }
@@ -967,6 +973,7 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         state.playsLeft,         // R4: 잔불 평가식 남은 공격 횟수 전달
         state.enemyHp,           // R7: 오버킬 할인 — 적 현재 HP 전달
         state.recipeMultipliers, // 배치 1.5: 사주별 레시피 배율
+        state.gatherUsedInBattle ?? 0, // α 수확 체감: 동일 전투 내 gather5 활성화 횟수
       )
 
       if (decision.cardIds.length === 0) {
@@ -1005,7 +1012,7 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         state.playsLeft >= 2
       ) {
         const selectedCards = state.hand.filter(c => decision.cardIds.includes(c.id))
-        const comboResult = judgeCombo(selectedCards, state.recipeMultipliers)
+        const comboResult = judgeCombo(selectedCards, state.recipeMultipliers, undefined, state.gatherUsedInBattle ?? 0)
         const condenseKind = getCondenseAvailability(comboResult.name, comboResult.finishingElement)
         if (condenseKind === 'great') {
           const mult = getCondenseMultiplier(selectedCards.length)
@@ -1033,7 +1040,7 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
 
       // 융합 통계 수집
       const selectedCards = state.hand.filter(c => decision.cardIds.includes(c.id))
-      const comboResult = judgeCombo(selectedCards, state.recipeMultipliers)
+      const comboResult = judgeCombo(selectedCards, state.recipeMultipliers, undefined, state.gatherUsedInBattle ?? 0)
       // 실발동 로그 (판당 ≤19회 보장 시점)
       if (typeof globalThis !== 'undefined') {
         if (!(globalThis as any).__recipeLog) (globalThis as any).__recipeLog = []
@@ -1069,6 +1076,34 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
       }
       if (comboResult.type === 'fusion-birth' || comboResult.type === 'fusion-hone') {
         fusionCount++
+        // v4 §3 황금비 곡선 정점/비정점 분포 추적 (작업 4 측정 인프라 — 2026-07-18)
+        // isRatioPeak: true=진짜 정점(N≥3,steps=0) / false=비정점 or 2장면제
+        if (comboResult.isRatioPeak === true) {
+          // step0 정점 (N≥3 AND steps=0)
+          traitCounts['v4_fusion_step0'] = (traitCounts['v4_fusion_step0'] ?? 0) + 1
+        } else if (comboResult.isRatioPeak === false && selectedCards.length >= 3) {
+          // N≥3 비정점 — step1/step2 구분: multiplier 역산 (tierMult로 나눠서 ratioCorrection 추정)
+          // tierMult: 3장=3.0, 4장=4.0, 5장=5.5 (V4_TIER_MULTIPLIERS 기준)
+          // ratioCorrection = multiplier / tierMult (반올림 오차 허용)
+          const n = selectedCards.length
+          const tierMult = n === 3 ? 3.0 : n === 4 ? 4.0 : 5.5
+          const ratio = comboResult.multiplier / tierMult
+          // step1: ~0.70(A벌) ~0.75(B벌) ~0.85(현행) — 0.55 이상이면 step1로 간주
+          // step2: ~0.45(A벌) ~0.50(B벌) ~0.70(현행) — 0.55 미만이면 step2로 간주
+          if (ratio >= 0.55) {
+            traitCounts['v4_fusion_step1'] = (traitCounts['v4_fusion_step1'] ?? 0) + 1
+          } else {
+            traitCounts['v4_fusion_step2'] = (traitCounts['v4_fusion_step2'] ?? 0) + 1
+          }
+        }
+        // 2장 면제(selectedCards.length===2) 별도 집계 (정점 배율이지만 황금비 판정 미적용)
+        if (selectedCards.length === 2) {
+          traitCounts['v4_fusion_2card_exempt'] = (traitCounts['v4_fusion_2card_exempt'] ?? 0) + 1
+        }
+        // 5장 대융합 집계 (희소성 복원 정량 지표)
+        if (selectedCards.length === 5) {
+          traitCounts['v4_fusion_5card'] = (traitCounts['v4_fusion_5card'] ?? 0) + 1
+        }
       }
 
       // B1-1: 효과 채택률 추적

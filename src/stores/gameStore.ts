@@ -18,7 +18,7 @@ import {
   applyCondense,
   applyRewardOption,
 } from '../engine/paljajeonEngine'
-import { HAND_SIZE, RELIC_DEFS, YONGSIN_BONUS_MULTIPLIER, YONGSIN_CHAIN_MULTIPLIER } from '../engine/balance'
+import { HAND_SIZE, RELIC_DEFS } from '../engine/balance'
 import type { RelicId } from '../engine/balance'
 import { judgeHand } from '../engine/pokerHandJudge'
 import type { HandJudgeResult, Card, Element, Relic } from '../types/game'
@@ -258,21 +258,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // R5 (balance-v3 §3): 응축 실효 배율에 용신 시너지 반영
   applyCondenseAction: (cardIds: string[]) => {
     const state = get()
-    // 응축 선택 카드 기준 용신 시너지 계산 (playCards와 동일 로직)
-    let synergyMultiplier = 1.0
-    if (state.favorableElement) {
-      const favEl = state.favorableElement
-      const condensedCards = state.hand.filter(c => cardIds.includes(c.id))
-      const hasYongsin = condensedCards.some(c => c.element === favEl)
-      if (hasYongsin) {
-        const isChain3Plus = condensedCards.length >= 3
-        const lastCard = condensedCards[condensedCards.length - 1]
-        const lastIsYongsin = lastCard?.element === favEl
-        synergyMultiplier = (isChain3Plus && lastIsYongsin)
-          ? YONGSIN_CHAIN_MULTIPLIER
-          : YONGSIN_BONUS_MULTIPLIER
-      }
-    }
+    // [2026-07-18 이든 확정] 용신 상시 보너스 폐지 — 응축에도 상시 시너지 제거.
+    // 정본 B-3: 용신 = 강림 슬롯 도래 시에만 사건.
+    const synergyMultiplier = 1.0
     const newState = applyCondense(state, cardIds, synergyMultiplier)
     set({ ...newState, previewResult: null, selectedCards: [] })
   },
