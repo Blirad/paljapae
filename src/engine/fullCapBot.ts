@@ -477,6 +477,8 @@ export interface FullCapRunResult {
   descentVanished?: number
   /** 배치 1.5 §4-b: 슬롯 도래 횟수 (포착률 산출용) */
   descentSlotsArrived?: number
+  /** 배치 2 §2: 왕족 카드 획득 횟수 */
+  royalObtainedCount?: number
 }
 
 function makeLcg(seed: number): () => number {
@@ -555,6 +557,13 @@ export interface FullCapSimOptions {
    * 미지정 시 왕족 미생성 (기존 동작)
    */
   royalValue?: number
+  /**
+   * 배치 2 §2: 강제 A/B 측정 모드 (이든 판정 2026-07-18 — 조건부 획득 델타 폐지)
+   * true(A군): 첫 왕족 등장 시 봇 3택 비교를 우회하고 무조건 획득 (선택 편향 제거)
+   * false/미지정: 조건부 획득 (봇이 획득 유리 시에만) — 프로덕션 동작
+   * B군(왕족 배제)은 royalValue 미지정으로 표현.
+   */
+  royalForceAcquire?: boolean
 }
 
 /**
@@ -614,6 +623,7 @@ function selectFloorReward(
   nextEnemyEl?: Element,
   favorableEl?: Element,
   royalValue?: number,  // 배치 2 §2: 왕족 카드 값 (10 or 11, 없으면 왕족 미생성)
+  forceAcquireRoyal?: boolean,  // 배치 2 §2: 강제 A/B — 왕족 생성 시 3택 우회 무조건 획득
 ): { type: 'add-card'; card: Card } | { type: 'upgrade-card'; targetId: string } | { type: 'remove-card'; targetId: string } {
   const ELEMENTS: Element[] = ['mok', 'hwa', 'to', 'geum', 'su']
 
@@ -631,6 +641,10 @@ function selectFloorReward(
     const isKing = rng() > 0.5
     const matchingDef = ROYAL_CARDS.find(d => d.element === el && d.royalType === (isKing ? 'king' : 'queen'))!
     newCard = createRoyalCard(matchingDef, royalValue, `${Date.now()}-${Math.floor(rng() * 99999)}`)
+    // 강제 A/B (A군): 왕족 등장 시 봇 3택 비교 우회 무조건 획득 — 선택 편향 제거
+    if (forceAcquireRoyal) {
+      return { type: 'add-card', card: newCard }
+    }
   } else {
     // 평민 카드 생성 (§1: 값 2~10, polarity yang 고정)
     const elIdx = Math.floor(rng() * ELEMENTS.length)
@@ -804,6 +818,7 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
   let discardCount = 0
   let condenseCount = 0
   let fusionCount = 0
+  let royalObtainedCount = 0
   const traitCounts: Record<string, number> = {}
   const floor4PlayedElements: Element[] = []  // [R7-2] 4층에서 플레이된 카드 원소 기록
   // 배치 1.5: 강림제 통계 추적
@@ -894,10 +909,13 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
           const nextElemConfig = nextFloorIdx < 4 ? floorElements[nextFloorIdx] : undefined
           const nextEnemyEl = nextElemConfig?.primaryElement
           // R4.5 3택 선택 → 영속 덱(allCurrentCards)에 즉시 반영
-          const rewardResult = selectFloorReward(allCurrentCards, rng, nextEnemyEl, resolvedFavorableElement, opts?.royalValue)
+          // 강제 A/B (A군): 첫 왕족 등장 시 무조건 획득 (royalObtainedCount===0 = 아직 미획득)
+          const forceRoyalNow = opts?.royalForceAcquire === true && royalObtainedCount === 0
+          const rewardResult = selectFloorReward(allCurrentCards, rng, nextEnemyEl, resolvedFavorableElement, opts?.royalValue, forceRoyalNow)
           let rewardOption: RewardOption
           if (rewardResult.type === 'add-card') {
             rewardOption = { type: 'add-card', card: rewardResult.card }
+            if (rewardResult.card.royalType) royalObtainedCount++
           } else if (rewardResult.type === 'upgrade-card') {
             rewardOption = { type: 'upgrade-card', targetId: rewardResult.targetId, bonusPct: 50 }
           } else {
@@ -927,19 +945,19 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
           deathFloor = floor
           floorStats.push({ floor, attackCount, cleared: false })
         }
-        return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived }
+        return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived, royalObtainedCount }
       }
 
       if (state.playsLeft <= 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived }
+        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived, royalObtainedCount }
       }
 
       if (state.playerHp <= 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived }
+        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived, royalObtainedCount }
       }
 
       // 랜덤화된 층별 원소 사용 (작업 2) — R7-2 검증용 4층 강제 옵션 지원
@@ -979,7 +997,7 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
       if (decision.cardIds.length === 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived }
+        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived, royalObtainedCount }
       }
 
       // 버리기 전략 — B1-4: discardCards는 MAX_DISCARD_PER_USE(3)장 초과 리젝 → 슬라이스로 무한루프 방지
@@ -1072,6 +1090,17 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         if (comboResult.type === 'none') {
           if (!(globalThis as any).__noneLog) (globalThis as any).__noneLog = []
           ;(globalThis as any).__noneLog.push({ damage: comboResult.totalScore })
+        }
+        // v4 융합 딜 로그 (금수 spring 딜 분해용 — 이든 병행 진단 2026-07-18)
+        // v4 명명은 fusion_* 아닌 산물명(샘/대샘 등) → type 접두 + finishingElement로 집계
+        if (comboResult.type === 'fusion-birth' || comboResult.type === 'fusion-hone') {
+          if (!(globalThis as any).__v4FusionLog) (globalThis as any).__v4FusionLog = []
+          ;(globalThis as any).__v4FusionLog.push({
+            name: comboResult.name,
+            finishingElement: comboResult.finishingElement,
+            cardCount: selectedCards.length,
+            damage: comboResult.totalScore,
+          })
         }
       }
       if (comboResult.type === 'fusion-birth' || comboResult.type === 'fusion-hone') {
@@ -1224,6 +1253,7 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
     descentDeferred,
     descentVanished,
     descentSlotsArrived,
+    royalObtainedCount,
   }
 }
 

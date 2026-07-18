@@ -30,13 +30,48 @@ function makeCard(
 }
 
 describe('배치 2 §2 왕·여왕 카드 E2E', () => {
-  it('E2E-1: 왕 승격 — 융합 비율 판정 한 계단 승격', () => {
-    // 시나리오: 들불(목+화) 5장 비정점 조합
-    // 왕 없음 (목3+화2): step1 적용 (catCount > catPeak)
-    // 왕 포함: 같은 조합인데 왕 효과로 한 계단 승격 → peak로 승격
-    // (v4는 비율 단계에 따라 보정값 0.45/0.70/1.0 중 선택됨)
+  it('E2E-1: 왕 승격 — step2 → step1 (정점 도달 불가, 레버 b)', () => {
+    // 레버 (b) "왕은 정점을 못 산다" (이든 판정 2026-07-18):
+    //   왕 포함 융합은 비율 한 계단 승격하되, 정점(×1.0) 도달 불가 — 최대 step1까지.
+    //   step2 → step1 승격 ○ / step1 → step1 유지 (정점 미도달) — 아래 E2E-1b 참조.
 
-    // 5장 비정점: mok 3장 + hwa 2장 (peak는 2:3, 현재는 3:2 → 촉매 과다)
+    // 5장 step2 조합: mok 4장 + hwa 1장 (peak 2:3, 현재 4:1 → 촉매 과다 2계단)
+    const withoutKing = [
+      makeCard('mok', 'yang', 3),
+      makeCard('mok', 'yang', 4),
+      makeCard('mok', 'yang', 5),
+      makeCard('mok', 'yang', 5),
+      makeCard('hwa', 'yang', 5),
+    ]
+    const resultWithout = judgeCombo(withoutKing)
+    expect(resultWithout.type).toBe('fusion-birth')
+    expect(resultWithout.hasKingUpgrade).toBe(false)
+
+    // 왕 포함: 같은 step2 조합, 촉매(mok) 1장을 왕으로 → 한 계단 승격 (step2→step1)
+    const withKing = [
+      makeCard('mok', 'yang', 3),
+      makeCard('mok', 'yang', 4, 'king'),  // 왕(양간)
+      makeCard('mok', 'yang', 5),
+      makeCard('mok', 'yang', 5),
+      makeCard('hwa', 'yang', 5),
+    ]
+    const resultWithKing = judgeCombo(withKing)
+    expect(resultWithKing.type).toBe('fusion-birth')
+    expect(resultWithKing.hasKingUpgrade).toBe(true)
+
+    // 승격 결과: step2(×0.45) → step1(×0.70). 왕 포함이 더 높은 배율.
+    expect(resultWithKing.multiplier).toBeGreaterThan(resultWithout.multiplier)
+
+    // 정점 도달 불가 검증: 왕 포함이어도 정점(×1.0) 미도달 — isRatioPeak false
+    expect(resultWithKing.isRatioPeak).toBe(false)
+    // step1 배율 = tierMult(5.5) × 0.70 = 3.85 (정점 5.5가 아님)
+    expect(resultWithKing.multiplier).toBeLessThan(resultWithout.multiplier * 2)
+  })
+
+  it('E2E-1b: 왕 정점 미도달 — step1 + 왕 → step1 유지', () => {
+    // 레버 (b): step1은 왕이 있어도 승격 불가 (정점 도달 금지). 배율 불변.
+
+    // 5장 step1 조합: mok 3장 + hwa 2장 (촉매 과다 1계단)
     const withoutKing = [
       makeCard('mok', 'yang', 3),
       makeCard('mok', 'yang', 4),
@@ -48,7 +83,7 @@ describe('배치 2 §2 왕·여왕 카드 E2E', () => {
     expect(resultWithout.type).toBe('fusion-birth')
     expect(resultWithout.hasKingUpgrade).toBe(false)
 
-    // 왕 포함: 같은 조합이지만 왕 1장 추가 (촉매 쪽, 왕 효과로 한 계단 승격)
+    // 왕 포함: 같은 step1 조합, 촉매(mok) 1장을 왕으로
     const withKing = [
       makeCard('mok', 'yang', 3),
       makeCard('mok', 'yang', 4, 'king'),  // 왕(양간)
@@ -57,12 +92,11 @@ describe('배치 2 §2 왕·여왕 카드 E2E', () => {
       makeCard('hwa', 'yang', 5),
     ]
     const resultWithKing = judgeCombo(withKing)
-    expect(resultWithKing.type).toBe('fusion-birth')
-    expect(resultWithKing.hasKingUpgrade).toBe(true)
-
-    // 비율 차이 검증: 왕 포함이 더 높은 배율 (한 계단 승격의 결과)
-    // withoutKing: step1 (×0.70) / withKing: peak (×1.0)
-    expect(resultWithKing.multiplier).toBeGreaterThan(resultWithout.multiplier)
+    // step1 → step1 유지: 승격 없음 (정점 미도달)
+    expect(resultWithKing.hasKingUpgrade).toBe(false)
+    expect(resultWithKing.isRatioPeak).toBe(false)
+    // 배율 불변 — 왕이 있어도 step1 그대로
+    expect(resultWithKing.multiplier).toBe(resultWithout.multiplier)
   })
 
   it('E2E-2: 여왕 증폭 — 융합 효과량 ×1.5', () => {

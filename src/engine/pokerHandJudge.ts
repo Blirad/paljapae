@@ -296,12 +296,16 @@ export function judgeCombo(
       const catCount = selectedCards.filter(c => c.element === fusion.element1).length
       const fuelCount = selectedCards.filter(c => c.element === fusion.element2).length
 
-      // 배치 2 §2: 왕 효과 — 비율 판정 한 계단 승격
+      // 배치 2 §2: 왕 효과 — 비율 판정 한 계단 승격 (레버 b: 정점 도달 불가)
+      // "왕은 길을 넓혀주나, 완성은 그대의 손으로" — 정점(×1.0)은 오직 비율로만.
+      // step2→step1 승격 ○ / step1→step1 유지 (정점 미도달) — 최대 step1까지.
       const hasKing = selectedCards.some(c => c.royalType === 'king')
-      let ratioSteps = count < 3 ? -1 : getV4RatioCorrectionSteps(catCount, fuelCount, count)
-      if (hasKing && ratioSteps > 0) {
-        ratioSteps = Math.max(0, ratioSteps - 1)  // 한 계단 승격 (step2→step1, step1→peak)
+      const preKingSteps = count < 3 ? -1 : getV4RatioCorrectionSteps(catCount, fuelCount, count)
+      let ratioSteps = preKingSteps
+      if (hasKing && ratioSteps > 1) {
+        ratioSteps = Math.max(1, ratioSteps - 1)  // 한 계단 승격하되 정점(step0) 도달 불가
       }
+      const kingUpgraded = hasKing && preKingSteps > 1  // 실제 승격 발생 여부 (step2→step1)
       // 승격된 steps로 직접 보정값 산출
       let ratioCorrection: number
       if (count < 3) {
@@ -328,7 +332,7 @@ export function judgeCombo(
         finishingElement: fusion.result,
         description: `v4 융합 ${count}장 (×${multiplier}) — ${name}`,
         isRatioPeak,
-        hasKingUpgrade: hasKing && count >= 3,
+        hasKingUpgrade: kingUpgraded,
         hasQueenAmplify: hasQueen,
       }
     }

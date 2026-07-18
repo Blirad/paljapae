@@ -611,9 +611,10 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
   let purificationBonusDamage = 0
 
   // Phase 1.9.5: 10종 융합 특성 발동 (피해 적용 후 효과)
-  // 배치 2 §2: 여왕 효과 — 포함된 융합의 효과량 ×1.5
+  // 배치 2 §2: 여왕 효과 — 포함된 융합의 효과량 ×1.25
+  // (게이트 ③ FAIL 처방, 이든 판정 2026-07-18: ×1.5 → ×1.25. 1.25 하한 — 아래는 존재감 소멸)
   const hasQueen = playedCards.some(c => c.royalType === 'queen')
-  const queenAmplify = hasQueen ? 1.5 : 1.0
+  const queenAmplify = hasQueen ? 1.25 : 1.0
   if (isFusion && comboName && !isBlocked) {
     const traitId = FUSION_TRAIT_MAP[comboName]
     if (traitId && traitId !== 'snipe') {  // snipe은 위에서 처리
