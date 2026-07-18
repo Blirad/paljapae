@@ -225,10 +225,11 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
 
   // T8 수정: 오색실 — 배율 전 baseScore에 +15 가산 (15×N 증폭 목적)
   // 연환 발동 + 오색실 보유 시, totalScore를 (baseScore + 15) × 배율로 재계산
+  // §4: result.multiplier 사용 (어환 ×12 / 연환 ×8 모두 대응)
   const hasOsakshilEarly = (state.relics ?? []).some(r => r.id === 'osakshil')
   const isYeonhwanCombo = result.rank === 'ohang-yeonhwan'
   let damage = (hasOsakshilEarly && isYeonhwanCombo)
-    ? Math.round((result.baseScore + OSAKSHIL_YEONHWAN_BONUS) * OHANG_YEONHWAN_MULTIPLIER)
+    ? Math.round((result.baseScore + OSAKSHIL_YEONHWAN_BONUS) * result.multiplier)
     : result.totalScore
 
   // R10: 3종 융합 특성 상태 (상성 계산·강공 계산보다 먼저 선언)

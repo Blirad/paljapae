@@ -14,6 +14,7 @@ import {
   GATHER_MULTIPLIERS,
   findFusionCombo,
   OHANG_YEONHWAN_MULTIPLIER,
+  EOHWAN_MULTIPLIER,
   COMBO_RULESET_VERSION,
   RECIPE_MAP,
   RECIPE_SMALL_BIRTH_MULT,
@@ -65,6 +66,7 @@ export interface ComboJudgeResult {
   isRatioPeak?: boolean
   hasKingUpgrade?: boolean   // 배치 2 §2: 왕 승격 적용 여부
   hasQueenAmplify?: boolean  // 배치 2 §2: 여왕 증폭 적용 여부
+  isEohwan?: boolean         // 배치 2 §4: 어환(왕+여왕+3오행) ×12 발동 여부
 }
 
 /** 카드 합계 계산 */
@@ -173,6 +175,20 @@ export function isOhangYeonhwan(cards: Card[]): boolean {
 }
 
 /**
+ * 어환(御環) 검사: 오행연환 조건 + 왕 + 여왕 포함 (배치 2 §4 연환 2단)
+ *
+ * 5장·5원소·값합 25+ AND 왕 1장 이상 AND 여왕 1장 이상.
+ * 5원소 제약으로 왕과 여왕은 반드시 서로 다른 오행 (동오행 시 5원소 불성립).
+ * 기본 연환의 상위 판정 — 어환 성립 시 연환 판정에 도달하지 않음.
+ */
+export function isEohwan(cards: Card[]): boolean {
+  if (!isOhangYeonhwan(cards)) return false
+  const hasKing = cards.some(c => c.royalType === 'king')
+  const hasQueen = cards.some(c => c.royalType === 'queen')
+  return hasKing && hasQueen
+}
+
+/**
  * 조합 판정 메인 함수
  * @param selectedCards 선택된 카드 배열
  * @param recipeMultipliers 사주별 레시피 배율표 (선택사항, 배치 1.5)
@@ -204,8 +220,22 @@ export function judgeCombo(
   const baseScore = sumCardValues(selectedCards)
 
   // 조합 판정 (우선순위 순서)
+  // 배치 2 §4: 어환을 먼저 검사 → 연환 (어환 조건 충족 시 상위 우선)
+  if (isEohwan(selectedCards)) {
+    // 0. 어환(御環) — 왕+여왕+3오행 (연환의 상위 판정, ×12)
+    return {
+      type: 'ohang-yeonhwan',
+      name: '어환',
+      baseScore,
+      multiplier: EOHWAN_MULTIPLIER,
+      totalScore: Math.round(baseScore * EOHWAN_MULTIPLIER),
+      finishingElement: 'mok',  // 임시 (모든 기운이 관여하므로)
+      description: '왕과 여왕이 오행의 고리를 완성한다 — 어환(御環)',
+      isEohwan: true,
+    }
+  }
   if (isOhangYeonhwan(selectedCards)) {
-    // 1. 오행연환 (가장 강력)
+    // 1. 오행연환 (기본, ×8)
     return {
       type: 'ohang-yeonhwan',
       name: '오행연환',

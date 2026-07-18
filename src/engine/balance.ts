@@ -359,6 +359,10 @@ export const FUSION_TRAIT_MAP: Record<string, string> = {
 // --- 오행 연환 배율 (Phase 1.9.2 — E-1: ×10 → ×8 희소화)
 export const OHANG_YEONHWAN_MULTIPLIER = 8
 
+// --- 어환(御環) 배율 (배치 2 §4 연환 2단 — 2026-07-18 이든 지시)
+// 왕 + 여왕 + 상이 3오행 (5장·5원소) → ×12. 기본 연환의 상위 판정.
+export const EOHWAN_MULTIPLIER = 12
+
 // --- 상생상극 매트릭스 배율 (스펙 v2 — 단일 출처)
 // 극(剋): 내가 적을 극 → ×1.5
 // 생(生): 내가 적을 생 → ×0.5

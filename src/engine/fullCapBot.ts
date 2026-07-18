@@ -558,12 +558,18 @@ export interface FullCapSimOptions {
    */
   royalValue?: number
   /**
-   * 배치 2 §2: 강제 A/B 측정 모드 (이든 판정 2026-07-18 — 조건부 획득 델타 폐지)
-   * true(A군): 첫 왕족 등장 시 봇 3택 비교를 우회하고 무조건 획득 (선택 편향 제거)
+   * 배치 2 §2/§4: 강제 A/B 측정 모드 (이든 판정 2026-07-18 — 조건부 획득 델타 폐지)
+   * true(A군): 왕족 등장 시 봇 3택 비교를 우회하고 무조건 획득 (선택 편향 제거)
    * false/미지정: 조건부 획득 (봇이 획득 유리 시에만) — 프로덕션 동작
    * B군(왕족 배제)은 royalValue 미지정으로 표현.
    */
   royalForceAcquire?: boolean
+  /**
+   * 배치 2 §4: 강제 획득 목표 횟수 (기본 1, §4 어환 측정 시 2)
+   * royalForceAcquire=true일 때, 이 횟수까지 등장 왕족을 무조건 획득.
+   * §2: 1 (첫 왕족만), §4: 2 (왕+여왕 모두)
+   */
+  royalForceAcquireCount?: number
 }
 
 /**
@@ -910,7 +916,8 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
           const nextEnemyEl = nextElemConfig?.primaryElement
           // R4.5 3택 선택 → 영속 덱(allCurrentCards)에 즉시 반영
           // 강제 A/B (A군): 첫 왕족 등장 시 무조건 획득 (royalObtainedCount===0 = 아직 미획득)
-          const forceRoyalNow = opts?.royalForceAcquire === true && royalObtainedCount === 0
+          const forceTarget = opts?.royalForceAcquireCount ?? 1
+          const forceRoyalNow = opts?.royalForceAcquire === true && royalObtainedCount < forceTarget
           const rewardResult = selectFloorReward(allCurrentCards, rng, nextEnemyEl, resolvedFavorableElement, opts?.royalValue, forceRoyalNow)
           let rewardOption: RewardOption
           if (rewardResult.type === 'add-card') {
@@ -1149,6 +1156,10 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
       // T13-R2: 연환 발생 추적 (comboResult.type 기준)
       if (comboResult.type === 'ohang-yeonhwan') {
         traitCounts['ohang-yeonhwan'] = (traitCounts['ohang-yeonhwan'] ?? 0) + 1
+        // §4: 어환 발동 별도 집계
+        if (comboResult.isEohwan) {
+          traitCounts['eohwan'] = (traitCounts['eohwan'] ?? 0) + 1
+        }
       }
 
       // T13-R2: 모으기 장수 분포 추적 (gather 유형 + 장수)
