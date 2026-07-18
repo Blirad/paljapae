@@ -9,6 +9,7 @@
  */
 
 import type { Card, Element } from '../types/game'
+import { ROYAL_CARDS, createRoyalCard } from './balance'
 
 const ELEMENTS: Element[] = ['mok', 'hwa', 'to', 'geum', 'su']
 const DECK_SIZE = 20
@@ -87,13 +88,14 @@ export function generateSajuDeck(
 ): Card[] {
   const rng = makeLCG(seed)
 
-  const countByElement = distributeCards(elementDist, DECK_SIZE)
+  // G6 개정 (2026-07-18 이든): 사주 오행 기반 왕족 1장 시작 덱 포함
+  // 사주 상위 2오행 중 추첨 → 왕/여왕 균등
+  const royalCards = generateStartingRoyals(elementDist, rng)
+  const commCount = DECK_SIZE - royalCards.length
 
-  // 음양 비율도 동일 원칙 — 오행 분포와 동일하게 yang/yin 배분
-  // 천간 음양 분포를 elementDist로부터 구성 (간이: 양 vs 음 균등)
-  // 바이블에 음양 분포 별도 데이터 없음 → 1:1 균등 (임의 결정 로그 항목)
+  const countByElement = distributeCards(elementDist, commCount)
 
-  const cards: Card[] = []
+  const cards: Card[] = [...royalCards]
   let idCounter = 0
 
   ELEMENTS.forEach(el => {
@@ -116,6 +118,31 @@ export function generateSajuDeck(
   })
 
   return cards
+}
+
+/**
+ * G6 개정: 사주 오행 기반 시작 왕족 생성
+ * - 사주 상위 2오행 중 1장 추첨 (왕/여왕 균등)
+ * - 화토 사주 → 병화/정화/무토/기토 후보 중 추첨
+ */
+function generateStartingRoyals(
+  elementDist: Record<Element, number>,
+  rng: () => number,
+): Card[] {
+  // 상위 2오행 추출 (분포 기준)
+  const sorted = ELEMENTS
+    .filter(el => (elementDist[el] ?? 0) > 0)
+    .sort((a, b) => (elementDist[b] ?? 0) - (elementDist[a] ?? 0))
+  const topElements = sorted.slice(0, 2)
+  if (topElements.length === 0) return []
+
+  // 후보: 상위 오행들의 왕·여왕 (4종 or 2종)
+  const candidates = ROYAL_CARDS.filter(d => topElements.includes(d.element))
+  if (candidates.length === 0) return []
+
+  // 1장 추첨
+  const pick = candidates[Math.floor(rng() * candidates.length)]
+  return [createRoyalCard(pick, 10, `start-${pick.id}`)]
 }
 
 export { distributeCards }

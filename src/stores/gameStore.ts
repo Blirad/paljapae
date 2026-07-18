@@ -26,23 +26,15 @@ import type { HandJudgeResult, Card, Element, Relic } from '../types/game'
 // §2 왕족 등장 확률 (층 보상 카드 획득 시)
 const ROYAL_APPEAR_RATE = 0.25
 
-// ?royalDebug=true 시 첫 보상 왕족 확정 (이든 실기 검증용)
-function isRoyalDebugMode(): boolean {
-  try {
-    return new URLSearchParams(window.location.search).get('royalDebug') === 'true'
-  } catch { return false }
-}
-
 function generateRandomCard(currentDeck: Card[]): Card {
   const ELEMENTS: Element[] = ['mok', 'hwa', 'to', 'geum', 'su']
 
-  // §2 왕족 등장: 25% 확률 (덱 상한 미달 시) / royalDebug 시 확정
+  // §2 왕족 등장: 25% 확률 (덱 상한 미달 시)
   const currentRoyalCount = countRoyalCards(currentDeck)
   const canOfferRoyal = currentRoyalCount < ROYAL_DECK_CAP
-  const forceRoyal = isRoyalDebugMode() && currentRoyalCount === 0
   const royalRoll = Math.random()
 
-  if (canOfferRoyal && (forceRoyal || royalRoll < ROYAL_APPEAR_RATE)) {
+  if (canOfferRoyal && royalRoll < ROYAL_APPEAR_RATE) {
     const el = ELEMENTS[Math.floor(Math.random() * ELEMENTS.length)]
     const isKing = Math.random() > 0.5
     const matchingDef = ROYAL_CARDS.find(d => d.element === el && d.royalType === (isKing ? 'king' : 'queen'))!

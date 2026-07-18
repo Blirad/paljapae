@@ -354,14 +354,20 @@ function buildPreviewText(
   const enemyGeuksMe = affinity === 'anti-geuk'
   const yikseangEnemy = affinity === 'yikseang'
 
-  // 상태 ⑤: 연환 — §2: "오행연환" 명명 (기존 유지)
+  // 상태 ⑤: 연환 계단형 — §4: 천지어환(×15) / 어환(×12) / 기본연환(×8)
   if (comboResult.type === 'ohang-yeonhwan') {
     const yeonhwanBase = comboResult.baseScore
-    const yeonhwanExpected = Math.round(yeonhwanBase * 8)
+    const yeonhwanMult = comboResult.multiplier
+    const yeonhwanExpected = Math.round(yeonhwanBase * yeonhwanMult)
+    const yeonhwanLabel = comboResult.name ?? '오행연환'
+    // 천지어환·어환은 특별 색상
+    const isCheonji = (comboResult as any).isCheonjiEohwan
+    const isEoh = (comboResult as any).isEohwan
+    const color = isCheonji ? '#FFD700' : isEoh ? '#E8C870' : '#C8A8E8'
     return {
-      line1: `오행연환 · 기본 ${yeonhwanBase} × 8 = 예상 ${yeonhwanExpected}`,
+      line1: `${yeonhwanLabel} · 기본 ${yeonhwanBase} × ${yeonhwanMult} = 예상 ${yeonhwanExpected}`,
       line2: null,
-      line1Color: '#C8A8E8',
+      line1Color: color,
       isYeonhwanReady: true,
     }
   }
@@ -486,8 +492,17 @@ function buildPreviewText(
   const traitLine = getFusionTraitLine(comboName)  // T18: 융합 특성 1줄 (ID 기준 그대로)
   // §2-b: 짝(소형)/겹치기(대형) 계층에만 tierNameFlash 적용 (홑/섞어치기/대모으기/오행연환 제외)
   const needsTierFlash = tierLabel === '짝' || tierLabel === '겹치기'
+  // C-4/C-5: 왕 승격·여왕 증폭 피드백
+  let royalLine: string | null = null
+  if (comboResult.hasKingUpgrade && comboResult.hasQueenAmplify) {
+    royalLine = '♔ 왕의 격으로 한 계단 ↑ · ♕ 여왕의 은혜 ×1.25'
+  } else if (comboResult.hasKingUpgrade) {
+    royalLine = '♔ 왕의 격으로 한 계단 ↑'
+  } else if (comboResult.hasQueenAmplify) {
+    royalLine = '♕ 여왕의 은혜 ×1.25'
+  }
 
-  return { line1, line2: null, line1Color, yongsinLabel, traitLine, needsTierFlash }
+  return { line1, line2: royalLine, line1Color, yongsinLabel, traitLine, needsTierFlash }
 }
 
 // ─── B-2: 이종 기운 3장 이상 차단 판정 ────────────────────────────────────
@@ -3928,6 +3943,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
 
           {hand.map((card, idx) => {
             const isSelected = selectedCards.includes(card.id)
+            const isRoyal = card.royalType === 'king' || card.royalType === 'queen'
             const elColor = ELEMENT_COLORS[card.element]
             const glowColor = ELEMENT_GLOW_COLORS[card.element]
             const totalCards = hand.length
@@ -4000,6 +4016,8 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                     ? `2px solid #FFD98A`
                     : isDropTarget && dragState.fusionPreview?.type !== 'reject'
                     ? `2px solid #D9A441`
+                    : isRoyal
+                    ? `2px solid ${isSelected ? '#FFD700' : '#D4AF37'}`
                     : `2px solid ${isSelected ? elColor : '#2A2620'}`,
                   borderRadius: '2px',
                   position: 'relative',
@@ -4134,8 +4152,20 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                   opacity: 0.8,
                   filter: isGeukiJugeum ? 'saturate(0.6)' : 'none',
                 }}>
-                  {ELEMENT_KO[card.element]}
+                  {isRoyal ? (card.name?.split(' ')[0] ?? ELEMENT_KO[card.element]) : ELEMENT_KO[card.element]}
                 </span>
+                {/* §2 왕족 왕관 표시 (좌하단) */}
+                {isRoyal && (
+                  <span style={{
+                    position: 'absolute',
+                    bottom: '3px',
+                    left: '4px',
+                    fontSize: '10px',
+                    lineHeight: 1,
+                  }}>
+                    {card.royalType === 'king' ? '♔' : '♕'}
+                  </span>
+                )}
                 {/* A-1 Phase 1.9: 죽은 기운 카드 剋 표시 제거 (리본으로 대체됨) */}
                 {/* Phase 1.9.5: 그을음 폐지 (단일 특성 전면 폐지) */}
                 {/* Phase 1.8: 역극 툴팁 팝업 */}
