@@ -4017,7 +4017,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                     : isDropTarget && dragState.fusionPreview?.type !== 'reject'
                     ? `2px solid #D9A441`
                     : isRoyal
-                    ? `2px solid ${isSelected ? '#FFD700' : '#D4AF37'}`
+                    ? `3px solid ${isSelected ? '#FFD700' : '#D4AF37'}`
                     : `2px solid ${isSelected ? elColor : '#2A2620'}`,
                   borderRadius: '2px',
                   position: 'relative',
@@ -4154,16 +4154,19 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                 }}>
                   {isRoyal ? (card.name?.split(' ')[0] ?? ELEMENT_KO[card.element]) : ELEMENT_KO[card.element]}
                 </span>
-                {/* §2 왕족 왕관 표시 (좌하단) */}
+                {/* §2 왕족 왕/후 표시 (좌상단 — C-3 식별성 강화) */}
                 {isRoyal && (
                   <span style={{
                     position: 'absolute',
-                    bottom: '3px',
-                    left: '4px',
-                    fontSize: '10px',
+                    top: '2px',
+                    left: '3px',
+                    fontSize: '14px',
+                    fontWeight: 900,
                     lineHeight: 1,
+                    color: '#FFD700',
+                    textShadow: '0 0 4px rgba(255,215,0,0.6)',
                   }}>
-                    {card.royalType === 'king' ? '♔' : '♕'}
+                    {card.royalType === 'king' ? '王' : '后'}
                   </span>
                 )}
                 {/* A-1 Phase 1.9: 죽은 기운 카드 剋 표시 제거 (리본으로 대체됨) */}
@@ -4331,36 +4334,51 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
             const selectedComboResult = selectedCardObjs.length >= 2
               ? judgeCombo(selectedCardObjs as any)
               : null
-            const isFusionBirth = selectedComboResult?.type === 'fusion-birth'
+            const isFusion = selectedComboResult?.type === 'fusion-birth' || selectedComboResult?.type === 'fusion-hone'
             const condenseAvail = selectedComboResult
               ? getCondenseAvailability(selectedComboResult.name ?? '', selectedComboResult.finishingElement)
               : null
             const canAttack = selectedCards.length > 0 && playsLeft > 0 && !isInputLocked
 
-            // B1-1: 양자택일 효과 미리보기 (fusion-birth만)
+            // B1-1: 양자택일 효과 미리보기 (fusion 10쌍 전체)
             const getEffectPreview = (): string => {
-              if (!isFusionBirth || !selectedComboResult) return ''
+              if (!isFusion || !selectedComboResult) return ''
               const baseValue = selectedCardObjs.reduce((sum, c) => sum + c.value, 0)
               const comboName = selectedComboResult.name ?? ''
               const traitId = FUSION_TRAIT_MAP[comboName]
 
               switch (traitId) {
-                case 'wildfire': // 들불 — 3턴×값
-                  return `3턴×${baseValue} = 총 ${baseValue * 3}피 (상성무시)`
-                case 'nourish': // 숲 — HP 회복
+                // === 낳는(연료) 5종 ===
+                case 'wildfire': // 들불 — 번짐
+                  return `번짐 — ${baseValue}×30% = +${Math.round(baseValue * 0.3)} 다음 공격`
+                case 'nourish': // 숲 — 자양
                   {
                     const healAmount = Math.min(Math.floor(baseValue * NOURISH_EFFECT_COEFF), PLAYER_BASE_HP)
-                    return `HP +${healAmount}`
+                    return `자양 — HP +${healAmount} 회복`
                   }
-                case 'purification': // 샘 — 해제
-                  return baseValue >= PURIFICATION_THRESHOLD ? '모든 기운 해제+면역' : '1종 기운 해제'
-                case 'mining': // 광맥 — 드로우
+                case 'purification': // 샘 — 정화
+                  return baseValue >= PURIFICATION_THRESHOLD ? '정화 — 모든 기운 해제+면역' : '정화 — 1종 기운 해제'
+                case 'mining': // 광맥 — 채굴
                   {
                     const drawCount = Math.min(Math.floor(baseValue / MINING_DRAW_DIVISOR), MINING_MAX_DRAW)
-                    return `${drawCount}장 드로우`
+                    return `채굴 — ${drawCount}장 드로우`
                   }
-                case 'yonggigama': // 옹기가마 — 응축은 버튼으로 처리
-                  return '응축 발동'
+                case 'yonggigama': // 옹기가마 — 응축
+                  return '응축 — 다음 공격 강화'
+                // === 벼리는(촉매) 5종 ===
+                case 'keen': // 벼린 검 — 예리
+                  return '예리 — 극 보너스 ×1.5'
+                case 'snipe': // 깎은 화살 — 저격
+                  return '저격 — 적 가호 1개 관통'
+                case 'harvest': // 일군 밭 — 수확
+                  {
+                    const mokToCount = selectedCardObjs.filter(c => c.element === 'mok' || c.element === 'to').length
+                    return `수확 — 손패 목·토 값 +1 (대상 ${mokToCount}장)`
+                  }
+                case 'mirror': // 맑은 못 — 비침
+                  return '비침 — 적 다음 강공 -50%'
+                case 'quench': // 담금불 — 담금질
+                  return `담금질 — 쓴 ${selectedCardObjs.length}장 값 영구 +1`
                 default:
                   return '효과 발동'
               }
@@ -4383,7 +4401,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
               : condensePercent > 0 ? `대응축(${selectedCards.length}장) +${condensePercent}%` : `대응축 — 옹기가마에 굽는다`
 
             // 양자택일 2분할 (fusion-birth이고 응축 없을 때)
-            if (isFusionBirth && condenseAvail === null) {
+            if (isFusion && condenseAvail === null) {
               const effectPreview = getEffectPreview()
               return (
                 <div style={{ flex: 1, display: 'flex', gap: '0', height: '48px' }}>
