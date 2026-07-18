@@ -2636,7 +2636,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
         const isV4 = ruleset === 'v4'
         const isTestVariant = isRecipe || isV4
         const label = isV4
-          ? `v4 시험판 · 강림 ${descentOn ? 'ON' : 'OFF'}`
+          ? '팔자전 v4'
           : isRecipe
             ? `레시피 시험판 · 강림 ${descentOn ? 'ON' : 'OFF'}`
             : '팔자 v3r'

@@ -18,19 +18,44 @@ import {
   applyCondense,
   applyRewardOption,
 } from '../engine/paljajeonEngine'
-import { HAND_SIZE, RELIC_DEFS } from '../engine/balance'
+import { HAND_SIZE, RELIC_DEFS, ROYAL_CARDS, ROYAL_DECK_CAP, createRoyalCard, countRoyalCards } from '../engine/balance'
 import type { RelicId } from '../engine/balance'
 import { judgeHand } from '../engine/pokerHandJudge'
 import type { HandJudgeResult, Card, Element, Relic } from '../types/game'
 
-function generateRandomCard(): Card {
+// §2 왕족 등장 확률 (층 보상 카드 획득 시)
+const ROYAL_APPEAR_RATE = 0.25
+
+// ?royalDebug=true 시 첫 보상 왕족 확정 (이든 실기 검증용)
+function isRoyalDebugMode(): boolean {
+  try {
+    return new URLSearchParams(window.location.search).get('royalDebug') === 'true'
+  } catch { return false }
+}
+
+function generateRandomCard(currentDeck: Card[]): Card {
   const ELEMENTS: Element[] = ['mok', 'hwa', 'to', 'geum', 'su']
+
+  // §2 왕족 등장: 25% 확률 (덱 상한 미달 시) / royalDebug 시 확정
+  const currentRoyalCount = countRoyalCards(currentDeck)
+  const canOfferRoyal = currentRoyalCount < ROYAL_DECK_CAP
+  const forceRoyal = isRoyalDebugMode() && currentRoyalCount === 0
+  const royalRoll = Math.random()
+
+  if (canOfferRoyal && (forceRoyal || royalRoll < ROYAL_APPEAR_RATE)) {
+    const el = ELEMENTS[Math.floor(Math.random() * ELEMENTS.length)]
+    const isKing = Math.random() > 0.5
+    const matchingDef = ROYAL_CARDS.find(d => d.element === el && d.royalType === (isKing ? 'king' : 'queen'))!
+    return createRoyalCard(matchingDef, 10, `${Date.now()}-${Math.floor(Math.random() * 99999)}`)
+  }
+
+  // 평민 카드 (§1: 값 2~10)
   const element = ELEMENTS[Math.floor(Math.random() * ELEMENTS.length)]
-  const value = Math.floor(Math.random() * 10) + 1
+  const value = Math.floor(Math.random() * 9) + 2
   return {
     id: `reward-${Date.now()}-${Math.floor(Math.random() * 99999)}`,
     element,
-    polarity: Math.random() > 0.5 ? 'yang' : 'yin',
+    polarity: 'yang',
     value,
     type: 'soldier',
     rarity: 'common',
@@ -177,7 +202,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     let newRelics = state.relics
 
     if (rewardType === 'add-card') {
-      const newCard = generateRandomCard()
+      const newCard = generateRandomCard(allCurrentCards)
       updatedDeck = applyRewardOption(allCurrentCards, { type: 'add-card', card: newCard })
     } else if (rewardType === 'upgrade-card' && allCurrentCards.length > 0) {
       const upgradeTarget = allCurrentCards.reduce((best, card) =>
