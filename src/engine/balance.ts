@@ -3,7 +3,7 @@
  * 이 파일 외에 밸런스 숫자 하드코딩 금지
  */
 
-import type { FloorConfig, Element, Card } from '../types/game'
+import type { FloorConfig, Element, Card, Polarity } from '../types/game'
 import { getDevComboRuleset, getDevDescentEnabled } from './devSettings'
 
 /**

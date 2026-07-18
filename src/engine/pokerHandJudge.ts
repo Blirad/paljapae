@@ -24,7 +24,6 @@ import {
   RECIPE_GATHER5_MULT_A,
   RECIPE_LARGE_MULT_A,
   V4_TIER_MULTIPLIERS,
-  getV4RatioCorrection,
   getV4RatioCorrectionSteps,
   V4_RATIO_CORRECTION,
   type V4RatioCorrectionTable,
