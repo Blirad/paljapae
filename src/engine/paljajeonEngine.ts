@@ -9,7 +9,7 @@ import {
   GEUK_MAP,
   detectElementClash,
 } from './pokerHandJudge'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, MAX_DISCARD_PER_USE, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, SANGGWAN_MAX_PER_RUN, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, EMBER_DURATION, EMBER_MULTIPLIER, BASE_PURIFICATION_DAMAGE, ENABLE_YONGSIN_DESCENT, DESCENT_VARIANT, DESCENT_GLOW_FULL_MULT, DESCENT_GLOW_AFTERGLOW_MULT, COMBO_RULESET_VERSION, YIKSEANG_MAP, YIKSEANG_MULT, getFloorHp } from './balance'
+import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, MAX_DISCARD_PER_USE, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, SANGGWAN_MAX_PER_RUN, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, EMBER_DURATION, EMBER_MULTIPLIER, BASE_PURIFICATION_DAMAGE, ENABLE_YONGSIN_DESCENT, DESCENT_VARIANT, DESCENT_GLOW_FULL_MULT, DESCENT_GLOW_AFTERGLOW_MULT, COMBO_RULESET_VERSION, YIKSEANG_MAP, YIKSEANG_MULT, getFloorHp, ROYAL_CARDS, createRoyalCard } from './balance'
 // 폐기된 dual/wait3 변형 상수 — balance.ts에서 삭제됨. 코드 경로 유지용 하드코딩.
 const DESCENT_DUAL_SLOT_MULT = 2.0    // B-2 dual: 슬롯 적중 배율 (폐기)
 const DESCENT_DUAL_NONSLOT_MULT = 1.3 // B-2 dual: 비슬롯 배율 (폐기)
@@ -18,6 +18,17 @@ import { generateSajuDeck } from './deckGenerator'
 import { getFavorableElement } from './manseryeok'
 // T17: 가호(십성) 효과 반영
 import { PASSIVE_POOL } from '../types/passive'
+
+// --------------- 배치 2 §1: 결정론 RNG 헬퍼 (LCG) ---------------
+/**
+ * LCG 순수 함수 — 확률 효과 재현성 보장
+ * next = (s * 1103515245 + 12345) >>> 0
+ * value = next / 0x100000000  (0 이상 1 미만)
+ */
+export function nextRng(s: number): { value: number; next: number } {
+  const next = ((s * 1103515245 + 12345) >>> 0) >>> 0
+  return { value: next / 0x100000000, next }
+}
 
 /**
  * C10(d): 오행 속성별 기믹 정의 (balance.ts 수치 변경 없이 새로운 로직 추가)
@@ -133,6 +144,14 @@ export function createInitialGameState(floorIndex = 0, heroProfile?: SavedHeroPr
   // balance.ts 수치 그대로 사용 (기믹은 전투 중 별도 로직으로 적용)
   // v4 모드 시 getFloorHp(floorIndex)로 V4_FLOOR_HP_TABLE 값 주입, 그 외 floorConfig.enemyHp 유지
   const initEnemyHp = getFloorHp(floorIndex)
+
+  // 배치 2 §1: 결정론 RNG 초기값 (deckSeed 파생, 없으면 고정 상수)
+  const initRngState = heroProfile?.deckSeed ? (heroProfile.deckSeed ^ 0x9E3779B9) >>> 0 : 0x9E3779B9
+
+  // 배치 2 §1: 겁재(劫財) 전투 시작 훅 — activePassiveIds 없으므로 초기 런에서는 미발동
+  // (activePassiveIds는 런 시작 후 별도 선택 UI에서 채워지므로 여기서는 빈 배열 기준)
+  const initGeoptaeStealDamage = 0
+
   return {
     currentFloor: floorConfig.floor,
     playerHp: PLAYER_BASE_HP,
@@ -155,7 +174,7 @@ export function createInitialGameState(floorIndex = 0, heroProfile?: SavedHeroPr
     condenseActive: false,         // 하위 호환 (deprecated)
     // Phase 1.9.2 신규 필드 초기화
     yeonhwanUsed: false,
-    // R4: 상관 출정당 발동 횟수 초기화
+    // R4: 상관 출정당 발동 횟수 초기화 (미사용 유지 — 캡 로직 폐기)
     sanggwanUsed: 0,
     // Phase 1.9.5: 응축 확정판 (% 방식)
     condensedMultiplier: 0,
@@ -177,14 +196,21 @@ export function createInitialGameState(floorIndex = 0, heroProfile?: SavedHeroPr
     relics: [],
     // T17: 가호(십성) 시스템
     activePassiveIds: [],
-    // sikshin D안: 초기화
+    // sikshin D안: 삭제 (v2에서 sikshinRicegrains로 교체) — 하위 호환 false 유지
     sikshinDiscardBonus: false,
-    // R10: 겁재 출정당 1회 제한 — 런 시작 시 초기화
+    // 겁재: 층마다 리셋
     geoptaeUsed: false,
     // 배치 1.5: 강림제 초기화
     yongsinDescent: initYongsinDescent(heroProfile, floorIndex),
     // α 수확 체감: 전투별 gather5 활성화 횟수 추적 (동일 전투 내만 유지, 전투 종료 시 리셋)
     gatherUsedInBattle: 0,
+    // 배치 2 §1: 가호 v2 신규 필드
+    rngState: initRngState,
+    geoptaeStealDamage: initGeoptaeStealDamage,
+    sikshinRicegrains: 0,
+    bigyeonCopyUsed: false,
+    jeonginUsed: false,
+    jeonginBuff: false,
   }
 }
 
@@ -346,14 +372,29 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
   // Phase 1.9.2 E-2: 자동 응축 폐지 — 구형 자동 응축 로직 제거
   const newCondenseActive = false  // deprecated 필드, 항상 false 유지
 
-  // T17: 가호(십성) 7종 효과 반영
+  // 배치 2 §1: 가호(십성) 10종 효과 반영
   // activePassiveIds 기반 패시브 적용 — 모든 패시브는 isBlocked가 아닐 때만 발동
-  let passiveHealBonus = 0  // 편재: 체력 회복 보너스
-  let passiveCounterReduction = 0  // 비견: 반격 피해 감소
-  // R4: 상관 발동 횟수 추적 (출정당 최대 SANGGWAN_MAX_PER_RUN회)
+  let passiveHealBonus = 0  // (미사용 — 편재는 턴 종료 훅으로 이동)
+  let passiveCounterReduction = 0  // 비견: 반격 피해 감소 (기존 로직은 폐기, 비견은 복제로 대체)
+  // 하위 호환 상관/겁재 추적 변수
   let newSanggwanUsed = state.sanggwanUsed ?? 0
-  // R10: 겁재 출정당 1회 제한 추적
   let newGeoptaeUsed = state.geoptaeUsed ?? false
+  let newRngState = state.rngState ?? 0x9E3779B9
+  // 비견 복제: 이번 playCards에서 복제 타격을 가할지
+  let bigyeonCopyDamage = 0
+  // 편관: 이번 공격이 추가 출수권 부여하는지
+  let pyeongwanExtraPlay = false
+  // 식신 밥알
+  let newSikshinRicegrains = state.sikshinRicegrains ?? 0
+  // 정인 버프 소비
+  let newJeonginBuff = state.jeonginBuff ?? false
+  // 비견 복제 사용 여부
+  let newBigyeonCopyUsed = state.bigyeonCopyUsed ?? false
+
+  // isFusion 선행 선언 (패시브 루프에서 사용)
+  const isFusionEarly = result.rank === 'fusion-birth' || result.rank === 'fusion-hone'
+  const isSmallFusion = isFusionEarly && playedCards.length === 2
+
   if (!isBlocked) {
     const activeIds = state.activePassiveIds ?? []
     const activePassives = PASSIVE_POOL.filter(p => activeIds.includes(p.id))
@@ -361,72 +402,85 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
     for (const passive of activePassives) {
       switch (passive.id) {
         case 'sikshin': {
-          // 식신(食神): 낱장 조합(1장) 시 피해 +20% (기존 조건 유지)
-          if (playedCards.length === 1) {
-            damage = Math.round(damage * 1.2)
-          }
-          // sikshin D안: 버리기 후 다음 공격 +15% (1회 소모, 낱장 조건과 독립)
-          if (state.sikshinDiscardBonus === true) {
-            damage = Math.round(damage * 1.10)
+          // 식신(食神) v2: 융합 시 밥알 소비 — charges=floor(ricegrains/5), 1충전 시 ×1.3
+          if (isFusionEarly) {
+            const charges = Math.floor(newSikshinRicegrains / 5)
+            if (charges > 0) {
+              damage = Math.round(damage * 1.3)
+              newSikshinRicegrains -= 5
+            }
           }
           break
         }
         case 'bigyeon': {
-          // 비견(比肩): 같은 기운 모으기 3 이상 시 적 반격 -1
-          if (result.rank === 'gather' && playedCards.length >= 3) {
-            passiveCounterReduction += 1
+          // 비견(比肩) v2: 이번 전투 첫 융합 시 같은 공격 2연타 (복제타 = 최종 damage의 50%)
+          // 복제타 계산은 루프 밖(최종 damage 확정 후) — 여기서는 플래그만 세팅
+          if (isFusionEarly && !newBigyeonCopyUsed) {
+            newBigyeonCopyUsed = true
           }
           break
         }
         case 'geoptae': {
-          // 겁재(劫財): 나무 기운 카드 포함 시 첫 공격 피해 +30%
-          // R10: "첫 공격" = 출정 전체(런) 기준 1회만 — geoptaeUsed로 추적
-          const hasMok = playedCards.some(c => c.element === 'mok')
-          if (hasMok && !newGeoptaeUsed) {
-            damage = Math.round(damage * 1.3)
+          // 겁재(劫財) v2: 전투 시작 시 계산된 stealDamage를 첫 공격에 가산 후 소비
+          if (!newGeoptaeUsed && (state.geoptaeStealDamage ?? 0) > 0) {
+            damage = damage + (state.geoptaeStealDamage ?? 0)
             newGeoptaeUsed = true
           }
           break
         }
         case 'sanggwan': {
-          // 상관(傷官): 불 기운 카드 3장 이상 시 피해 ×1.25 (출정당 최대 SANGGWAN_MAX_PER_RUN회)
-          const hwaCount = playedCards.filter(c => c.element === 'hwa').length
-          if (hwaCount >= 3 && (state.sanggwanUsed ?? 0) < SANGGWAN_MAX_PER_RUN) {
-            damage = Math.round(damage * 1.25)
-            newSanggwanUsed = (state.sanggwanUsed ?? 0) + 1
+          // 상관(傷官) v2: 황금비 정점(isRatioPeak) 시 50% 확률로 ×2.0, 아니면 ×1.2
+          // 기존 SANGGWAN_MAX_PER_RUN 캡 로직 폐기
+          if ((result as { isRatioPeak?: boolean }).isRatioPeak === true) {
+            const rngRoll = nextRng(newRngState)
+            newRngState = rngRoll.next
+            if (rngRoll.value < 0.5) {
+              damage = Math.round(damage * 2.0)
+            } else {
+              damage = Math.round(damage * 1.2)
+            }
+            newSanggwanUsed = newSanggwanUsed + 1  // 추적 유지 (통계용)
           }
           break
         }
         case 'pyeonjae': {
-          // 편재(偏財): 쇠 기운으로 이기는 기운 발동 시 체력 3 회복
-          // 타격 원소가 金이고 극 유리(geuk)인 경우
-          const hasGeum = playedCards.some(c => c.element === 'geum')
-          const isGeukWin = hasGeum && SANG_MAP['geum'] !== floorEnemyEl && (
-            // 금이 극하는 원소: 목(木)
-            floorEnemyEl === 'mok'
-          )
-          if (isGeukWin) {
-            passiveHealBonus += 3
-          }
+          // 편재(偏財) v2: 턴 종료 훅으로 이동 — playCards 내에서는 무동작
           break
         }
         case 'jeongjae': {
-          // 정재(正財): 물 기운 5장 이상 시 오행연환 배율 +2
-          // 오행연환 발동 시 damage 보정 (이미 ×8 배율 적용된 후)
-          const suCount = playedCards.filter(c => c.element === 'su').length
-          if (result.rank === 'ohang-yeonhwan' && suCount >= 1) {
-            // 연환 배율 +2 = 현재 damage / 8 * 2 추가
-            const baseYeonhwan = Math.round(damage / 8)
-            damage += Math.round(baseYeonhwan * 2)
-          }
+          // 정재(正財) v2: 오행연환 발동 시 카드 2장 드로우 (이후 손패리필 섹션에서 처리)
+          // 여기서는 플래그만 설정 — newHand 아직 미생성
           break
         }
         case 'pyeonin': {
-          // 편인(偏印): 흙 기운 결집 시 마지막 공격 피해 +50%
-          const hasTo = playedCards.some(c => c.element === 'to')
-          const isToGather = result.rank === 'gather' && hasTo
-          if (isToGather && state.isLastAttack) {
+          // 편인(偏印) v2: 소융합(2장) 시 피해 ×1.6
+          if (isSmallFusion) {
+            damage = Math.round(damage * 1.6)
+          }
+          break
+        }
+        case 'pyeongwan': {
+          // 편관(偏官) v2: 이번 공격 damage >= enemyMaxHp*0.15 시 추가 출수권 +1 (턴당 1회)
+          // damage 계산 완료 후 판정 필요 — 여기서는 조건 예비 플래그
+          // (damage가 이 시점에 계산 완료되므로 즉시 판정 가능)
+          if (damage >= state.enemyMaxHp * 0.15) {
+            pyeongwanExtraPlay = true
+          }
+          break
+        }
+        case 'jeonggwan': {
+          // 정관(正官) v2: effectMode 선택 시 효과량 ×1.5 — synergyMultiplier에 반영
+          // fusion-birth + fusion-hone 양쪽 모두 effectMode 가능 (양자택일 = 공격 vs 효과)
+          if (effectMode && isFusionEarly) {
+            synergyMultiplier = synergyMultiplier * 1.5
+          }
+          break
+        }
+        case 'jeongin': {
+          // 정인(正印) v2: 다음 융합 1회 ×1.5 버프 소비
+          if (isFusionEarly && newJeonginBuff) {
             damage = Math.round(damage * 1.5)
+            newJeonginBuff = false
           }
           break
         }
@@ -434,29 +488,16 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
     }
   }
 
-  // R5 (balance-v3 §3): 가호 시너지 배율 — 효과에 적용 가능한 가호만 synergyMultiplier에 반영
-  // 디스패치 규칙:
-  //   - sikshin "다음 공격 +10%": 공격만, 효과 미적용
-  //   - sikshin 낱장 +20%: 낳는 융합은 2장 조합이므로 자연 제외
-  //   - geoptae: 목 카드 포함 시 첫 공격 +30% — 효과에도 적용
-  //   - sanggwan/pyeonin: 화3장 이상/토 모으기 조건 — 낳는 융합 2장에서 자연 제외
-  if (!isBlocked) {
-    const activeIdsForSynergy = state.activePassiveIds ?? []
-    if (activeIdsForSynergy.includes('geoptae')) {
-      const hasMok = playedCards.some(c => c.element === 'mok')
-      // geoptaeUsed는 공격 섹션(가호 루프)에서 이미 설정됨.
-      // 효과 발동 시 geoptaeUsed는 여기서 판단 — 공격 damage에는 기여 안 했으므로 별도 체크
-      // 단, 공격과 효과가 동시에 발동하지 않으므로 newGeoptaeUsed 상태로 판단
-      if (hasMok && !newGeoptaeUsed) {
-        synergyMultiplier = synergyMultiplier * 1.3
-        newGeoptaeUsed = true
-      }
-    }
+  // 배치 2 §1: 비견 복제타 — 루프 후 최종 damage 기준 계산 (mid-loop 계산 시 후속 패시브 미반영 방지)
+  // state.bigyeonCopyUsed가 false → newBigyeonCopyUsed가 true = 이번 턴에 복제 플래그 세팅됨 (첫 융합)
+  const bigyeonJustTriggered = newBigyeonCopyUsed && !(state.bigyeonCopyUsed ?? false)
+  if (bigyeonJustTriggered && isFusionEarly && !isBlocked) {
+    bigyeonCopyDamage = Math.round(damage * 0.5)
   }
 
   // Phase 1.9.5: 10종 융합 특성 발동 판정
   // 융합 조합인 경우만 특성 발동 (rank: fusion-birth or fusion-hone)
-  const isFusion = result.rank === 'fusion-birth' || result.rank === 'fusion-hone'
+  const isFusion = isFusionEarly  // 패시브 루프 상단에서 선언된 isFusionEarly와 동일
   const comboName = result.name
   // α 수확 체감: gather5(5장 모으기) 활성화 판정
   const isGather5 = result.rank === 'gather' && playedCards.length === 5
@@ -599,6 +640,23 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
   }
   let newHand = [...remainHand, ...drawnCards]
 
+  // 배치 2 §1: 정재(正財) v2 — 오행연환 발동 시 카드 2장 드로우 (손패리필 직후)
+  // 정재(正財): result.rank==='ohang-yeonhwan' 성립 시 카드 2장 드로우
+  const activeIdsJeongjae = state.activePassiveIds ?? []
+  if (!isBlocked && result.rank === 'ohang-yeonhwan' && activeIdsJeongjae.includes('jeongjae')) {
+    // 2장 드로우 — 덱 부족 시 discardPile 재순환
+    for (let i = 0; i < 2; i++) {
+      if (newDeck.length === 0 && newDiscardPile.length > 0) {
+        const recycled = shuffleDeck([...newDiscardPile])
+        newDeck = recycled
+        newDiscardPile = []
+      }
+      if (newDeck.length > 0) {
+        newHand = [...newHand, newDeck.shift()!]
+      }
+    }
+  }
+
   // C10(d): 녹철령(金) — 매 턴 무작위 핸드 카드 1장 값 -1 (적 생존 시만 발동)
   const rustGimmick = gimmicks.find(g => g.type === 'card-rust')
   if (rustGimmick && rustGimmick.type === 'card-rust' && newHand.length > 0 && afterDamageHp > 0) {
@@ -732,8 +790,24 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
   }
 
   const floorCleared = newEnemyHp <= 0
-  const playerDead = newPlayerHp <= 0
+  let playerDead = newPlayerHp <= 0
   const outOfPlays = newPlaysLeft <= 0 && newEnemyHp > 0
+
+  // 배치 2 §1: 정인(正印) 사망 가로채기 훅 — playerDead 판정 직후, phase 분기 전
+  // activePassiveIds에 jeongin 있고, jeonginUsed==false이고, playerDead이면:
+  //   newPlayerHp=1, jeonginUsed=true, playerDead=false (생존), jeonginBuff=true
+  const newJeonginUsed_pre = state.jeonginUsed ?? false
+  if (playerDead && !newJeonginUsed_pre && (state.activePassiveIds ?? []).includes('jeongin') && !floorCleared) {
+    // 가로채기 성공
+    // finalPlayerHp는 이후에 설정되므로 newPlayerHp를 직접 조작할 수 없음
+    // → 플래그를 통해 이후 finalPlayerHp 계산 시 반영
+    playerDead = false
+    newJeonginBuff = true  // 다음 융합 ×1.5 버프 활성
+  }
+  // jeonginUsed: 가로채기 발동 시 true (런 내내 유지)
+  const newJeonginUsed = (!newJeonginUsed_pre && !playerDead && (state.activePassiveIds ?? []).includes('jeongin') && newPlayerHp <= 0)
+    ? true
+    : newJeonginUsed_pre
 
   // Phase 1.7: 기운 전환 판정 (3~4층, 1회만)
   const phaseSwitchThreshold = floorConfig.forcePhaseSwitch?.hpPct ?? null
@@ -771,7 +845,49 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
     const healAmount = Math.round(baseHeal * synergyMultiplier * queenAmplify)
     finalPlayerHp = Math.min(state.playerMaxHp, finalPlayerHp + healAmount)
   }
-  // T17: 편재(偏財) 체력 회복 보너스
+
+  // 배치 2 §1: 정인(正印) 사망 가로채기 — finalPlayerHp를 1로 강제
+  // playerDead가 false(가로채기 발동)이고 newPlayerHp<=0인 경우에 적용
+  if (!playerDead && newPlayerHp <= 0 && newJeonginUsed) {
+    finalPlayerHp = 1
+  }
+
+  // 배치 2 §1: 편재(偏財) 턴 종료 훅 — 손패리필(L600) 직후, floorCleared/playerDead 아닌 경우에만
+  // 20% 확률로 고값(8~10) 카드 1장을 newHand에 추가
+  if (!isBlocked && !floorCleared && !playerDead) {
+    const activeIdsForPyeonjae = state.activePassiveIds ?? []
+    if (activeIdsForPyeonjae.includes('pyeonjae')) {
+      const rngRollPyeonjae = nextRng(newRngState)
+      newRngState = rngRollPyeonjae.next
+      if (rngRollPyeonjae.value < 0.20) {
+        // 스펙: "왕족 또는 고값(8~10) 카드 1장" — 2번째 RNG roll로 결정
+        const rngRoll2 = nextRng(newRngState)
+        newRngState = rngRoll2.next
+        const elements: Element[] = ['mok', 'hwa', 'to', 'geum', 'su']
+        let bonusCard: Card
+        if (rngRoll2.value < 0.5 && ROYAL_CARDS.length > 0) {
+          // 왕족 카드 생성 (50%)
+          const rIdx = Math.floor(rngRoll2.value / 0.5 * ROYAL_CARDS.length) % ROYAL_CARDS.length
+          bonusCard = createRoyalCard(ROYAL_CARDS[rIdx], 10, `pyeonjae-${state.attackCount}`)
+        } else {
+          // 고값(8~10) 카드 생성 (50%)
+          const elemIdx = Math.floor(rngRoll2.value * elements.length) % elements.length
+          const highVal = 8 + Math.floor((rngRoll2.value * 10) % 3)  // 8, 9, 또는 10
+          bonusCard = {
+            id: `pyeonjae-bonus-${state.attackCount}`,
+            element: elements[elemIdx],
+            polarity: 'yang',
+            value: highVal,
+            type: 'soldier',
+            rarity: 'rare',
+          }
+        }
+        newHand = [...newHand, bonusCard]
+      }
+    }
+  }
+
+  // T17: passiveHealBonus (편재 구버전 — v2에서는 0이므로 무해)
   if (passiveHealBonus > 0) {
     finalPlayerHp = Math.min(state.playerMaxHp, finalPlayerHp + passiveHealBonus)
   }
@@ -792,6 +908,32 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
     )
   }
 
+  // 배치 2 §1: 비견(比肩) v2 복제타 — 적 HP에 추가 적용 (반격 없음)
+  // bigyeonCopyDamage: 패시브 루프에서 계산됨 (첫 융합 시 공격damage의 50%)
+  if (bigyeonCopyDamage > 0 && !floorCleared) {
+    newEnemyHp = Math.max(0, newEnemyHp - bigyeonCopyDamage)
+    // 복제타로 클리어된 경우에도 floorCleared 갱신
+  }
+  const floorClearedFinal = newEnemyHp <= 0
+  // 복제타로 인한 phase 재계산
+  let finalPhase = phase
+  let finalIsVictory = isVictory
+  let finalFloorsCleared = floorsCleared
+  if (!floorCleared && floorClearedFinal && bigyeonCopyDamage > 0) {
+    finalFloorsCleared = state.floorsCleared + 1
+    if (state.currentFloor >= 4) {
+      finalPhase = 'result'
+      finalIsVictory = true
+    } else {
+      finalPhase = 'floor-reward'
+    }
+  }
+
+  // 배치 2 §1: 편관(偏官) v2 — 추가 출수권: newPlaysLeft +1 (이번 공격 차감 상쇄)
+  const finalPlaysLeft = pyeongwanExtraPlay ? newPlaysLeft + 1 : newPlaysLeft
+  // isLastAttack 재계산
+  const finalIsLastAttack = finalPlaysLeft === 1
+
   return {
     ...state,
     enemyHp: newEnemyHp,
@@ -800,10 +942,10 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
     deck: newDeck,
     discardPile: reshuffled ? [] : newDiscardPile,
     selectedCards: [],
-    playsLeft: newPlaysLeft,
-    phase,
-    isVictory,
-    floorsCleared,
+    playsLeft: finalPlaysLeft,
+    phase: finalPhase,
+    isVictory: finalIsVictory,
+    floorsCleared: finalFloorsCleared,
     amplifyActive: false,  // 증폭부 1회 소모
     attackCount: newAttackCount,
     enemyPhaseSwitch: newEnemyPhaseSwitch,
@@ -811,7 +953,7 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
     // Phase 1.9.5: 신규 필드
     yeonhwanUsed: newYeonhwanUsed,
     condensedMultiplier: newCondensedMultiplier,
-    isLastAttack: newIsLastAttack,
+    isLastAttack: finalIsLastAttack,
     lastTraitTriggered: newLastTraitTriggered,
     carryoverBurn: newCarryoverBurn,
     // B1-1: 잔불 지속 피해 상태
@@ -824,16 +966,23 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
     mirrorShieldActive: newMirrorShieldActive,
     // Phase 1.9.4: 덱 재순환 배너용 플래그
     reshuffled,
-    // R4: 상관 발동 횟수 업데이트
+    // 상관 발동 횟수 업데이트 (통계용)
     sanggwanUsed: newSanggwanUsed,
-    // sikshin D안: 공격 후 버리기 보너스 소멸
+    // sikshin D안: 하위 호환 false
     sikshinDiscardBonus: false,
-    // R10: 겁재 발동 여부 업데이트 (출정당 1회 유지)
+    // 겁재 첫 공격 소비 여부
     geoptaeUsed: newGeoptaeUsed,
     // 배치 1.5: 강림제 상태 전달
     yongsinDescent: newYongsinDescent,
     // α 수확 체감: gather5 활성화 횟수 업데이트
     gatherUsedInBattle: newGatherUsedInBattle,
+    // 배치 2 §1: 가호 v2 신규 필드
+    rngState: newRngState,
+    geoptaeStealDamage: newGeoptaeUsed ? 0 : (state.geoptaeStealDamage ?? 0),  // 소비 후 0
+    sikshinRicegrains: newSikshinRicegrains,
+    bigyeonCopyUsed: newBigyeonCopyUsed,
+    jeonginUsed: newJeonginUsed,
+    jeonginBuff: newJeonginBuff,
   }
 }
 
@@ -880,11 +1029,14 @@ export function discardCards(state: GameState, cardIds: string[]): GameState {
     Math.max(0, state.playerHp - punishDamage + moktangHeal)
   )
 
-  // sikshin D안: 버리기 사용 시 sikshinDiscardBonus 활성화 (장착 시에만)
+  // 배치 2 §1 식신(食神) v2: 버린 카드 수만큼 sikshinRicegrains 증가
   const activeIds = state.activePassiveIds ?? []
-  const newSikshinDiscardBonus = activeIds.includes('sikshin')
-    ? true
-    : (state.sikshinDiscardBonus ?? false)
+  const newSikshinRicegrains = activeIds.includes('sikshin')
+    ? (state.sikshinRicegrains ?? 0) + discarded.length
+    : (state.sikshinRicegrains ?? 0)
+
+  // sikshin D안 하위 호환 (v2에서는 사용 안 함, false 유지)
+  const newSikshinDiscardBonus = false
 
   return {
     ...state,
@@ -896,6 +1048,7 @@ export function discardCards(state: GameState, cardIds: string[]): GameState {
     playerHp: newPlayerHp,
     reshuffled,
     sikshinDiscardBonus: newSikshinDiscardBonus,
+    sikshinRicegrains: newSikshinRicegrains,
   }
 }
 
@@ -987,9 +1140,29 @@ export function advanceToNextFloor(state: GameState): GameState {
   // v4 모드 시 V4_FLOOR_HP_TABLE 주입, 그 외 floorConfig.enemyHp 유지
   const nextEnemyHp = getFloorHp(nextFloor - 1)
 
+  // 배치 2 §1: 겁재(劫財) 전투 시작 훅 — 층 전환 시 새 전투 시작
+  // activePassiveIds 기준으로 겁재 보유 여부 확인 후 RNG 굴림
+  let nextRngState = state.rngState ?? 0x9E3779B9
+  let nextGeoptaeStealDamage = 0
+  let nextGeoptaeUsed = false
+  let nextPlayerHp = state.playerHp
+  const activeIdsForFloor = state.activePassiveIds ?? []
+  if (activeIdsForFloor.includes('geoptae')) {
+    const rngRoll = nextRng(nextRngState)
+    nextRngState = rngRoll.next
+    if (rngRoll.value >= 0.25) {
+      // 성공: 첫 공격 가산 = round(enemyMaxHp * 0.08)
+      nextGeoptaeStealDamage = Math.round(nextEnemyHp * 0.08)
+    } else {
+      // 실패: playerHp -= 5 (0 하한)
+      nextPlayerHp = Math.max(0, nextPlayerHp - 5)
+    }
+  }
+
   return {
     ...state,
     currentFloor: nextFloor,
+    playerHp: nextPlayerHp,
     enemyHp: nextEnemyHp,
     enemyMaxHp: nextEnemyHp,
     hand,
@@ -1004,10 +1177,10 @@ export function advanceToNextFloor(state: GameState): GameState {
     condenseActive: false,
     // Phase 1.9.5: 층 전환 시 리셋
     yeonhwanUsed: false,
-    // R4: 상관 발동 횟수 — 출정(런) 전체 기준이므로 층 전환 시 유지
+    // 상관 발동 횟수 — 하위 호환 유지
     sanggwanUsed: state.sanggwanUsed ?? 0,
-    // R10: 겁재 발동 여부 — 출정(런) 전체 기준이므로 층 전환 시 리셋 금지
-    geoptaeUsed: state.geoptaeUsed ?? false,
+    // 겁재: 층마다 리셋 (새 전투 시 재발동)
+    geoptaeUsed: nextGeoptaeUsed,
     condensedMultiplier: 0,
     isLastAttack: floorConfig.maxPlays === 1,
     lastTraitTriggered: undefined,
@@ -1026,10 +1199,17 @@ export function advanceToNextFloor(state: GameState): GameState {
     relics: state.relics,
     // T17: 가호 유지 (런 동안 유지)
     activePassiveIds: state.activePassiveIds ?? [],
-    // sikshin D안: 층 전환 시 리셋 (출수 시 소멸과 동일)
+    // sikshin D안: 층 전환 시 리셋
     sikshinDiscardBonus: false,
     // α 수확 체감: 층 전환 시 리셋 (새 전투 시작)
     gatherUsedInBattle: 0,
+    // 배치 2 §1: 가호 v2 신규 필드
+    rngState: nextRngState,
+    geoptaeStealDamage: nextGeoptaeStealDamage,
+    sikshinRicegrains: 0,         // 층마다 리셋
+    bigyeonCopyUsed: false,       // 층마다 리셋
+    jeonginUsed: state.jeonginUsed ?? false,  // 런 유지
+    jeonginBuff: state.jeonginBuff ?? false,  // 이월 (미소비 시 유지)
   }
 }
 

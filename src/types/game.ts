@@ -144,12 +144,19 @@ export interface GameState {
   // R10: 겁재(劫財) 출정당 1회 제한 추적
   // 2026-07-18: α 수확 체감 — gather5 반복 발동 시 배율 체감
   gatherUsedInBattle?: number  // 현재 전투에서 gather5 발동 횟수 (전투 종료 시 리셋)
-  geoptaeUsed?: boolean                   // true = 이미 발동됨 (런 내내 유지, 층 전환 시 리셋 금지)
+  geoptaeUsed?: boolean                   // true = 겁재 첫 공격 가산 소비됨 (층마다 리셋)
   // B1-1: 잔불(들불 재정의) 상태
   emberDamagePerTurn?: number              // 잔불 턴당 고정 피해 (0 = 비활성)
   emberTurnsLeft?: number                  // 잔불 남은 턴 수
   // B1-1: 정화 면역 상태
   purificationImmune?: boolean             // true = 출정 내 기세 죽음 재발 면역
+  // 배치 2 §1: 가호 v2 신규 필드
+  rngState: number                         // 결정론 LCG 시드 상태 (확률 효과 재현성)
+  geoptaeStealDamage: number               // 겁재 성공 시 첫 공격 가산값 (전투 시작 시 계산)
+  sikshinRicegrains: number                // 식신 밥알 누적 (버린 카드 수, 층마다 리셋)
+  bigyeonCopyUsed: boolean                 // 비견 이번 전투 첫 융합 복제 사용 여부 (층마다 리셋)
+  jeonginUsed: boolean                     // 정인 사망 가로채기 사용 여부 (런 내내 유지)
+  jeonginBuff: boolean                     // 정인 다음 융합 ×1.5 버프 (발동 후 소비)
 }
 
 export type FortuneLevel = 'daegil' | 'gil' | 'pyeong' | 'hyung' | 'daehyung'

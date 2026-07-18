@@ -1,6 +1,8 @@
 /**
- * sikshin D안 유닛 테스트
- * 버리기(discard) 1회 사용 시 다음 공격 +15% (1회 소모, 스택 불가 갱신 가능)
+ * 식신(食神) v2 유닛 테스트 — 밥알(ricegrains) 기반
+ * 배치 2 §1 v2 효과: 버리기 시 밥알 +버린장수 누적, 융합 시 5밥알 소비 ×1.3
+ *
+ * v1 D안(sikshinDiscardBonus: 버리기 후 공격 +15%) 폐기 → v2로 재작성
  *
  * 실행: npm test -- src/test/sikshinDAnTest.test.ts
  */
@@ -13,7 +15,7 @@ function makeCard(id: string, element: Element, value: number): Card {
   return { id, element, polarity: 'yang', value, type: 'soldier', rarity: 'common' }
 }
 
-function makeBaseState(hand: Card[], passiveIds: string[]): GameState {
+function makeBaseState(hand: Card[], passiveIds: string[], overrides?: Partial<GameState>): GameState {
   const base = createInitialGameState(0)
   return {
     ...base,
@@ -27,96 +29,83 @@ function makeBaseState(hand: Card[], passiveIds: string[]): GameState {
     playerHp: 100,
     playerMaxHp: 100,
     attackCount: 0,
-    currentFloor: 2,  // 2층: 잔화령(hwa), 반격만 있음
+    currentFloor: 2,  // 2층: 잔화령(hwa), heal gimmick 없음
     activePassiveIds: passiveIds,
+    sikshinRicegrains: 0,
+    rngState: 0x9E3779B9,
+    geoptaeStealDamage: 0,
+    bigyeonCopyUsed: false,
+    jeonginUsed: false,
+    jeonginBuff: false,
     hand,
-    sikshinDiscardBonus: false,
+    ...overrides,
   }
 }
 
-describe('sikshin D안 — 버리기 후 다음 공격 +15%', () => {
+describe('식신(食神) v2 — 밥알 누적 + 융합 소비', () => {
 
-  it('케이스 1: sikshin 장착 + 버리기 후 다음 공격 x1.15 적용', () => {
-    // 준비: sikshin 장착, discard 1회, 이후 공격
-    const attackCard = makeCard('a1', 'hwa', 10)
-    const discardTargetCard = makeCard('d1', 'mok', 3)
+  it('케이스 1: 버리기 후 sikshinRicegrains += 버린 장수', () => {
+    // v2: discardCards 시 밥알 증가
+    const attackCard = makeCard('a1', 'mok', 10)
+    const discardCard1 = makeCard('d1', 'hwa', 3)
+    const discardCard2 = makeCard('d2', 'hwa', 3)
 
-    // 기준선: sikshin 장착이지만 버리기 없이 바로 공격
-    const stateNoDiscard = makeBaseState([attackCard, discardTargetCard], ['sikshin'])
-    const afterNoDiscard = playCards(stateNoDiscard, ['a1'])
-    const dmgNoDiscard = stateNoDiscard.enemyHp - afterNoDiscard.enemyHp
+    const state = makeBaseState([attackCard, discardCard1, discardCard2], ['sikshin'])
+    const afterDiscard = discardCards(state, ['d1', 'd2'])
 
-    // 버리기 후 공격: sikshinDiscardBonus = true → 공격 시 x1.15
-    const stateBeforeDiscard = makeBaseState([attackCard, discardTargetCard], ['sikshin'])
-    const stateAfterDiscard = discardCards(stateBeforeDiscard, ['d1'])
-    expect(stateAfterDiscard.sikshinDiscardBonus).toBe(true)
-    const stateAfterAttack = playCards(stateAfterDiscard, ['a1'])
-    const dmgWithDiscard = stateBeforeDiscard.enemyHp - stateAfterAttack.enemyHp
-
-    // 버리기 후 공격이 더 커야 하고, x1.15 배율이어야 함
-    expect(dmgWithDiscard).toBeGreaterThan(dmgNoDiscard)
-    expect(dmgWithDiscard).toBe(Math.round(dmgNoDiscard * 1.15))
+    // 2장 버림 → ricegrains += 2
+    expect(afterDiscard.sikshinRicegrains).toBe(2)
+    // v1 D안 필드는 항상 false (v2에서 하위 호환 유지)
+    expect(afterDiscard.sikshinDiscardBonus).toBe(false)
   })
 
-  it('케이스 2: 버리기 후 첫 공격에서 소멸 — 그 다음 공격은 +15% 미적용', () => {
-    const attackCard1 = makeCard('a1', 'hwa', 10)
-    const attackCard2 = makeCard('a2', 'hwa', 10)
-    const discardTarget = makeCard('d1', 'mok', 3)
+  it('케이스 2: 밥알 ≥5 + 융합 시 ×1.3, 밥알 -5', () => {
+    // v2: ricegrains≥5 + 융합(2장 이상) → ×1.3 후 ricegrains-=5
+    const c1 = makeCard('c1', 'mok', 5)
+    const c2 = makeCard('c2', 'hwa', 5)
 
-    const state0 = makeBaseState([attackCard1, attackCard2, discardTarget], ['sikshin'])
-
-    // 버리기 실행 → sikshinDiscardBonus = true
-    const state1 = discardCards(state0, ['d1'])
-    expect(state1.sikshinDiscardBonus).toBe(true)
-
-    // 첫 공격 → 보너스 적용 후 false로 리셋
-    const state2 = playCards(state1, ['a1'])
-    expect(state2.sikshinDiscardBonus).toBe(false)
-
-    // 두 번째 공격 기준선 (버리기 없이)
-    const stateBase = makeBaseState([attackCard1, attackCard2], ['sikshin'])
-    const afterBase = playCards(stateBase, ['a2'])
+    // 기준선: sikshin 없고 ricegrains=5
+    const stateBase = makeBaseState(
+      [makeCard('b1', 'mok', 5), makeCard('b2', 'hwa', 5)],
+      [],
+      { sikshinRicegrains: 5 },
+    )
+    const afterBase = playCards(stateBase, ['b1', 'b2'])
     const dmgBase = stateBase.enemyHp - afterBase.enemyHp
 
-    // 두 번째 공격 (보너스 소멸 후)
-    const dmg2nd = state1.enemyHp - state2.enemyHp - (state2.enemyHp - playCards(state2, ['a2']).enemyHp)
-    // 직접 비교: state2에서 a2 공격
-    const state3 = playCards(state2, ['a2'])
-    const dmg2ndActual = state2.enemyHp - state3.enemyHp
+    // 식신 장착 + ricegrains=5 + 융합
+    const stateWith = makeBaseState([c1, c2], ['sikshin'], { sikshinRicegrains: 5 })
+    const afterWith = playCards(stateWith, ['c1', 'c2'])
+    const dmgWith = stateWith.enemyHp - afterWith.enemyHp
 
-    // 두 번째 공격은 보너스 없음 = 기준선과 동일
-    expect(dmg2ndActual).toBe(dmgBase)
-    // void dmg2nd warning suppression
-    void dmg2nd
+    // ×1.3 적용 → damage 더 큼
+    expect(dmgWith).toBeGreaterThan(dmgBase)
+    expect(dmgWith).toBe(Math.round(dmgBase * 1.3))
+    // 밥알 5 소비 → 0
+    expect(afterWith.sikshinRicegrains).toBe(0)
   })
 
-  it('케이스 3: 버리기 2회 연속 → 다음 공격은 x1.15만 (중첩 없음)', () => {
-    const attackCard = makeCard('a1', 'hwa', 10)
-    const d1 = makeCard('d1', 'mok', 3)
-    const d2 = makeCard('d2', 'mok', 3)
+  it('케이스 3: 밥알 <5 + 융합 시 식신 미발동 (×1.3 없음)', () => {
+    // v2: ricegrains<5 → 발동 안 함
+    const c1 = makeCard('c1', 'mok', 5)
+    const c2 = makeCard('c2', 'hwa', 5)
 
-    const state0 = makeBaseState([attackCard, d1, d2], ['sikshin'])
+    const stateWith = makeBaseState([c1, c2], ['sikshin'], { sikshinRicegrains: 4 })
+    const stateNo = makeBaseState(
+      [makeCard('n1', 'mok', 5), makeCard('n2', 'hwa', 5)],
+      [],
+      { sikshinRicegrains: 4 },
+    )
 
-    // 첫 번째 버리기 → sikshinDiscardBonus = true
-    const state1 = discardCards(state0, ['d1'])
-    expect(state1.sikshinDiscardBonus).toBe(true)
+    const afterWith = playCards(stateWith, ['c1', 'c2'])
+    const afterNo = playCards(stateNo, ['n1', 'n2'])
+    const dmgWith = stateWith.enemyHp - afterWith.enemyHp
+    const dmgNo = stateNo.enemyHp - afterNo.enemyHp
 
-    // 두 번째 버리기 → 여전히 true (갱신, 중첩 아님)
-    const state2 = discardCards(state1, ['d2'])
-    expect(state2.sikshinDiscardBonus).toBe(true)
-
-    // 기준선: 버리기 없이 공격
-    const stateBase = makeBaseState([attackCard], ['sikshin'])
-    const afterBase = playCards(stateBase, ['a1'])
-    const dmgBase = stateBase.enemyHp - afterBase.enemyHp
-
-    // 버리기 2회 후 공격
-    const state3 = playCards(state2, ['a1'])
-    const dmgAfter2Discard = state2.enemyHp - state3.enemyHp
-
-    // x1.15만 적용 (x1.30 아님)
-    expect(dmgAfter2Discard).toBe(Math.round(dmgBase * 1.15))
-    expect(state3.sikshinDiscardBonus).toBe(false)
+    // 밥알 4개 → 미발동 → 동일 damage
+    expect(dmgWith).toBe(dmgNo)
+    // 밥알은 변화 없음 (버리기 없음)
+    expect(afterWith.sikshinRicegrains).toBe(4)
   })
 
 })
