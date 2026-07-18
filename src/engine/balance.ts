@@ -15,7 +15,7 @@ import { getDevComboRuleset, getDevDescentEnabled } from './devSettings'
  *  3. 오행연환 (5기운 전부, 배율 ×10)
  *
  * 음양 조화 보너스: 같은 기운 조합 내 양음 혼재 시 +20%
- * 응축(토 응축): 토 타격 속성 3종 발동 ("토 모으기", "일군 밭", "옹기가마")
+ * 응축(토 응축): 토 타격 속성 3종 발동 ("토 모으기", "개간", "옹기가마")
  *   - 광맥(토+금→금)은 금 타격이므로 응축 미발동
  *   - 옹기가마(화+토→토): 불로 구워 힘을 가둔 그릇, Phase 1.9 추가
  * 극 판정: 융합의 타격 속성 기준 (기존 로직 재사용)
@@ -71,7 +71,7 @@ export interface FusionCombo {
 /**
  * 융합 10쌍
  * 낳는 조합 (×2.5, 결과=자식): 목+화→들불(火) / 화+토→옹기가마(土) / 토+금→광맥(金) / 금+수→샘(水) / 수+목→숲(木)
- * 벼리는 조합 (×3.5, 결과=눌린): 화+금→벼린 검(金) / 금+목→깎은 화살(木) / 목+토→일군 밭(土) / 토+수→맑은 못(水) / 수+화→담금불(火)
+ * 벼리는 조합 (×3.5, 결과=눌린): 화+금→주물(金) / 금+목→벼림(木) / 목+토→개간(土) / 토+수→제방(水) / 수+화→담금질(火)
  */
 export const FUSION_COMBOS: FusionCombo[] = [
   // 낳는 조합 (×3.0) — Phase 1.9 A-3 밸런스 재구축: ×2.5 → ×3.0 일괄 상향
@@ -120,27 +120,27 @@ export const FUSION_COMBOS: FusionCombo[] = [
     multiplier: 3.0,
     description: '물의 자양으로 울창한 숲이 자라난다',
   },
-  // 벼리는 조합 (×3.5)
+  // 벼리는 조합 (×3.5) — 정본 명칭 통일 (2026-07-19 이든 승인)
   {
-    name: '벼린 검',
+    name: '주물',
     element1: 'hwa',
     element2: 'geum',
     result: 'geum',
     type: 'hone',
     multiplier: 3.5,
-    description: '불로 쇠를 다져 칼날을 벼린다',
+    description: '불로 쇠를 녹여 형태를 부어 만든다',
   },
   {
-    name: '깎은 화살',
+    name: '벼림',
     element1: 'geum',
     element2: 'mok',
     result: 'mok',
     type: 'hone',
     multiplier: 3.5,
-    description: '쇠 칼로 나뭇가지를 깎아 날카로운 화살을 만든다',
+    description: '쇠로 나무를 깎아 날을 세운다',
   },
   {
-    name: '일군 밭',
+    name: '개간',
     element1: 'mok',
     element2: 'to',
     result: 'to',
@@ -149,22 +149,22 @@ export const FUSION_COMBOS: FusionCombo[] = [
     description: '나무를 베어내고 흙을 일궈 비옥한 땅이 된다',
   },
   {
-    name: '맑은 못',
+    name: '제방',
     element1: 'to',
     element2: 'su',
     result: 'su',
     type: 'hone',
     multiplier: 3.5,
-    description: '흙의 여과를 거쳐 물이 맑아진다',
+    description: '흙으로 둑을 쌓아 물길을 다스린다',
   },
   {
-    name: '담금불',
+    name: '담금질',
     element1: 'su',
     element2: 'hwa',
     result: 'hwa',
     type: 'hone',
     multiplier: 3.5,
-    description: '물과 불이 부딪혀 더욱 격렬한 불이 타오른다',
+    description: '물에 담가 불의 기운을 단련한다',
   },
 ]
 
@@ -288,7 +288,7 @@ export const TRAIT_CONFIGS: Record<string, TraitConfig> = {
   keen: {
     name: '예리',
     bannerText: '예리 — 극 보너스가 1.5배로 강해진다',
-    tooltipTitle: '예리 (벼린 검)',
+    tooltipTitle: '예리 (주물)',
     tooltipBody: '검이 예리해진다. 이번 공격의 극 보너스가 1.5배로 상승한다. 상성이 유리할 때 더욱 강력하다.',
     element: 'geum',
     fusionType: 'hone',
@@ -299,7 +299,7 @@ export const TRAIT_CONFIGS: Record<string, TraitConfig> = {
   snipe: {
     name: '저격',
     bannerText: '저격 — 적의 가호 1개를 꿰뚫었다',
-    tooltipTitle: '저격 (깎은 화살)',
+    tooltipTitle: '저격 (벼림)',
     tooltipBody: '화살이 꿰뚫는다. 적이 지닌 가호(보호 효과) 1개를 무효화한다. 단단한 적을 상대할 때 유용하다.',
     element: 'mok',
     fusionType: 'hone',
@@ -310,7 +310,7 @@ export const TRAIT_CONFIGS: Record<string, TraitConfig> = {
   harvest: {
     name: '수확',
     bannerText: '수확 — 손의 목·토 카드가 1씩 올랐다',
-    tooltipTitle: '수확 (일군 밭)',
+    tooltipTitle: '수확 (개간)',
     tooltipBody: '밭을 일군다. 현재 손에 있는 목(木)·토(土) 카드의 값이 1씩 오른다. 해당 기운 카드가 많을수록 효과가 커진다.',
     element: 'to',
     fusionType: 'hone',
@@ -321,7 +321,7 @@ export const TRAIT_CONFIGS: Record<string, TraitConfig> = {
   mirror: {
     name: '비침',
     bannerText: '비침 — 적의 다음 강공이 절반으로 약해진다',
-    tooltipTitle: '비침 (맑은 못)',
+    tooltipTitle: '비침 (제방)',
     tooltipBody: '못이 비친다. 적의 다음 강공 피해가 50% 줄어든다. 강한 공격을 예감할 때 미리 쓰면 좋다.',
     element: 'su',
     fusionType: 'hone',
@@ -332,7 +332,7 @@ export const TRAIT_CONFIGS: Record<string, TraitConfig> = {
   quench: {
     name: '담금질',
     bannerText: '담금질 — 쓴 카드 값이 1 영구히 올랐다',
-    tooltipTitle: '담금질 (담금불)',
+    tooltipTitle: '담금질 (담금질)',
     tooltipBody: '불로 달군다. 이번 공격에 쓴 카드들의 값이 1 영구히 오른다. 이번 출정이 끝날 때까지 유지된다.',
     element: 'hwa',
     fusionType: 'hone',
@@ -349,11 +349,11 @@ export const FUSION_TRAIT_MAP: Record<string, string> = {
   '샘': 'purification',
   '숲': 'nourish',
   '옹기가마': 'yonggigama',
-  '벼린 검': 'keen',
-  '깎은 화살': 'snipe',
-  '일군 밭': 'harvest',
-  '맑은 못': 'mirror',
-  '담금불': 'quench',
+  '주물': 'keen',
+  '벼림': 'snipe',
+  '개간': 'harvest',
+  '제방': 'mirror',
+  '담금질': 'quench',
 }
 
 // --- 오행 연환 배율 (Phase 1.9.2 — E-1: ×10 → ×8 희소화)
@@ -445,7 +445,7 @@ export const NOURISH_HEAL_PCT = 0.08  // 8% of playerMaxHp
  *  - 4층: 282 → 520 (+84%, 실효HP 743 ← 403 대비 +84%)
  *
  * 저장형 응축 배율: CONDENSE_V2_MULTIPLIER=1.5, GREAT_CONDENSE_MULTIPLIER=2.0
- * 응축 발동 조건: "토 모으기", "일군 밭", "옹기가마" 3종 유지
+ * 응축 발동 조건: "토 모으기", "개간", "옹기가마" 3종 유지
  * 연환 1회 제한, 화 연소 +30%, 금 관통 보호 무시 유지
  */
 export const FLOOR_CONFIGS: FloorConfig[] = [

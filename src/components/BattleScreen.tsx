@@ -4370,18 +4370,18 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                 case 'yonggigama': // 옹기가마 — 응축
                   return '응축 — 다음 공격 강화'
                 // === 벼리는(촉매) 5종 ===
-                case 'keen': // 벼린 검 — 예리
+                case 'keen': // 주물 — 예리
                   return '예리 — 극 보너스 ×1.5'
-                case 'snipe': // 깎은 화살 — 저격
+                case 'snipe': // 벼림 — 저격
                   return '저격 — 적 가호 1개 관통'
-                case 'harvest': // 일군 밭 — 수확
+                case 'harvest': // 개간 — 수확
                   {
                     const mokToCount = selectedCardObjs.filter(c => c.element === 'mok' || c.element === 'to').length
                     return `수확 — 손패 목·토 값 +1 (대상 ${mokToCount}장)`
                   }
-                case 'mirror': // 맑은 못 — 비침
+                case 'mirror': // 제방 — 비침
                   return '비침 — 적 다음 강공 -50%'
-                case 'quench': // 담금불 — 담금질
+                case 'quench': // 담금질 — 담금질
                   return `담금질 — 쓴 ${selectedCardObjs.length}장 값 영구 +1`
                 default:
                   return '효과 발동'

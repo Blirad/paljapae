@@ -83,8 +83,8 @@ function simulateIlchin(
           fusionCounts[fusionName]++
           totalSelections++
 
-          // 응축 상태 갱신: 옹기가마, 일군 밭, 토 모으기 → 다음 턴 condenseActive
-          if (fusionName === '옹기가마' || fusionName === '일군 밭') {
+          // 응축 상태 갱신: 옹기가마, 개간, 토 모으기 → 다음 턴 condenseActive
+          if (fusionName === '옹기가마' || fusionName === '개간') {
             condenseActive = true
           } else {
             condenseActive = false

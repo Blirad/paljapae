@@ -52,11 +52,11 @@ const BIRTH_COMBOS = [
 
 // 벼리는 조합 5쌍
 const HONE_COMBOS = [
-  { el1: 'hwa', el2: 'geum', name: '벼린 검', result: 'geum', reason: '쇠가 나무를 이긴다' },
-  { el1: 'geum', el2: 'mok', name: '깎은 화살', result: 'mok', reason: '나무가 흙을 이긴다' },
-  { el1: 'mok', el2: 'to', name: '일군 밭', result: 'to', reason: '흙이 물을 이긴다', condense: true },
-  { el1: 'to', el2: 'su', name: '맑은 못', result: 'su', reason: '물이 불을 이긴다' },
-  { el1: 'su', el2: 'hwa', name: '담금불', result: 'hwa', reason: '불이 쇠를 이긴다' },
+  { el1: 'hwa', el2: 'geum', name: '주물', result: 'geum', reason: '불이 쇠를 녹인다' },
+  { el1: 'geum', el2: 'mok', name: '벼림', result: 'mok', reason: '쇠가 나무를 깎는다' },
+  { el1: 'mok', el2: 'to', name: '개간', result: 'to', reason: '나무가 흙을 일군다', condense: true },
+  { el1: 'to', el2: 'su', name: '제방', result: 'su', reason: '흙이 물을 다스린다' },
+  { el1: 'su', el2: 'hwa', name: '담금질', result: 'hwa', reason: '물이 불을 단련한다' },
 ] as const
 
 // ─── 상생 원형 도표 ─────────────────────────────────────────────────────────
@@ -427,11 +427,11 @@ function TabTraits() {
 
   // 벼리는 5종
   const HONE_TRAIT_ROWS = [
-    { fusion: '벼린 검',  combo: '火+金', result: 'geum', mult: '×3.5', trait: '예리',   effect: '극 보너스 ×1.5배 적용', borderW: 5 },
-    { fusion: '깎은 화살', combo: '金+木', result: 'mok', mult: '×3.5', trait: '저격',   effect: '적의 가호(보호 효과) 1개 무효화', borderW: 5 },
-    { fusion: '일군 밭',  combo: '木+土', result: 'to',   mult: '×3.5', trait: '수확',   effect: '손의 목·토 카드 값 +1', borderW: 5 },
-    { fusion: '맑은 못',  combo: '土+水', result: 'su',   mult: '×3.5', trait: '비침',   effect: '적의 다음 강공 피해 −50%', borderW: 5 },
-    { fusion: '담금불',   combo: '水+火', result: 'hwa',  mult: '×3.5', trait: '담금질', effect: '카드 값 +1 영구 (출정 내)', borderW: 5 },
+    { fusion: '주물',    combo: '火+金', result: 'geum', mult: '×3.5', trait: '예리',   effect: '극 보너스 ×1.5배 적용', borderW: 5 },
+    { fusion: '벼림',    combo: '金+木', result: 'mok', mult: '×3.5', trait: '저격',   effect: '적의 가호(보호 효과) 1개 무효화', borderW: 5 },
+    { fusion: '개간',    combo: '木+土', result: 'to',   mult: '×3.5', trait: '수확',   effect: '손의 목·토 카드 값 +1', borderW: 5 },
+    { fusion: '제방',    combo: '土+水', result: 'su',   mult: '×3.5', trait: '비침',   effect: '적의 다음 강공 피해 −50%', borderW: 5 },
+    { fusion: '담금질',  combo: '水+火', result: 'hwa',  mult: '×3.5', trait: '담금질', effect: '카드 값 +1 영구 (출정 내)', borderW: 5 },
   ] as const
 
   const borderColors: Record<string, string> = {

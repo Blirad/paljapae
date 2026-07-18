@@ -107,8 +107,8 @@ export function calcExpectedDamage(
     }
   }
 
-  // 저격(snipe, 깎은 화살 金+木) — 피해감소 무시 가중치
-  if (result.name === '깎은 화살' && enemyHasDamageReduction) {
+  // 저격(snipe, 벼림 金+木) — 피해감소 무시 가중치
+  if (result.name === '벼림' && enemyHasDamageReduction) {
     // 저격 시 피해감소 무시: 방어 30% 기준 가중치 반영
     damage = Math.round(damage / 0.7)
   }
