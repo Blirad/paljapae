@@ -157,6 +157,7 @@ export interface GameState {
   bigyeonCopyUsed: boolean                 // 비견 이번 전투 첫 융합 복제 사용 여부 (층마다 리셋)
   jeonginUsed: boolean                     // 정인 사망 가로채기 사용 여부 (런 내내 유지)
   jeonginBuff: boolean                     // 정인 다음 융합 ×1.5 버프 (발동 후 소비)
+  pyeongwanActivationsThisTurn?: number    // 배치 2 §1: 편관 이번 턴 발동 횟수 (최대 1, 턴당 1회 제한)
 }
 
 export type FortuneLevel = 'daegil' | 'gil' | 'pyeong' | 'hyung' | 'daehyung'

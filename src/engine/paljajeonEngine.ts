@@ -9,7 +9,7 @@ import {
   GEUK_MAP,
   detectElementClash,
 } from './pokerHandJudge'
-import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, MAX_DISCARD_PER_USE, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, SANGGWAN_MAX_PER_RUN, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, EMBER_DURATION, EMBER_MULTIPLIER, BASE_PURIFICATION_DAMAGE, ENABLE_YONGSIN_DESCENT, DESCENT_VARIANT, DESCENT_GLOW_FULL_MULT, DESCENT_GLOW_AFTERGLOW_MULT, COMBO_RULESET_VERSION, YIKSEANG_MAP, YIKSEANG_MULT, getFloorHp, ROYAL_CARDS, createRoyalCard } from './balance'
+import { FLOOR_CONFIGS, PLAYER_BASE_HP, HAND_SIZE, BASE_DISCARDS, MAX_DISCARD_PER_USE, SUB_GEUK_BONUS, ANTI_GEUK_PENALTY, getCondenseBonus, FUSION_TRAIT_MAP, TRAIT_CONFIGS, SANG_MAP, GEUK_BONUS_MULTIPLIER, SANG_PENALTY_MULTIPLIER, NOURISH_HEAL_PCT, HAETAE_COUNTER_REDUCTION, OSAKSHIL_YEONHWAN_BONUS, HORYBYEONG_HP_THRESHOLD, HORYBYEONG_MULTIPLIER_BONUS, MOKTAG_DISCARD_HEAL, SANGGWAN_MAX_PER_RUN, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, EMBER_DURATION, EMBER_MULTIPLIER, BASE_PURIFICATION_DAMAGE, ENABLE_YONGSIN_DESCENT, DESCENT_VARIANT, DESCENT_GLOW_FULL_MULT, DESCENT_GLOW_AFTERGLOW_MULT, COMBO_RULESET_VERSION, YIKSEANG_MAP, YIKSEANG_MULT, DONGGI_MULTIPLIER, getFloorHp, ROYAL_CARDS, createRoyalCard } from './balance'
 // 폐기된 dual/wait3 변형 상수 — balance.ts에서 삭제됨. 코드 경로 유지용 하드코딩.
 const DESCENT_DUAL_SLOT_MULT = 2.0    // B-2 dual: 슬롯 적중 배율 (폐기)
 const DESCENT_DUAL_NONSLOT_MULT = 1.3 // B-2 dual: 비슬롯 배율 (폐기)
@@ -309,8 +309,10 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
     } else if (YIKSEANG_MAP[repEl] === floorEnemyEl) {
       // 역생: 적이 나를 생 → ×1.2 (배치 1.5-A-2, 이든 기정 승인 2026-07-16)
       damage = Math.round(damage * YIKSEANG_MULT)
+    } else if (repEl === floorEnemyEl) {
+      // 동기(同氣): 같은 기운은 스며든다 → ×0.85 (이든 G9 승인 2026-07-19)
+      damage = Math.round(damage * DONGGI_MULTIPLIER)
     }
-    // 동기(同氣) → ×1.0 (변화 없음)
   }
 
   // R8 복원: 부 기운 극 보너스 ×1.25 (주 기운 극 미적용 시, 카드가 부 기운을 극하면 적용)
@@ -384,6 +386,8 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
   let bigyeonCopyDamage = 0
   // 편관: 이번 공격이 추가 출수권 부여하는지
   let pyeongwanExtraPlay = false
+  // 배치 2 §1: 편관(偏官) v2 턴당 1회 발동 제한
+  let newPyeongwanActivationsThisTurn = state.pyeongwanActivationsThisTurn ?? 0
   // 식신 밥알
   let newSikshinRicegrains = state.sikshinRicegrains ?? 0
   // 정인 버프 소비
@@ -463,8 +467,10 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
           // 편관(偏官) v2: 이번 공격 damage >= enemyMaxHp*0.15 시 추가 출수권 +1 (턴당 1회)
           // damage 계산 완료 후 판정 필요 — 여기서는 조건 예비 플래그
           // (damage가 이 시점에 계산 완료되므로 즉시 판정 가능)
-          if (damage >= state.enemyMaxHp * 0.15) {
+          // 배치 2 §1: 턴당 1회 발동 제한 추가 (newPyeongwanActivationsThisTurn < 1)
+          if (damage >= state.enemyMaxHp * 0.15 && newPyeongwanActivationsThisTurn < 1) {
             pyeongwanExtraPlay = true
+            newPyeongwanActivationsThisTurn++
           }
           break
         }
@@ -964,6 +970,8 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
     purificationImmune: newPurificationImmune,
     keenActive: newKeenActive,
     mirrorShieldActive: newMirrorShieldActive,
+    // 배치 2 §1: 편관(偏官) v2 턴당 1회 발동 제한
+    pyeongwanActivationsThisTurn: newPyeongwanActivationsThisTurn,
     // Phase 1.9.4: 덱 재순환 배너용 플래그
     reshuffled,
     // 상관 발동 횟수 업데이트 (통계용)

@@ -45,6 +45,9 @@ import {
   PYEONJAE_GEUM_WEIGHT,
   JEONGJAE_SU_WEIGHT,
   PYEONIN_TO_WEIGHT,
+  PYEONGWAN_WEIGHT,
+  JEONGGWAN_WEIGHT,
+  JEONGIN_WEIGHT,
   FUSION_TRAIT_MAP,
   NOURISH_HEAL_PCT,
   BASE_PURIFICATION_DAMAGE,
@@ -271,8 +274,9 @@ export function fullCapSelectCards(
 ): FullCapPlayDecision {
   // T16-P3: talismans에서 amplifyActive 여부 추출 (증폭부 사용 가능 시 평가에 반영)
   const amplifyActive = (talismans ?? []).includes('jeungpok')
-  // sikshin(식신) 장착 여부 — 낱장 후보를 유효 선택지로 평가할지 결정
-  const hasSikshin = (activePassiveIds ?? []).includes('sikshin')
+  // sikshin v2: 낱장 단독 ×1.2 폐지 — 융합 시 밥알 소비로 변경됨. 낱장 가중치 제거.
+  // hasSikshin 변수 하위 호환 유지 (낱장 단독 평가 블록 자체를 비활성화)
+  const hasSikshin = false  // v2: 낱장 특별 경로 비활성화 (sikshin은 fusion+ricegrains 기반)
   if (hand.length === 0) return { cardIds: [], shouldDiscard: false, bestAffinityMult: 1.0, bestDamage: 0 }
 
   let bestIds: string[] = []
@@ -420,12 +424,12 @@ export function fullCapSelectCards(
 
         // [2026-07-18] 용신 상시 보너스 폐지 (B-3: 슬롯 도래 시에만 사건)
         let synergyMultiplier = 1.0
-        // 가호(geoptae): 목 카드 포함 시 ×1.3 (효과에도 적용 — 엔진 R5 규칙)
-        if ((activePassiveIds ?? []).includes('geoptae')) {
-          const hasMok = bestCombo.some(c => c.element === 'mok')
-          if (hasMok) {
-            synergyMultiplier = synergyMultiplier * 1.3
-          }
+        // 가호 v2: geoptae 목카드 ×1.3 폐지 (v2에서 stealDamage 기반으로 변경됨)
+        // 정관(jeonggwan): effectMode 선택 시 ×1.5 → synergyMultiplier에 반영
+        if ((activePassiveIds ?? []).includes('jeonggwan')) {
+          // effectMode 경로에서만 적용 (공격 모드는 반영 안 함)
+          // scoreEffectForTrait 호출 시점에 결정되므로 여기서 미리 적용
+          synergyMultiplier = synergyMultiplier * 1.5
         }
 
         // R5: 효과 기대값 — 엔진 거울 반영 (synergyMultiplier 전달)
@@ -456,6 +460,35 @@ export function fullCapSelectCards(
 }
 
 // --- 시뮬레이션 ---
+
+// ─── 배치 2 §1: ForcedAcquireSpec 공용 하네스 ─────────────────────────────────
+
+/**
+ * 강제 획득 대상 종류
+ *  - 'royal':    왕족 카드 강제 획득 (기존 royalForceAcquire 계열)
+ *  - 'talisman': 가호(passive) 강제 장착
+ *  - 'taegeuk':  태극 (미구현 placeholder)
+ *  - 'sinsal':   신살 (미구현 placeholder)
+ */
+export type ForcedAcquireKind = 'royal' | 'talisman' | 'taegeuk' | 'sinsal'
+
+/**
+ * 강제 획득/장착 스펙 — 왕족·가호 공용 하네스
+ *
+ * 사용 예:
+ *   { kind: 'royal', value: 10, count: 1 }       — 왕(값=10) 1장 강제 획득
+ *   { kind: 'talisman', id: 'sanggwan', count: 1 } — 상관 강제 장착
+ *   { kind: 'taegeuk' }                           — 태극 (미구현)
+ */
+export interface ForcedAcquireSpec {
+  kind: ForcedAcquireKind
+  /** 'talisman' kind: 강제 장착할 passive id (예: 'sanggwan') */
+  id?: string
+  /** 'royal' kind: 왕족 카드 값 (10=왕 / 11=여왕) */
+  value?: number
+  /** 목표 횟수 (기본 1) */
+  count?: number
+}
 
 export interface FullCapRunResult {
   victory: boolean
@@ -570,6 +603,17 @@ export interface FullCapSimOptions {
    * §2: 1 (첫 왕족만), §4: 2 (왕+여왕 모두)
    */
   royalForceAcquireCount?: number
+  /**
+   * 배치 2 §1: 공용 강제 획득/장착 하네스 (ForcedAcquireSpec)
+   * - kind='royal':    왕족 강제 획득 (royalForceAcquire/royalValue 병행 가능 — forceAcquire 우선)
+   * - kind='talisman': 가호 강제 장착 (activePassiveIds에 id 강제 포함)
+   * - kind='taegeuk':  미구현 placeholder
+   * - kind='sinsal':   미구현 placeholder
+   *
+   * 하위 호환: royalForceAcquire/royalForceAcquireCount/royalValue 필드 유지.
+   * forceAcquire가 있으면 forceAcquire가 우선.
+   */
+  forceAcquire?: ForcedAcquireSpec
 }
 
 /**
@@ -812,6 +856,15 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
     ? undefined
     : (opts?.favorableElement ?? (opts?.ilganElement ? getFavorableElement(opts.ilganElement) : undefined))
 
+  // 배치 2 §1: ForcedAcquireSpec — talisman 강제 장착
+  // forceAcquire.kind==='talisman' && forceAcquire.id → activePassiveIds에 강제 포함 (오버라이드)
+  let resolvedActivePassiveIds: string[] | undefined = opts?.activePassiveIds
+  if (opts?.forceAcquire?.kind === 'talisman' && opts.forceAcquire.id) {
+    const forcedId = opts.forceAcquire.id
+    const base = opts.activePassiveIds ?? []
+    resolvedActivePassiveIds = base.includes(forcedId) ? base : [forcedId, ...base]
+  }
+
   // 층별 적 원소 결정: 어블레이션 모드면 R1 고정 배치, 아니면 R2 랜덤화
   const floorElements = opts?.useFixedFloorElements
     ? R1_FIXED_FLOOR_ELEMENTS
@@ -833,9 +886,14 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
   let descentVanished = 0
   let descentSlotsArrived = 0
 
-  // createDeterministicState에 resolvedFavorableElement 반영을 위해 opts 래핑
+  // createDeterministicState에 resolvedFavorableElement + resolvedActivePassiveIds 반영을 위해 opts 래핑
   const resolvedOpts: FullCapSimOptions | undefined = opts
-    ? { ...opts, favorableElement: resolvedFavorableElement }
+    ? {
+        ...opts,
+        favorableElement: resolvedFavorableElement,
+        // ForcedAcquireSpec talisman: 강제 장착된 passive 포함
+        activePassiveIds: resolvedActivePassiveIds,
+      }
     : undefined
 
   // R4.5 영속 덱: 런 시작 시 1회 덱 생성 — 이후 층에서 재사용
@@ -916,9 +974,18 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
           const nextEnemyEl = nextElemConfig?.primaryElement
           // R4.5 3택 선택 → 영속 덱(allCurrentCards)에 즉시 반영
           // 강제 A/B (A군): 첫 왕족 등장 시 무조건 획득 (royalObtainedCount===0 = 아직 미획득)
-          const forceTarget = opts?.royalForceAcquireCount ?? 1
-          const forceRoyalNow = opts?.royalForceAcquire === true && royalObtainedCount < forceTarget
-          const rewardResult = selectFloorReward(allCurrentCards, rng, nextEnemyEl, resolvedFavorableElement, opts?.royalValue, forceRoyalNow)
+          // ForcedAcquireSpec: forceAcquire.kind==='royal'이면 기존 royalForceAcquire와 동일하게 처리
+          const forceTarget =
+            (opts?.forceAcquire?.kind === 'royal' ? (opts.forceAcquire.count ?? 1) : null)
+            ?? opts?.royalForceAcquireCount
+            ?? 1
+          const forceRoyalNow =
+            ((opts?.forceAcquire?.kind === 'royal') || (opts?.royalForceAcquire === true))
+            && royalObtainedCount < forceTarget
+          const royalValue =
+            (opts?.forceAcquire?.kind === 'royal' ? opts.forceAcquire.value : undefined)
+            ?? opts?.royalValue
+          const rewardResult = selectFloorReward(allCurrentCards, rng, nextEnemyEl, resolvedFavorableElement, royalValue, forceRoyalNow)
           let rewardOption: RewardOption
           if (rewardResult.type === 'add-card') {
             rewardOption = { type: 'add-card', card: rewardResult.card }
@@ -1170,42 +1237,52 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         traitCounts[gatherKey] = (traitCounts[gatherKey] ?? 0) + 1
       }
 
-      // T13-R2: 가호 기여도 추적 — activePassiveIds 기반 발동 조건 사전 판정
-      // 가호 발동 여부를 comboResult + state 조건으로 직접 평가
+      // T13-R2: 가호 기여도 추적 — v2 발동 조건 기반 사전 판정
+      // activePassiveIds + comboResult + state로 v2 효과 발동 여부 평가
       {
         const activeIds = state.activePassiveIds ?? []
-        const floorIdx2 = state.currentFloor - 1
-        const floorConf2 = FLOOR_CONFIGS[floorIdx2]
-        const basePrimary2 = floorElements[floorIdx2]?.primaryElement ?? floorConf2.enemyPrimaryElement
-        const baseSub2 = floorElements[floorIdx2]?.subElement ?? floorConf2.enemySubElement
-        const curPrimEl = state.enemyPhaseSwitch ? baseSub2 : basePrimary2
+        const isFusionCombo = comboResult.type === 'fusion-birth' || comboResult.type === 'fusion-hone'
+        const isSmallFusionCombo = isFusionCombo && selectedCards.length === 2
 
-        if (activeIds.includes('sikshin') && selectedCards.length === 1) {
+        // 식신 v2: 융합 시 밥알 ≥5 소비 ×1.3
+        if (activeIds.includes('sikshin') && isFusionCombo && (state.sikshinRicegrains ?? 0) >= 5) {
           traitCounts['passive_sikshin'] = (traitCounts['passive_sikshin'] ?? 0) + 1
         }
-        if (activeIds.includes('bigyeon') && comboResult.type === 'gather' && selectedCards.length >= 3) {
+        // 비견 v2: 이번 전투 첫 융합 복제타
+        if (activeIds.includes('bigyeon') && isFusionCombo && !(state.bigyeonCopyUsed ?? false)) {
           traitCounts['passive_bigyeon'] = (traitCounts['passive_bigyeon'] ?? 0) + 1
         }
-        if (activeIds.includes('geoptae') && selectedCards.some(c => c.element === 'mok') && !(state.geoptaeUsed ?? false)) {
+        // 겁재 v2: 첫 공격에 stealDamage 가산
+        if (activeIds.includes('geoptae') && !(state.geoptaeUsed ?? false) && (state.geoptaeStealDamage ?? 0) > 0) {
           traitCounts['passive_geoptae'] = (traitCounts['passive_geoptae'] ?? 0) + 1
         }
-        if (activeIds.includes('sanggwan') && selectedCards.filter(c => c.element === 'hwa').length >= 3 && (state.sanggwanUsed ?? 0) < SANGGWAN_MAX_PER_RUN) {
+        // 상관 v2: 황금비 정점(isRatioPeak) 시 RNG 배율
+        if (activeIds.includes('sanggwan') && (comboResult as { isRatioPeak?: boolean }).isRatioPeak === true) {
           traitCounts['passive_sanggwan'] = (traitCounts['passive_sanggwan'] ?? 0) + 1
         }
+        // 편재 v2: 턴 종료 20% 확률 — 여기서는 근사 추적 (매 공격 0.2 확률로 카운트)
         if (activeIds.includes('pyeonjae')) {
-          const hasGeum = selectedCards.some(c => c.element === 'geum')
-          if (hasGeum && curPrimEl === 'mok') {
-            traitCounts['passive_pyeonjae'] = (traitCounts['passive_pyeonjae'] ?? 0) + 1
-          }
+          traitCounts['passive_pyeonjae_opportunity'] = (traitCounts['passive_pyeonjae_opportunity'] ?? 0) + 1
         }
-        if (activeIds.includes('jeongjae') && comboResult.type === 'ohang-yeonhwan' && selectedCards.some(c => c.element === 'su')) {
+        // 정재 v2: 오행연환 시 2장 드로우
+        if (activeIds.includes('jeongjae') && comboResult.type === 'ohang-yeonhwan') {
           traitCounts['passive_jeongjae'] = (traitCounts['passive_jeongjae'] ?? 0) + 1
         }
-        if (activeIds.includes('pyeonin')) {
-          const hasTo = selectedCards.some(c => c.element === 'to')
-          if (hasTo && comboResult.type === 'gather' && state.isLastAttack) {
-            traitCounts['passive_pyeonin'] = (traitCounts['passive_pyeonin'] ?? 0) + 1
-          }
+        // 편인 v2: 소융합(2장) ×1.6
+        if (activeIds.includes('pyeonin') && isSmallFusionCombo) {
+          traitCounts['passive_pyeonin'] = (traitCounts['passive_pyeonin'] ?? 0) + 1
+        }
+        // 편관 v2: damage ≥ enemyMaxHp×15% → 추가 출수권 (결과에서 판정)
+        if (activeIds.includes('pyeongwan') && isFusionCombo) {
+          traitCounts['passive_pyeongwan_fusion'] = (traitCounts['passive_pyeongwan_fusion'] ?? 0) + 1
+        }
+        // 정관 v2: effectMode 선택 시 ×1.5
+        if (activeIds.includes('jeonggwan') && decision.effectMode) {
+          traitCounts['passive_jeonggwan'] = (traitCounts['passive_jeonggwan'] ?? 0) + 1
+        }
+        // 정인 v2: jeonginBuff=true 시 융합 ×1.5 소비
+        if (activeIds.includes('jeongin') && isFusionCombo && (state.jeonginBuff ?? false)) {
+          traitCounts['passive_jeongin_buff'] = (traitCounts['passive_jeongin_buff'] ?? 0) + 1
         }
       }
 
@@ -1341,36 +1418,41 @@ export function runFullCapSimulation(runs = 1000, opts?: FullCapSimOptions): Ful
 // ─── T13: 사주 기반 가호 장착 선택 ────────────────────────────────────────────
 
 /**
- * 가호(십성) 후보 목록 — 7종 전부
+ * 가호(십성) 후보 목록 — 배치 2 §1 v2 10종 전부
  * (PASSIVE_POOL의 id 기준, balance.ts 상수와 대응)
  */
 const ALL_TALISMAN_IDS = [
-  'sikshin',    // 식신: 낱장 +20% (범용)
-  'bigyeon',    // 비견: 모으기 3+ 반격 감소 (주력 원소 집중 보상)
-  'geoptae',    // 겁재: 목 포함 첫 공격 +30%
-  'sanggwan',   // 상관: 화 2장 이상 ×1.5
-  'pyeonjae',   // 편재: 금 극 시 HP +3
-  'jeongjae',   // 정재: 수 포함 연환 배율 +2
-  'pyeonin',    // 편인: 토 모으기 마지막 공격 +50%
+  'sikshin',    // 식신 v2: 융합 시 밥알 5개 소비 ×1.3 (범용)
+  'bigyeon',    // 비견 v2: 첫 융합 복제타 50%
+  'geoptae',    // 겁재 v2: 전투 시작 25% 실패판정, 성공=첫공격 +enemyMaxHp×8%
+  'sanggwan',   // 상관 v2: 황금비 정점 시 50% ×2.0 or ×1.2
+  'pyeonjae',   // 편재 v2: 턴 종료 20% 고값 카드 추가
+  'jeongjae',   // 정재 v2: 오행연환 시 2장 드로우
+  'pyeonin',    // 편인 v2: 소융합(2장) ×1.6
+  'pyeongwan',  // 편관 v2: 피해 ≥15% → +1 출수권
+  'jeonggwan',  // 정관 v2: 효과 모드 ×1.5
+  'jeongin',    // 정인 v2: 사망 가로채기 런당 1회 + 다음 융합 ×1.5
 ] as const
 
 /**
- * T13: 사주 기반 가호 2종 선택
+ * T13: 사주 기반 가호 2종 선택 — 배치 2 §1 v2 10종 기준
  *
  * elementDist 기반 "기대 데미지 기여 최대" 2종을 반환한다.
  *
- * 점수 계산 기준:
- *  - sikshin: SIKSHIN_BASE_SCORE (범용, 원소 비율 무관)
- *  - bigyeon: BIGYEON_ELEMENT_WEIGHT × max(elementDist 비율)
- *      → 주력 원소가 집중될수록 모으기 3+ 발동 확률 상승
- *  - geoptae: GEOPTAE_MOK_WEIGHT × elementDist.mok 비율
- *  - sanggwan: SANGGWAN_HWA_WEIGHT × elementDist.hwa 비율
- *  - pyeonjae: PYEONJAE_GEUM_WEIGHT × elementDist.geum 비율
- *  - jeongjae: JEONGJAE_SU_WEIGHT × elementDist.su 비율
- *  - pyeonin:  PYEONIN_TO_WEIGHT × elementDist.to 비율
+ * 점수 계산 기준 (v2 간소화 EV):
+ *  - sikshin:   SIKSHIN_BASE_SCORE (범용, 원소 비율 무관)
+ *  - bigyeon:   BIGYEON_ELEMENT_WEIGHT × max(elementDist 비율)
+ *  - geoptae:   GEOPTAE_MOK_WEIGHT × elementDist.mok 비율
+ *  - sanggwan:  SANGGWAN_HWA_WEIGHT × elementDist.hwa 비율
+ *  - pyeonjae:  PYEONJAE_GEUM_WEIGHT × elementDist.geum 비율
+ *  - jeongjae:  JEONGJAE_SU_WEIGHT × elementDist.su 비율
+ *  - pyeonin:   PYEONIN_TO_WEIGHT × elementDist.to 비율
+ *  - pyeongwan: PYEONGWAN_WEIGHT (범용 상수 — 고데미지 확률 × 추가 출수 가치)
+ *  - jeonggwan: JEONGGWAN_WEIGHT (범용 상수 — 효과 모드 선택 빈도 × 1.5)
+ *  - jeongin:   JEONGIN_WEIGHT   (범용 상수 — 생존 가치 보험)
  *
  * @param elementDist 사주 오행 분포 (합계가 0이면 균등 분포로 대체)
- * @param availableTalismans 선택 가능한 가호 id 목록 (없으면 전 7종)
+ * @param availableTalismans 선택 가능한 가호 id 목록 (없으면 전 10종)
  * @returns 기대 데미지 기여 상위 2종의 id 배열 (내림차순)
  */
 export function selectTalismanBySaju(
@@ -1389,15 +1471,19 @@ export function selectTalismanBySaju(
     norm('mok'), norm('hwa'), norm('to'), norm('geum'), norm('su'),
   )
 
-  // 가호별 기대 데미지 기여 점수 계산
+  // 가호별 기대 데미지 기여 점수 계산 (v2 10종)
   const scores: Record<string, number> = {
-    sikshin:  SIKSHIN_BASE_SCORE,
-    bigyeon:  BIGYEON_ELEMENT_WEIGHT * maxRatio,
-    geoptae:  GEOPTAE_MOK_WEIGHT * norm('mok'),
-    sanggwan: SANGGWAN_HWA_WEIGHT * norm('hwa'),
-    pyeonjae: PYEONJAE_GEUM_WEIGHT * norm('geum'),
-    jeongjae: JEONGJAE_SU_WEIGHT * norm('su'),
-    pyeonin:  PYEONIN_TO_WEIGHT * norm('to'),
+    sikshin:   SIKSHIN_BASE_SCORE,
+    bigyeon:   BIGYEON_ELEMENT_WEIGHT * maxRatio,
+    geoptae:   GEOPTAE_MOK_WEIGHT * norm('mok'),
+    sanggwan:  SANGGWAN_HWA_WEIGHT * norm('hwa'),
+    pyeonjae:  PYEONJAE_GEUM_WEIGHT * norm('geum'),
+    jeongjae:  JEONGJAE_SU_WEIGHT * norm('su'),
+    pyeonin:   PYEONIN_TO_WEIGHT * norm('to'),
+    // 신규 3종 (v2 추가): 범용 상수 기반 EV 간소화
+    pyeongwan: PYEONGWAN_WEIGHT,
+    jeonggwan: JEONGGWAN_WEIGHT,
+    jeongin:   JEONGIN_WEIGHT,
   }
 
   // pool에 있는 가호만 필터링 → 점수 내림차순 정렬 → 상위 2종 반환

@@ -410,6 +410,10 @@ export const YIKSEANG_MAP: Record<string, string> = {
 /** 역생 배율: 적이 나를 생 → ×1.2 (이든 기정 승인 2026-07-16) — 양 룰셋 공통 상성층 */
 export const YIKSEANG_MULT = 1.2
 
+/** 동기(同氣) 감쇠 배율: 같은 오행끼리 → ×0.85 (이든 G9 승인 2026-07-19)
+ * "같은 기운은 스며든다 — 타격 불성립" */
+export const DONGGI_MULTIPLIER = 0.85
+
 // 하위 호환 — 극 판정 배율 (deprecated, GEUK_BONUS_MULTIPLIER로 통일)
 /** @deprecated GEUK_BONUS_MULTIPLIER 사용 */
 export const YEOKGEUK_PENALTY_OLD = 0.5
@@ -675,6 +679,15 @@ export const JEONGJAE_SU_WEIGHT = 24.0
 
 /** 편인(偏印): 흙 모으기 마지막 공격 +50% — 토(土) 원소 비율 비례 */
 export const PYEONIN_TO_WEIGHT = 26.0
+
+/** 편관(偏官) v2: 15%+ 타격 시 +1 출수 — 고데미지 확률 × 추가 출수 가치 */
+export const PYEONGWAN_WEIGHT = 18.0
+
+/** 정관(正官) v2: 효과 모드 선택 시 효과량 ×1.5 — 범용 보너스 */
+export const JEONGGWAN_WEIGHT = 16.0
+
+/** 정인(正印) v2: 사망 가로채기(런당 1회) — 약한 상수 생존 보너스 */
+export const JEONGIN_WEIGHT = 14.0
 
 // --- 4층 적 원소 생성 (R7-2용)
 /**

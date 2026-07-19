@@ -26,7 +26,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useGameStore } from '../stores/gameStore'
-import { FLOOR_CONFIGS, GEUK_BONUS_MULTIPLIER, TRAIT_CONFIGS, FUSION_TRAIT_MAP, SANG_MAP, SANG_PENALTY_MULTIPLIER, ANTI_GEUK_PENALTY, YIKSEANG_MAP, YIKSEANG_MULT, getCondenseBonus, RELIC_DEFS, PLAYER_BASE_HP, NOURISH_EFFECT_COEFF, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, MAX_DISCARD_PER_USE, RECIPE_MAP } from '../engine/balance'
+import { FLOOR_CONFIGS, GEUK_BONUS_MULTIPLIER, TRAIT_CONFIGS, FUSION_TRAIT_MAP, SANG_MAP, SANG_PENALTY_MULTIPLIER, ANTI_GEUK_PENALTY, YIKSEANG_MAP, YIKSEANG_MULT, DONGGI_MULTIPLIER, getCondenseBonus, RELIC_DEFS, PLAYER_BASE_HP, NOURISH_EFFECT_COEFF, PURIFICATION_THRESHOLD, MINING_DRAW_DIVISOR, MINING_MAX_DRAW, MAX_DISCARD_PER_USE, RECIPE_MAP } from '../engine/balance'
 import type { RelicId } from '../engine/balance'
 // Phase 1.7: FLOOR_ENEMY_ELEMENTS는 floorConfig.enemyPrimaryElement로 대체됨
 import { useGameContext } from '../context/GameContext'
@@ -169,7 +169,7 @@ function getRepresentativeElement(cards: Array<{ element: Element }>): Element {
 }
 
 /** 상생상극 매트릭스 결과 타입 */
-type AffinityResult = 'geuk' | 'saeng' | 'anti-geuk' | 'yikseang' | 'neutral'
+type AffinityResult = 'geuk' | 'saeng' | 'anti-geuk' | 'yikseang' | 'donggi' | 'neutral'
 
 /** 대표 원소(A)와 적 원소(B)의 상성 판정 */
 function calcAffinity(repEl: Element, enemyEl: Element): AffinityResult {
@@ -177,6 +177,7 @@ function calcAffinity(repEl: Element, enemyEl: Element): AffinityResult {
   if (SANG_MAP[repEl] === enemyEl) return 'saeng'       // 내가 적을 생
   if (GEUK_MAP[enemyEl] === repEl) return 'anti-geuk'   // 적이 나를 극
   if (YIKSEANG_MAP[repEl] === enemyEl) return 'yikseang' // 역생: 적이 나를 생 → 연료를 삼킨다
+  if (repEl === enemyEl) return 'donggi'                 // 동기: 같은 기운은 스며든다
   return 'neutral'
 }
 
@@ -187,6 +188,7 @@ function getAffinityMultiplier(affinity: AffinityResult): number {
     case 'saeng':     return SANG_PENALTY_MULTIPLIER  // ×0.5
     case 'anti-geuk': return ANTI_GEUK_PENALTY        // ×0.75
     case 'yikseang':  return YIKSEANG_MULT            // ×1.2
+    case 'donggi':    return DONGGI_MULTIPLIER        // ×0.85
     default:          return 1.0
   }
 }
@@ -3393,6 +3395,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
               : affinity === 'saeng' ? '#D9A441'
               : affinity === 'anti-geuk' ? '#C63D2F'
               : affinity === 'yikseang' ? '#7BAFDE'
+              : affinity === 'donggi' ? '#9B8E7E'
               : '#6A6560'
             return (
               <div style={{

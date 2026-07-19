@@ -73,8 +73,7 @@ const GEUK_MAP: Record<Element, Element> = {
 
 /**
  * 일간 기준 타 천간의 십성 계산
- * 반환: 십성 코드 ('sikshin' | 'bigyeon' | 'geoptae' | 'sanggwan' | 'pyeonjae' | 'jeongjae' | 'pyeonin')
- *       미해당(정관·편관·정인)은 null
+ * 반환: 10종 십성 코드 (배치 2 §1: 편관·정관·정인 추가)
  */
 function calcSipsong(
   ilganChar: string,
@@ -106,12 +105,18 @@ function calcSipsong(
     return samePolarity ? 'pyeonjae' : 'jeongjae'
   }
 
-  // 일간을 생(生)하는 오행 (편인만 — 양간이면 편인)
-  // 임의 결정 로그: 정인(음간이 일간을 생)은 Phase 1.7 미구현. 편인(양간)만 반환.
+  // 일간을 극(克)하는 오행 — 편관(같은 음양) / 정관(다른 음양)
+  const whatConquersIl = (Object.entries(GEUK_MAP) as [Element, Element][])
+    .find(([_, target]) => target === ilEl)?.[0]
+  if (whatConquersIl && targetEl === whatConquersIl) {
+    return samePolarity ? 'pyeongwan' : 'jeonggwan'
+  }
+
+  // 일간을 생(生)하는 오행 — 편인(같은 음양) / 정인(다른 음양)
   const whatGeneratesIl = (Object.entries(SAENGCHAE_MAP) as [Element, Element][])
     .find(([_, target]) => target === ilEl)?.[0]
   if (whatGeneratesIl && targetEl === whatGeneratesIl) {
-    return samePolarity ? 'pyeonin' : null  // 정인은 null (미구현)
+    return samePolarity ? 'pyeonin' : 'jeongin'
   }
 
   return null
