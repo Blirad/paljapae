@@ -41,7 +41,6 @@ import {
   BIGYEON_ELEMENT_WEIGHT,
   GEOPTAE_MOK_WEIGHT,
   SANGGWAN_HWA_WEIGHT,
-  SANGGWAN_MAX_PER_RUN,
   PYEONJAE_GEUM_WEIGHT,
   JEONGJAE_SU_WEIGHT,
   PYEONIN_TO_WEIGHT,
@@ -843,6 +842,14 @@ function createDeterministicState(
     yongsinDescent: initYongsinDescent(null, floorIndex),
     // 배치 1.5: 레시피 사주별 배율 (출정 시 고정, 런 중 재계산 금지)
     recipeMultipliers,
+    // 배치 2 §1: 가호 v2 신규 필드 — 엔진 정본(createInitialState L207~213)과 동치
+    // rngState: 층별 결정론 seed 파생 (엔진의 deckSeed^0x9E3779B9와 동일 구조) — ?? fallback 은폐 방지
+    rngState: (seed ^ 0x9E3779B9) >>> 0,
+    geoptaeStealDamage: 0,
+    sikshinRicegrains: 0,
+    bigyeonCopyUsed: false,
+    jeonginUsed: false,
+    jeonginBuff: false,
   }
 }
 

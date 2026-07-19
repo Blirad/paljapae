@@ -244,6 +244,13 @@ function createDeterministicState(floorIndex: number, rng: () => number): GameSt
     carryoverBurn: 0,
     // Phase 1.9.4: 덱 재순환
     reshuffled: false,
+    // 배치 2 §1: 가호 v2 신규 필드 — 엔진 정본과 동치 (rngState는 층별 seed 파생)
+    rngState: (seed ^ 0x9E3779B9) >>> 0,
+    geoptaeStealDamage: 0,
+    sikshinRicegrains: 0,
+    bigyeonCopyUsed: false,
+    jeonginUsed: false,
+    jeonginBuff: false,
   }
 }
 
