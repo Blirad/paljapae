@@ -187,7 +187,7 @@ function getAffinityMultiplier(affinity: AffinityResult): number {
     case 'geuk':      return GEUK_BONUS_MULTIPLIER    // ×1.7
     case 'saeng':     return SANG_PENALTY_MULTIPLIER  // ×0.5
     case 'anti-geuk': return ANTI_GEUK_PENALTY        // ×0.75
-    case 'yikseang':  return YIKSEANG_MULT            // ×1.2
+    case 'yikseang':  return YIKSEANG_MULT            // ×1.0
     case 'donggi':    return DONGGI_MULTIPLIER        // ×0.85
     default:          return 1.0
   }
@@ -400,8 +400,9 @@ function buildPreviewText(
       affinityLine = `${feHanja} → ${ELEMENT_LABELS[enemyElement]} ${reason} (-25%)`
       affinityLineColor = '#C63D2F'
     } else if (affinity === 'yikseang') {
-      affinityLine = `${feHanja} → ${ELEMENT_LABELS[enemyElement]} 연료를 삼킨다 (×1.2)`
-      affinityLineColor = '#7BAFDE'
+      // 역생(逆生) = 중립(×1.0). 상성 문구 생략이 정본 (이든 2026-07-19). affinityLine 미설정.
+      affinityLine = undefined
+      affinityLineColor = undefined
     } else {
       affinityLine = `${feHanja} → ${ELEMENT_LABELS[enemyElement]} 동기 (×1.0)`
       affinityLineColor = '#8B9BB4'
