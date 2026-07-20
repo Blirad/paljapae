@@ -403,9 +403,14 @@ function buildPreviewText(
       // 역생(逆生) = 중립(×1.0). 상성 문구 생략이 정본 (이든 2026-07-19). affinityLine 미설정.
       affinityLine = undefined
       affinityLineColor = undefined
-    } else {
-      affinityLine = `${feHanja} → ${ELEMENT_LABELS[enemyElement]} 동기 (×1.0)`
+    } else if (affinity === 'donggi') {
+      // 동기(同氣) = ×0.85 실효값 표기 (화면 진실 헌법 — 이든 2026-07-21)
+      affinityLine = `${feHanja} → ${ELEMENT_LABELS[enemyElement]} 스며든다 (×0.85)`
       affinityLineColor = '#8B9BB4'
+    } else {
+      // 중립(×1.0) — 상성 문구 생략이 정본
+      affinityLine = undefined
+      affinityLineColor = undefined
     }
     return {
       line1: '',
@@ -424,7 +429,7 @@ function buildPreviewText(
   const comboName = comboResult.name
 
   // T25: 상성 3단 분해식 공통 라벨 계산
-  let affinitySegment = ''   // "× 극 1.7" / "× 생 0.5" / "× 역극 0.75" / "× 동기 1.0"
+  let affinitySegment = ''   // "× 극 1.7" / "× 생 0.5" / "× 역극 0.75" / "× 동기 0.85"
   let line1Color = '#D8CCB4'
 
   if (comboResult.type === 'fusion-hone') {
@@ -442,9 +447,11 @@ function buildPreviewText(
     line1Color = '#C63D2F'
   } else if (yikseangEnemy) {
     // 역생 중립(×1.0) — 데미지 영향 없음, 상성 세그먼트 표기 생략 (이든 확정 2026-07-19)
-  } else {
-    affinitySegment = '× 동기 1.0'
+  } else if (affinity === 'donggi') {
+    // 동기(同氣) = ×0.85 실효값 표기 (화면 진실 헌법 — 이든 2026-07-21)
+    affinitySegment = '× 동기 0.85'
   }
+  // 중립(×1.0) — 세그먼트 표기 생략
 
   // §1-b: 기운 충돌 감지 — 미리보기에도 동일 적용 (detectElementClash 이미 import됨)
   const clashes = detectElementClash(cards as any)
@@ -472,12 +479,12 @@ function buildPreviewText(
     }
     // 5장 대모으기
     if (cards.length === 5) {
-      const line1 = `대모으기 · ${elementName} ${cards.length}장 · 예상 ${baseDamage}${affinitySegment !== '× 동기 1.0' ? ` (${affinitySegment})` : ''}`
+      const line1 = `대모으기 · ${elementName} ${cards.length}장 · 예상 ${baseDamage}${affinitySegment !== '' ? ` (${affinitySegment})` : ''}`
       const line2Str = finalDamageWithCondense !== null ? `응축 후 예상 ${finalDamageWithCondense}` : null
       return { line1, line2: line2Str, line1Color, yongsinLabel }
     }
     // 3장·4장 겹치기
-    const line1 = `${tierLabel} · ${elementName} ${cards.length}장 · 예상 ${baseDamage}${affinitySegment !== '× 동기 1.0' ? ` (${affinitySegment})` : ''}`
+    const line1 = `${tierLabel} · ${elementName} ${cards.length}장 · 예상 ${baseDamage}${affinitySegment !== '' ? ` (${affinitySegment})` : ''}`
     const line2Str = finalDamageWithCondense !== null ? `응축 후 예상 ${finalDamageWithCondense}` : null
     return { line1, line2: line2Str, line1Color, yongsinLabel, needsTierFlash: true }  // §2-b: 겹치기 글자 반짝
   }
@@ -488,7 +495,7 @@ function buildPreviewText(
   const tierLabel = getTierLabel(comboResult, cards.length)
   // §1-a: 대형 레시피일 때 "(대형)" 명시
   const sizeLabel = comboResult.description?.includes('대형') ? ' (대형)' : ''
-  const affinityStr = affinitySegment !== '× 동기 1.0' ? ` (${affinitySegment})` : ''
+  const affinityStr = affinitySegment !== '' ? ` (${affinitySegment})` : ''
   const condenseStr = finalDamageWithCondense !== null ? ` → 응축 후 ${finalDamageWithCondense}` : ''
   const line1 = `${tierLabel}${sizeLabel} · ${comboDisplayName} · 예상 ${baseDamage}${affinityStr}${condenseStr}`
   const traitLine = getFusionTraitLine(comboName)  // T18: 융합 특성 1줄 (ID 기준 그대로)
@@ -2122,7 +2129,8 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
         : affinity === 'anti-geuk' ? `역극 ${ANTI_GEUK_PENALTY}`
         : affinity === 'yikseang' ? ``
         : affinity === 'saeng' ? `생 ${SANG_PENALTY_MULTIPLIER}`
-        : `동기 1.0`
+        : affinity === 'donggi' ? `동기 ${DONGGI_MULTIPLIER}`
+        : ``
       const overlayInfo = {
         base: comboForOverlay.baseScore,
         tierLabel,
