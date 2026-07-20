@@ -636,8 +636,11 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
   const refillCount = Math.max(0, HAND_SIZE - remainHand.length)
   if (newDeck.length < refillCount) {
     // 덱 부족: 버림더미(방금 사용한 카드 포함)를 섞어 덱 재구성 (카드 상태 유지)
+    // T34: seed=newRngState 전달 → Date.now() 폴백 제거 (결정론 복원)
     const allCards = [...newDeck, ...newDiscardPile]
-    newDeck = shuffleDeck(allCards)
+    newDeck = shuffleDeck(allCards, newRngState)
+    const rngAdv = nextRng(newRngState)
+    newRngState = rngAdv.next
     reshuffled = true
   }
   const drawnCards: Card[] = []
@@ -653,7 +656,10 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
     // 2장 드로우 — 덱 부족 시 discardPile 재순환
     for (let i = 0; i < 2; i++) {
       if (newDeck.length === 0 && newDiscardPile.length > 0) {
-        const recycled = shuffleDeck([...newDiscardPile])
+        // T34: seed=newRngState 전달 (결정론 복원)
+        const recycled = shuffleDeck([...newDiscardPile], newRngState)
+        const rngAdv2 = nextRng(newRngState)
+        newRngState = rngAdv2.next
         newDeck = recycled
         newDiscardPile = []
       }
@@ -666,7 +672,10 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
   // C10(d): 녹철령(金) — 매 턴 무작위 핸드 카드 1장 값 -1 (적 생존 시만 발동)
   const rustGimmick = gimmicks.find(g => g.type === 'card-rust')
   if (rustGimmick && rustGimmick.type === 'card-rust' && newHand.length > 0 && afterDamageHp > 0) {
-    const rustIdx = Math.floor(Math.random() * newHand.length)
+    // T34: Math.random() → nextRng(newRngState) 교체 (결정론 복원 — 2026-07-19 이든 판정)
+    const rustRng = nextRng(newRngState)
+    newRngState = rustRng.next
+    const rustIdx = Math.floor(rustRng.value * newHand.length)
     newHand = newHand.map((c, i) =>
       i === rustIdx ? { ...c, value: Math.max(2, c.value - rustGimmick.amount) } : c
     )
@@ -1007,9 +1016,13 @@ export function discardCards(state: GameState, cardIds: string[]): GameState {
   const newDiscardPile = [...state.discardPile, ...discarded]
   let newDeck = [...state.deck]
   let reshuffled = false
+  // T34: rngState 파생 seed 사용 (결정론 복원)
+  let discardRngState = state.rngState ?? 0x9E3779B9
   if (newDeck.length < discarded.length) {
     const allCards = [...newDeck, ...newDiscardPile]
-    newDeck = shuffleDeck(allCards)
+    newDeck = shuffleDeck(allCards, discardRngState)
+    const rngAdv = nextRng(discardRngState)
+    discardRngState = rngAdv.next
     reshuffled = true
   }
   const drawnCards: Card[] = []
@@ -1053,6 +1066,8 @@ export function discardCards(state: GameState, cardIds: string[]): GameState {
     reshuffled,
     sikshinDiscardBonus: newSikshinDiscardBonus,
     sikshinRicegrains: newSikshinRicegrains,
+    // T34: rngState 갱신 (버리기 재순환 시 시드 전진)
+    rngState: discardRngState,
   }
 }
 
@@ -1138,7 +1153,11 @@ export function advanceToNextFloor(state: GameState): GameState {
   const floorConfig = FLOOR_CONFIGS[nextFloor - 1]
   // 영속 덱 유지: 기존 hand + deck + discardPile 전체를 셔플해 재배분
   const allCards = [...state.hand, ...state.deck, ...state.discardPile]
-  const deck = shuffleDeck(allCards.length > 0 ? allCards : createFixedDeck())
+  // T34: rngState 기반 seed 사용 (결정론 복원 — Date.now() 폴백 제거)
+  let nextRngState = state.rngState ?? 0x9E3779B9
+  const deck = shuffleDeck(allCards.length > 0 ? allCards : createFixedDeck(), nextRngState)
+  const rngAdvFloor = nextRng(nextRngState)
+  nextRngState = rngAdvFloor.next
   const hand = deck.slice(0, HAND_SIZE)
   const remainDeck = deck.slice(HAND_SIZE)
   // v4 모드 시 V4_FLOOR_HP_TABLE 주입, 그 외 floorConfig.enemyHp 유지
@@ -1146,7 +1165,6 @@ export function advanceToNextFloor(state: GameState): GameState {
 
   // 배치 2 §1: 겁재(劫財) 전투 시작 훅 — 층 전환 시 새 전투 시작
   // activePassiveIds 기준으로 겁재 보유 여부 확인 후 RNG 굴림
-  let nextRngState = state.rngState ?? 0x9E3779B9
   let nextGeoptaeStealDamage = 0
   let nextGeoptaeUsed = false
   let nextPlayerHp = state.playerHp
@@ -1290,9 +1308,13 @@ export function applyCondense(state: GameState, cardIds: string[], synergyMultip
   // 덱 부족 시 재순환
   const newDiscardPile = [...state.discardPile, ...condensedCards]
   let newDeck = [...state.deck]
+  // T34: rngState 기반 seed 사용 (결정론 복원)
+  let condenseRngState = state.rngState ?? 0x9E3779B9
   if (newDeck.length < condensedCards.length) {
     const allCards = [...newDeck, ...newDiscardPile]
-    newDeck = shuffleDeck(allCards)
+    newDeck = shuffleDeck(allCards, condenseRngState)
+    const rngAdv = nextRng(condenseRngState)
+    condenseRngState = rngAdv.next
   }
   const drawnCards: Card[] = []
   for (let i = 0; i < condensedCards.length && newDeck.length > 0; i++) {
@@ -1311,6 +1333,8 @@ export function applyCondense(state: GameState, cardIds: string[], synergyMultip
     isLastAttack: newPlaysLeft === 1,
     lastTraitTriggered: 'yonggigama',
     reshuffled: false,
+    // T34: rngState 갱신
+    rngState: condenseRngState,
   }
 }
 

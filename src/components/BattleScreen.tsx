@@ -440,8 +440,7 @@ function buildPreviewText(
     affinitySegment = '× 역극 0.75'
     line1Color = '#C63D2F'
   } else if (yikseangEnemy) {
-    affinitySegment = '× 역생 1.2'
-    line1Color = '#7BAFDE'
+    // 역생 중립(×1.0) — 데미지 영향 없음, 상성 세그먼트 표기 생략 (이든 확정 2026-07-19)
   } else {
     affinitySegment = '× 동기 1.0'
   }
@@ -2117,9 +2116,10 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
       const clashesOverlay = detectElementClash(_selectedCardObjs as any)
       const clashPenaltyOverlay = clashesOverlay.length > 0 ? 0.7 : 1.0
       const finalDmg = Math.round(comboForOverlay.baseScore * tierMult * affinityMult * clashPenaltyOverlay)
+      // 역생 중립(×1.0) — 데미지 영향 없음, 상성 배지 표기 생략 (이든 확정 2026-07-19)
       const affinityLabel = affinity === 'geuk' ? `극 ${GEUK_BONUS_MULTIPLIER}`
         : affinity === 'anti-geuk' ? `역극 ${ANTI_GEUK_PENALTY}`
-        : affinity === 'yikseang' ? `역생 ${YIKSEANG_MULT}`
+        : affinity === 'yikseang' ? ``
         : affinity === 'saeng' ? `생 ${SANG_PENALTY_MULTIPLIER}`
         : `동기 1.0`
       const overlayInfo = {
