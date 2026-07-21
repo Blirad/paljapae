@@ -115,6 +115,7 @@ export default function App() {
     floorsCleared,
     relics,
     sinsalInventory,
+    rngState,
     startGame,
     proceedToNextFloor,
   } = useGameStore()
@@ -234,6 +235,7 @@ export default function App() {
           currentFloor={currentFloor}
           currentRelicIds={relics.map(r => r.id)}
           currentSinsalInventory={sinsalInventory}
+          runSeed={rngState}
           onProceed={handleFloorRewardProceed}
         />
       )}

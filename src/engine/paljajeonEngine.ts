@@ -692,6 +692,12 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
   // (게이트 ③ FAIL 처방, 이든 판정 2026-07-18: ×1.5 → ×1.25. 1.25 하한 — 아래는 존재감 소멸)
   const hasQueen = playedCards.some(c => c.royalType === 'queen')
   const queenAmplify = hasQueen ? 1.25 : 1.0
+  // B1-1 배타성 gate: 융합(fusion-birth/fusion-hone)에서 effect 모드로 택한 경우에만 특성 효과 발동.
+  // attack 모드(effectMode=false)에서는 공격 데미지만 적용되고 특성 효과 미발동.
+  // wildfire(L708) 패턴을 정본으로 삼아 7종(mining/nourish/harvest/quench/purification/keen/mirror)에 부착.
+  // ※ 양자택일은 birth·hone 양쪽 모두 대상(L482 정본). 따라서 rank를 fusion-birth로 한정하지 않고
+  //   isFusion(birth||hone) 전체를 gate 대상으로 삼는다. birth의 딜=0 처리는 L571이 별도 담당.
+  const traitEffectMode = effectMode && isFusion
   if (isFusion && comboName && !isBlocked) {
     const traitId = FUSION_TRAIT_MAP[comboName]
     if (traitId && traitId !== 'snipe') {  // snipe은 위에서 처리
@@ -716,6 +722,8 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
             break
           }
           case 'mining': {
+            // B1-1 배타성: effect 모드에서만 드로우 발동 (attack 모드 → 미발동)
+            if (!traitEffectMode) break
             // R5 (balance-v3 §3): 채굴 — 투입값 × synergyMultiplier 기반 드로우
             // floor(투입값 × synergyMultiplier / MINING_DRAW_DIVISOR)장, 최대 MINING_MAX_DRAW
             // 리필된 8장 위에 추가 스택 (핸드 상한 미적용) → 최대 HAND_SIZE+MINING_MAX_DRAW(=11)장
@@ -738,6 +746,8 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
             break
           }
           case 'harvest': {
+            // B1-1 배타성: effect 모드에서만 목·토 카드 값 상승 발동 (attack 모드 → 미발동)
+            if (!traitEffectMode) break
             // 수확: 손의 목·토 카드 값 +N (여왕 ×1.5 시 +1→+2)
             const harvestBoost = Math.round(1 * queenAmplify)
             newHand = newHand.map(c =>
@@ -748,6 +758,8 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
             break
           }
           case 'quench': {
+            // B1-1 배타성: effect 모드에서만 영구 값 상승 발동 (attack 모드 → 미발동)
+            if (!traitEffectMode) break
             // 담금질: 이번 공격에 쓴 카드 값 +N 영구 (여왕 ×1.5 시 +1→+2)
             const quenchBoost = Math.round(1 * queenAmplify)
             const quenchIds = new Set(cardIds)
@@ -758,6 +770,8 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
             break
           }
           case 'purification': {
+            // B1-1 배타성: effect 모드에서만 기세 죽음 해제 + 추가 데미지 발동 (attack 모드 → 미발동)
+            if (!traitEffectMode) break
             // R5 정화 구현: R3 감사(2026-07-14) 시 purification case 미검증 — 부실 기록 인정
             // R5 (balance-v3 §3): 정화(샘) — 투입값 기반 분기 + 시너지 적용
             // 적 상태이상(기세 죽음) 해제 시마다 데미지: BASE_PURIFICATION_DAMAGE × synergyMultiplier
@@ -785,11 +799,15 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
             break
           }
           case 'keen': {
+            // B1-1 배타성: effect 모드에서만 예리 발동 (attack 모드 → 미발동)
+            if (!traitEffectMode) break
             // R10: 예리(벼린 검) — 다음 극 보너스 ×1.5
             newKeenActive = true
             break
           }
           case 'mirror': {
+            // B1-1 배타성: effect 모드에서만 비침 발동 (attack 모드 → 미발동)
+            if (!traitEffectMode) break
             // R10: 비침(맑은 못) — 다음 강공 피해 50% 감소
             newMirrorShieldActive = true
             break
@@ -853,8 +871,9 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
   // R5 (balance-v3 §3): 자양(nourish) 체력 회복 — heal value × synergyMultiplier
   // heal value = playerMaxHp × NOURISH_HEAL_PCT (T19 기준 유지)
   // 시너지 적용: 기존 회복량 × synergyMultiplier
+  // B1-1 배타성: effect 모드에서만 자양 체력 회복 발동 (attack 모드 → 미발동)
   let finalPlayerHp = newPlayerHp
-  if (isFusion && comboName && FUSION_TRAIT_MAP[comboName] === 'nourish' && !isBlocked) {
+  if (isFusion && comboName && FUSION_TRAIT_MAP[comboName] === 'nourish' && !isBlocked && traitEffectMode) {
     const baseHeal = Math.round(state.playerMaxHp * NOURISH_HEAL_PCT)
     const healAmount = Math.round(baseHeal * synergyMultiplier * queenAmplify)
     finalPlayerHp = Math.min(state.playerMaxHp, finalPlayerHp + healAmount)
@@ -1359,6 +1378,13 @@ export type RewardOption =
 /** 신살 보상 등장 가중치 (카드·가호와 경쟁) */
 export const SINSAL_REWARD_WEIGHT = 0.15  // 신살이 전체 보상 풀의 약 15% 차지 (균등 금지)
 
+/**
+ * 긴급1 (2026-07-22): 카드 value 전 카드 공통 상한.
+ * upgrade-card 층 보상 반복 선택 시 무한 누적을 차단한다.
+ * (신금 여왕 10→15→23 오염 봉인. QUEEN23 감사 2026-07-21 근거)
+ */
+export const MAX_CARD_VALUE = 15
+
 export function applyRewardOption(deck: Card[], option: RewardOption): Card[] {
   switch (option.type) {
     case 'add-card':
@@ -1366,7 +1392,8 @@ export function applyRewardOption(deck: Card[], option: RewardOption): Card[] {
     case 'upgrade-card':
       return deck.map(c =>
         c.id === option.targetId
-          ? { ...c, value: Math.round(c.value * (1 + option.bonusPct / 100)) }
+          // 긴급1: Math.min(15, round(value × 1.5)) — 상한 15 clamp (전 카드 공통)
+          ? { ...c, value: Math.min(MAX_CARD_VALUE, Math.round(c.value * (1 + option.bonusPct / 100))) }
           : c
       )
     case 'remove-card':
