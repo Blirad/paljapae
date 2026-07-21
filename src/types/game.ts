@@ -158,6 +158,9 @@ export interface GameState {
   jeonginUsed: boolean                     // 정인 사망 가로채기 사용 여부 (런 내내 유지)
   jeonginBuff: boolean                     // 정인 다음 융합 ×1.5 버프 (발동 후 소비)
   pyeongwanActivationsThisTurn?: number    // 배치 2 §1: 편관 이번 턴 발동 횟수 (최대 1, 턴당 1회 제한)
+  // §3 신살(驛馬·華蓋) 상태 — 보상 3택으로 획득, 기본 탑재 금지
+  yeokmaCharges?: number    // 역마 남은 발동 횟수 (런 스코프, 초기 3회)
+  hwagaeApplied?: boolean   // 화개 부여 여부 (런 영구, 최고값 카드에 1회 부여)
 }
 
 export type FortuneLevel = 'daegil' | 'gil' | 'pyeong' | 'hyung' | 'daehyung'

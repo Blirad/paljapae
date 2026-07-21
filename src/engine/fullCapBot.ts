@@ -66,6 +66,10 @@ import {
 } from './balance'
 import { getFavorableElement } from './manseryeok'
 
+// §3 역마(驛馬) v1 비활성 플래그 — v1 FAIL(낱장 변환 vs 콤보 타격속성 좌표계 미스매치) 격리 보존.
+// v2 재설계(손패 전체 교체·없던 오행 생성) 통과 전까지 false. 이든 판정 2026-07-21 (커밋 범위 A).
+const SINSAL_YEOKMA_ENABLED = false
+
 function combinations<T>(arr: T[], k: number): T[][] {
   if (k === 0) return [[]]
   if (k > arr.length) return []
@@ -366,7 +370,7 @@ export function fullCapSelectCards(
       const repEl = evalResult.finishingElement
       const affinityMult = getAffinityMultiplier(repEl, enemyPrimaryElement)
 
-      const score = fullCapCalcExpectedDamage(
+      let score = fullCapCalcExpectedDamage(
         evalCombo,
         enemyPrimaryElement,
         enemySubElement,
@@ -378,6 +382,33 @@ export function fullCapSelectCards(
         recipeMultipliers, // 배치 1.5: 사주별 레시피 배율
         gatherUsedInBattle, // α 수확 체감: gather5 동일 전투 내 활성화 횟수
       )
+
+      // T33 §a: 가호 지향 가중 — 봇이 가호 경로를 선호하게 유도 (최소 계수, 과가중 금지)
+      // 가중 계수: 최종 EV에 승산으로 적용. 봇이 가호 경로를 "약간" 선호하게 만드는 최소값.
+      // 정관(jeonggwan)은 이미 effectMode ×1.5로 반영됨 — 유지.
+      if (activePassiveIds && activePassiveIds.length > 0) {
+        // 상관(sanggwan): 황금비 정점(isRatioPeak) 성립 조합에 ×1.15 가중
+        if (
+          activePassiveIds.includes('sanggwan') &&
+          (evalResult as { isRatioPeak?: boolean }).isRatioPeak === true
+        ) {
+          score = Math.round(score * 1.15)
+        }
+        // 겁재(geoptae): 왕족 카드 포함 조합에 ×1.15 가중
+        if (
+          activePassiveIds.includes('geoptae') &&
+          evalCombo.some(c => c.royalType === 'king' || c.royalType === 'queen')
+        ) {
+          score = Math.round(score * 1.15)
+        }
+        // 정재(jeongjae): 오행연환(ohang-yeonhwan) 조합에 ×1.20 가중 — 봇이 연환 조립 경로 선호
+        if (
+          activePassiveIds.includes('jeongjae') &&
+          evalResult.type === 'ohang-yeonhwan'
+        ) {
+          score = Math.round(score * 1.20)
+        }
+      }
 
       // 통합 최대화: 최종 기대 데미지(콤보 × 상성 × 용신 통합) 순수 최대화
       const isBetter =
@@ -511,6 +542,10 @@ export interface FullCapRunResult {
   descentSlotsArrived?: number
   /** 배치 2 §2: 왕족 카드 획득 횟수 */
   royalObtainedCount?: number
+  /** §3 신살: 역마 실제 발동 횟수 (유령측정 차단용) */
+  yeokmaActivations?: number
+  /** §3 신살: 화개 실제 발동 횟수 (유령측정 차단용) */
+  hwagaeActivations?: number
 }
 
 function makeLcg(seed: number): () => number {
@@ -613,6 +648,12 @@ export interface FullCapSimOptions {
    * forceAcquire가 있으면 forceAcquire가 우선.
    */
   forceAcquire?: ForcedAcquireSpec
+  /**
+   * T33 겁재 재측정: 시작 덱에 추가할 카드 목록 (왕족 시딩 등 측정 하네스 전용)
+   * 지정 시 generateSajuDeck/createFixedDeck으로 생성된 덱 앞에 prepend됨.
+   * A/B 양군 동일 주입 시 순수 가호 효과만 측정 가능.
+   */
+  startingExtraCards?: Card[]
 }
 
 /**
@@ -776,6 +817,10 @@ function createDeterministicState(
   } else {
     deck = shuffleDeck(createFixedDeck(), seed)
   }
+  // T33 겁재 재측정: 시작 덱 앞에 왕족 등 추가 카드 주입 (A/B 양군 동일 적용)
+  if (opts?.startingExtraCards && opts.startingExtraCards.length > 0) {
+    deck = [...opts.startingExtraCards, ...deck]
+  }
 
   const hand = deck.slice(0, HAND_SIZE)
   const remainDeck = deck.slice(HAND_SIZE)
@@ -850,6 +895,9 @@ function createDeterministicState(
     bigyeonCopyUsed: false,
     jeonginUsed: false,
     jeonginBuff: false,
+    // §3 신살 초기화 — 기본 탑재 금지 (forceAcquire.kind='sinsal'로만 주입)
+    yeokmaCharges: 0,
+    hwagaeApplied: false,
   }
 }
 
@@ -892,6 +940,9 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
   let descentDeferred = 0
   let descentVanished = 0
   let descentSlotsArrived = 0
+  // §3 신살 발동 횟수 추적 (유령측정 차단)
+  let yeokmaActivations = 0
+  let hwagaeActivations = 0
 
   // createDeterministicState에 resolvedFavorableElement + resolvedActivePassiveIds 반영을 위해 opts 래핑
   const resolvedOpts: FullCapSimOptions | undefined = opts
@@ -906,6 +957,35 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
   // R4.5 영속 덱: 런 시작 시 1회 덱 생성 — 이후 층에서 재사용
   let state = createDeterministicState(0, rng, resolvedOpts)
   let playerHp = PLAYER_BASE_HP
+
+  // §3 신살 강제 획득 처리 (forceAcquire.kind='sinsal')
+  // royalForceAcquire 패턴 승계 — 시뮬 초기에 신살 상태 주입
+  if (opts?.forceAcquire?.kind === 'sinsal') {
+    const sinsalId = opts.forceAcquire.id
+    if (sinsalId === 'yeokma') {
+      // 역마: 런 스코프 3회 발동 권한 부여
+      state = { ...state, yeokmaCharges: 3 }
+    } else if (sinsalId === 'hwagae') {
+      // 화개: 런 시작 시 최고값 카드에 +3 즉시 부여 (런 영구)
+      const allStartCards = [...state.hand, ...state.deck]
+      if (allStartCards.length > 0) {
+        const maxVal = Math.max(...allStartCards.map(c => c.value))
+        const targetCard = allStartCards.find(c => c.value === maxVal)
+        if (targetCard) {
+          // 핸드 또는 덱에서 해당 카드에 +3 부여
+          const applyHwagae = (cards: typeof state.hand) =>
+            cards.map(c => c.id === targetCard.id ? { ...c, value: c.value + 3 } : c)
+          state = {
+            ...state,
+            hand: applyHwagae(state.hand),
+            deck: applyHwagae(state.deck),
+            hwagaeApplied: true,
+          }
+          hwagaeActivations++
+        }
+      }
+    }
+  }
 
   while (floor <= 4) {
     if (floor > 1) {
@@ -958,6 +1038,9 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         recipeMultipliers: state.recipeMultipliers,
         // α 수확 체감: 층(전투) 전환 시 리셋
         gatherUsedInBattle: 0,
+        // §3 신살: 런 스코프 유지 (층 전환 시 소모량 그대로 유지)
+        yeokmaCharges: state.yeokmaCharges ?? 0,
+        hwagaeApplied: state.hwagaeApplied ?? false,
       }
     } else {
       state = { ...state, playerHp }
@@ -1026,19 +1109,19 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
           deathFloor = floor
           floorStats.push({ floor, attackCount, cleared: false })
         }
-        return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived, royalObtainedCount }
+        return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived, royalObtainedCount, yeokmaActivations, hwagaeActivations }
       }
 
       if (state.playsLeft <= 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived, royalObtainedCount }
+        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived, royalObtainedCount, yeokmaActivations, hwagaeActivations }
       }
 
       if (state.playerHp <= 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived, royalObtainedCount }
+        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived, royalObtainedCount, yeokmaActivations, hwagaeActivations }
       }
 
       // 랜덤화된 층별 원소 사용 (작업 2) — R7-2 검증용 4층 강제 옵션 지원
@@ -1055,6 +1138,48 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
       const baseSub = randomElem?.subElement ?? floorConf.enemySubElement
       const currentPrimaryEl = state.enemyPhaseSwitch ? baseSub : basePrimary
       const currentSubEl = state.enemyPhaseSwitch ? basePrimary : baseSub
+
+      // §3 역마(驛馬) 발동 판단 — 불리 매치업에서 손패 1장 오행 변환 (봇 정책 §3 확정판)
+      // 조건: yeokmaCharges > 0 AND 현재 손패 최선 상성 ≤ ANTI_GEUK_PENALTY(역극·생 불리)
+      // 정책: 변환 전후 예상 데미지 델타가 최대인 손패·목표 오행 조합 선택
+      if (SINSAL_YEOKMA_ENABLED && (state.yeokmaCharges ?? 0) > 0 && currentPrimaryEl) {
+        // 현재 손패의 최선 상성 배율 계산
+        const bestCurrentMult = state.hand.reduce((best, card) => {
+          const m = getAffinityMultiplier(card.element, currentPrimaryEl)
+          return m > best ? m : best
+        }, 0)
+        // 불리 판정: 역극(×0.75) 이하 = 상성 불리
+        if (evalYeokmaTrigger(bestCurrentMult, 1)) {
+          // 유리 오행 탐색: currentPrimaryEl을 극하는 오행 (GEUK_MAP[el] === currentPrimaryEl)
+          const favorableEl = (Object.entries(GEUK_MAP) as Array<[Element, Element]>)
+            .find(([, target]) => target === currentPrimaryEl)?.[0]
+          if (favorableEl) {
+            // 최대 EV 델타 조합: 각 손패 카드를 favorableEl로 변환했을 때 delta = after - before
+            let bestDelta = 0
+            let bestTargetCardId: string | null = null
+            for (const card of state.hand) {
+              const before = getAffinityMultiplier(card.element, currentPrimaryEl) * card.value
+              const after = getAffinityMultiplier(favorableEl, currentPrimaryEl) * card.value
+              const delta = after - before
+              if (delta > bestDelta) {
+                bestDelta = delta
+                bestTargetCardId = card.id
+              }
+            }
+            if (bestTargetCardId !== null && bestDelta > 0) {
+              // 손패 1장 오행 변환 적용
+              state = {
+                ...state,
+                hand: state.hand.map(c =>
+                  c.id === bestTargetCardId ? { ...c, element: favorableEl } : c
+                ),
+                yeokmaCharges: (state.yeokmaCharges ?? 0) - 1,
+              }
+              yeokmaActivations++
+            }
+          }
+        }
+      }
 
       const decision = fullCapSelectCards(
         state.hand,
@@ -1078,7 +1203,7 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
       if (decision.cardIds.length === 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived, royalObtainedCount }
+        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived, royalObtainedCount, yeokmaActivations, hwagaeActivations }
       }
 
       // 버리기 전략 — B1-4: discardCards는 MAX_DISCARD_PER_USE(3)장 초과 리젝 → 슬라이스로 무한루프 방지
@@ -1487,10 +1612,12 @@ export function selectTalismanBySaju(
     pyeonjae:  PYEONJAE_GEUM_WEIGHT * norm('geum'),
     jeongjae:  JEONGJAE_SU_WEIGHT * norm('su'),
     pyeonin:   PYEONIN_TO_WEIGHT * norm('to'),
-    // 신규 3종 (v2 추가): 범용 상수 기반 EV 간소화
-    pyeongwan: PYEONGWAN_WEIGHT,
-    jeonggwan: JEONGGWAN_WEIGHT,
-    jeongin:   JEONGIN_WEIGHT,
+    // T33 §b: 범용 상수 하향 — 원소 점수가 가호 선택에 실질 반영되도록 조정.
+    // 수정 전: pyeongwan=18.0, jeonggwan=16.0, jeongin=14.0 (원소 점수 최대 ~8.0을 압도)
+    // 수정 후: 범용 상수를 원소 점수 최대값(~8.0) 이하로 낮춰 목화≠금수 구분 가능하게.
+    pyeongwan: PYEONGWAN_WEIGHT * 0.4,  // 18.0 → ~7.2 (원소 기반 점수와 경쟁 가능)
+    jeonggwan: JEONGGWAN_WEIGHT * 0.4,  // 16.0 → ~6.4
+    jeongin:   JEONGIN_WEIGHT   * 0.5,  // 14.0 → ~7.0 (생존 보험 가치 일부 유지)
   }
 
   // pool에 있는 가호만 필터링 → 점수 내림차순 정렬 → 상위 2종 반환
@@ -1498,4 +1625,58 @@ export function selectTalismanBySaju(
     .filter(id => id in scores)
     .sort((a, b) => (scores[b] ?? 0) - (scores[a] ?? 0))
     .slice(0, 2)
+}
+
+// ─── T33 §c: 신살 발동형 "사용 시점 EV" 평가 골격 ───────────────────────────
+//
+// §3 신살(역마·화개)은 발동형 아이템이므로 봇이 "언제 발동할지" 판단 로직이 필요.
+// 이번엔 골격만 — 정밀 계수는 §3 게이트에서 확정. 실제 역마·화개 효과 로직은 §3 본 구현 소관.
+//
+// 역마(驛馬, yeokma): 오행 변환 — 나쁜 매치업(적 상성 불리)에서 사용 시 EV 상승
+// 화개(華蓋, hwagae): 값 +3 분식 — 고값(high-value) 카드에 사용 시 EV 상승
+
+/**
+ * §3 본구현: 신살 발동형 "사용 시점 EV" 평가 — 역마(오행 변환) 정밀화
+ *
+ * 발동 판단 정책 (§3 확정판):
+ *  - 역극·생 불리 매치업: currentAffinityMult ≤ ANTI_GEUK_PENALTY(0.75) 이하
+ *  - 변환 후 극(×1.7) 달성 가능할 때만 발동 (EV 순상승 보장)
+ *  - 소지 3회 한정 → 불리 정도 큰 매치업 우선 (호출 측에서 charges 관리)
+ *
+ * @param currentAffinityMult 현재 손패 최선 상성 배율 (getAffinityMultiplier 결과)
+ * @param baseScore           현재 콤보 기대 데미지 (양수 확인용)
+ * @returns 역마 발동 권장 여부 (true = 발동 시 EV 이득 예상)
+ */
+export function evalYeokmaTrigger(
+  currentAffinityMult: number,
+  baseScore: number,
+): boolean {
+  // §3 정밀 조건: 역극(×0.75) 이하 불리 매치업에서만 발동
+  // 역극·생(×0.5) 모두 포함 — ANTI_GEUK_PENALTY(0.75) 이하
+  if (currentAffinityMult <= ANTI_GEUK_PENALTY) {
+    // EV 상승 확인: 발동 후 극(×1.7)으로 전환 시 currentAffinityMult < 1.7이면 항상 이득
+    // → 불리 확인만으로 충분 (baseScore > 0 추가 보호)
+    return baseScore > 0
+  }
+  return false
+}
+
+/**
+ * §3 본구현: 신살 발동형 "사용 시점 EV" 평가 — 화개(값 +3 분식) 정밀화
+ *
+ * 발동 판단 정책 (§3 확정판):
+ *  - 최고값 카드에 사용 — 손패/덱 중 value 최대 카드에 +3 부여 (분식 효과 극대화)
+ *  - 런 영구이므로 조기 최고값 카드 우선 강화
+ *  - 단위테스트 호환: targetCardValue === handMaxValue 일 때 발동 권장
+ *
+ * @param targetCardValue 화개를 적용할 카드의 현재 값
+ * @param handMaxValue    현재 핸드/덱 최대 값
+ * @returns 화개 발동 권장 여부 (true = 최고값 카드에 적용 시 EV 이득 최대화)
+ */
+export function evalHwagaeTrigger(
+  targetCardValue: number,
+  handMaxValue: number,
+): boolean {
+  // §3 정밀 조건: 최고값 카드(value === max)에 사용 시 분식 효과 극대화
+  return targetCardValue >= handMaxValue
 }
