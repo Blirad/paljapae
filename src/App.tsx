@@ -114,6 +114,7 @@ export default function App() {
     isVictory,
     floorsCleared,
     relics,
+    sinsalInventory,
     startGame,
     proceedToNextFloor,
   } = useGameStore()
@@ -172,8 +173,8 @@ export default function App() {
     setScreen('result')
   }, [])
 
-  const handleFloorRewardProceed = useCallback((rewardIndex: number, selectedRelicId?: string) => {
-    proceedToNextFloor(rewardIndex, selectedRelicId)
+  const handleFloorRewardProceed = useCallback((rewardIndex: number, selectedRelicId?: string, selectedSinsalId?: string) => {
+    proceedToNextFloor(rewardIndex, selectedRelicId, selectedSinsalId)
     setScreen('battle')
   }, [proceedToNextFloor])
 
@@ -232,6 +233,7 @@ export default function App() {
         <FloorRewardScreen
           currentFloor={currentFloor}
           currentRelicIds={relics.map(r => r.id)}
+          currentSinsalInventory={sinsalInventory}
           onProceed={handleFloorRewardProceed}
         />
       )}

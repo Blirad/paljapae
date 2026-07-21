@@ -11,7 +11,8 @@ import type { RelicId } from '../engine/balance'
 interface FloorRewardScreenProps {
   currentFloor: number
   currentRelicIds: string[]  // 이미 보유 중인 유물 ID 목록 (중복 차단용)
-  onProceed: (rewardIndex: number, selectedRelicId?: string) => void
+  currentSinsalInventory?: string[]  // 이미 소지 중인 신살 ID 목록 (상한 체크용)
+  onProceed: (rewardIndex: number, selectedRelicId?: string, selectedSinsalId?: string) => void
 }
 
 // T8: 카드 보상 3종 + 유물 1종 = 총 4종 풀 (유물은 별도 선택)
@@ -29,9 +30,10 @@ const ELEMENT_COLORS: Record<string, string> = {
   mok: '#4A9B6E', hwa: '#C63D2F', to: '#D9A441', geum: '#C8C0B0', su: '#3D5A80',
 }
 
-export default function FloorRewardScreen({ currentFloor, currentRelicIds, onProceed }: FloorRewardScreenProps) {
+export default function FloorRewardScreen({ currentFloor, currentRelicIds, currentSinsalInventory, onProceed }: FloorRewardScreenProps) {
   const [chosen, setChosen] = useState<number | null>(null)
   const [chosenRelicId, setChosenRelicId] = useState<string | null>(null)
+  const [chosenSinsalId, setChosenSinsalId] = useState<string | null>(null)
   const nextFloor = currentFloor + 1
   const isLastFloor = currentFloor >= 4
   const nextConfig = !isLastFloor ? FLOOR_CONFIGS[nextFloor - 1] : null
@@ -55,8 +57,8 @@ export default function FloorRewardScreen({ currentFloor, currentRelicIds, onPro
     return shuffled.slice(0, 3).map(id => RELIC_DEFS[id as RelicId])
   }, [currentFloor, currentRelicIds])
 
-  // 카드 보상 3개 (유물 없으면 3개 모두 카드, 유물 있으면 2카드+1유물 or 표시)
-  // T8 스펙: 4종 풀 중 3개 선택 → 항상 4종(카드3+유물1풀) 중 3개 추출
+  // 카드 보상 3개 (유물 없으면 3개 모두 카드, 유물/신살 있으면 경쟁)
+  // §3 신살: 화개 보상이 가중치 15%로 풀에 추가 (소지 상한 3 미만 시)
   const rewardOptions = useMemo(() => {
     let rng = currentFloor * 12345 + 6789
     const nextRandom = () => {
@@ -64,12 +66,11 @@ export default function FloorRewardScreen({ currentFloor, currentRelicIds, onPro
       return (rng >>> 0) / 0xffffffff
     }
 
-    // 풀: 카드 보상 3종 + 유물(미보유 있는 경우)
-    const pool: Array<{ type: string; label: string; desc: string; icon: string; relicId?: string }> = [
-      ...CARD_REWARD_TYPES,
+    // 풀: 카드 보상 3종 + 유물(미보유 있는 경우) + 신살(소지 상한 미만 시)
+    const pool: Array<{ type: string; label: string; desc: string; icon: string; relicId?: string; sinsalId?: string; weight: number }> = [
+      ...CARD_REWARD_TYPES.map(r => ({ ...r, weight: 1.0 })),
     ]
     if (availableRelics.length > 0) {
-      // 유물 보상 옵션 1개 (availableRelics 중 첫 번째)
       const relic = availableRelics[0]
       pool.push({
         type: 'add-relic',
@@ -77,33 +78,75 @@ export default function FloorRewardScreen({ currentFloor, currentRelicIds, onPro
         desc: relic.description,
         icon: relic.icon,
         relicId: relic.id,
+        weight: 1.0,
+      })
+    }
+    // §3 신살 화개 — 소지 상한(3) 미만이고 미소지 시 풀에 추가 (가중치 0.15)
+    const sinsalCount = (currentSinsalInventory ?? []).length
+    const alreadyHasHwagae = (currentSinsalInventory ?? []).includes('hwagae')
+    if (sinsalCount < 3 && !alreadyHasHwagae) {
+      pool.push({
+        type: 'add-sinsal',
+        label: '신살: 화개(華蓋)',
+        desc: '지정한 카드의 힘을 영구히 +3 깊어지게 한다',
+        icon: '華',
+        sinsalId: 'hwagae',
+        weight: 0.15,
       })
     }
 
-    // Fisher-Yates 셔플 후 3개 선택
-    const shuffled = [...pool]
+    // 가중치 기반 셔플 후 3개 선택
+    // 방법: 가중치를 반영한 슬롯 생성 후 Fisher-Yates
+    const weightedPool: typeof pool = []
+    for (const item of pool) {
+      // weight=1.0 → 10슬롯, weight=0.15 → 1.5≈2슬롯 (반올림)
+      // 균등 금지: 신살은 카드/유물보다 낮은 빈도로 등장
+      const slots = Math.max(1, Math.round(item.weight * 10))
+      for (let s = 0; s < slots; s++) {
+        weightedPool.push(item)
+      }
+    }
+
+    const shuffled = [...weightedPool]
     for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(nextRandom() * (i + 1));
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
     }
-    return shuffled.slice(0, 3)
-  }, [currentFloor, availableRelics])
+
+    // 중복 제거 후 3개 선택 (type 기준 첫 등장만)
+    const seen = new Set<string>()
+    const result: typeof pool = []
+    for (const item of shuffled) {
+      const key = item.sinsalId ? `sinsal-${item.sinsalId}` : item.relicId ? `relic-${item.relicId}` : item.type
+      if (!seen.has(key)) {
+        seen.add(key)
+        result.push(item)
+      }
+      if (result.length >= 3) break
+    }
+    return result
+  }, [currentFloor, availableRelics, currentSinsalInventory])
 
   const handleChoose = (i: number) => {
     setChosen(i)
     const opt = rewardOptions[i]
     if (opt.type === 'add-relic' && opt.relicId) {
       setChosenRelicId(opt.relicId)
+      setChosenSinsalId(null)
+    } else if (opt.type === 'add-sinsal' && opt.sinsalId) {
+      setChosenSinsalId(opt.sinsalId)
+      setChosenRelicId(null)
     } else {
       setChosenRelicId(null)
+      setChosenSinsalId(null)
     }
   }
 
   const handleProceed = () => {
     if (chosen === null) return
     const opt = rewardOptions[chosen]
-    const rewardTypeIndex = ['add-card', 'upgrade-card', 'remove-card', 'add-relic'].indexOf(opt.type)
-    onProceed(rewardTypeIndex, chosenRelicId ?? undefined)
+    const rewardTypeIndex = ['add-card', 'upgrade-card', 'remove-card', 'add-relic', 'add-sinsal'].indexOf(opt.type)
+    onProceed(rewardTypeIndex, chosenRelicId ?? undefined, chosenSinsalId ?? undefined)
   }
 
   return (
@@ -124,13 +167,14 @@ export default function FloorRewardScreen({ currentFloor, currentRelicIds, onPro
       <div className="flex flex-col gap-4 mt-10">
         {rewardOptions.map((opt, i) => {
           const isRelic = opt.type === 'add-relic'
+          const isSinsal = opt.type === 'add-sinsal'
           return (
             <button
               key={i}
               onClick={() => handleChoose(i)}
               style={{
                 backgroundColor: chosen === i ? '#241F18' : 'transparent',
-                border: `1px solid ${chosen === i ? (isRelic ? '#D9A441' : '#B33A2B') : '#2A2620'}`,
+                border: `1px solid ${chosen === i ? (isRelic ? '#D9A441' : isSinsal ? '#D9A441' : '#B33A2B') : '#2A2620'}`,
                 color: '#E8DCC4',
                 padding: '20px 24px',
                 textAlign: 'left',
@@ -145,8 +189,8 @@ export default function FloorRewardScreen({ currentFloor, currentRelicIds, onPro
                 <span style={{
                   fontSize: '15px',
                   letterSpacing: '0.1em',
-                  color: isRelic ? '#D9A441' : '#E8DCC4',
-                  fontWeight: isRelic ? 600 : 400,
+                  color: isRelic ? '#D9A441' : isSinsal ? '#D9A441' : '#E8DCC4',
+                  fontWeight: (isRelic || isSinsal) ? 600 : 400,
                 }}>
                   {opt.label}
                 </span>
@@ -159,6 +203,18 @@ export default function FloorRewardScreen({ currentFloor, currentRelicIds, onPro
                     letterSpacing: '0.1em',
                   }}>
                     유물
+                  </span>
+                )}
+                {isSinsal && (
+                  <span style={{
+                    fontSize: '10px',
+                    color: '#D9A441',
+                    border: '1px solid #4A3010',
+                    backgroundColor: 'rgba(42,38,32,0.85)',
+                    padding: '1px 5px',
+                    letterSpacing: '0.1em',
+                  }}>
+                    신살
                   </span>
                 )}
               </div>

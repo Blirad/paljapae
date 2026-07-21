@@ -69,6 +69,18 @@ import { getFavorableElement } from './manseryeok'
 // §3 역마(驛馬) v1 비활성 플래그 — v1 FAIL(낱장 변환 vs 콤보 타격속성 좌표계 미스매치) 격리 보존.
 // v2 재설계(손패 전체 교체·없던 오행 생성) 통과 전까지 false. 이든 판정 2026-07-21 (커밋 범위 A).
 const SINSAL_YEOKMA_ENABLED = false
+void SINSAL_YEOKMA_ENABLED  // 격리 보존 — v2 전환 전까지 tsc 미사용 경고 억제
+
+// §3 역마(驛馬) v2 활성 플래그 — 손패 전면 교체형. v3 전환으로 비활성화.
+const SINSAL_YEOKMA_V2_ENABLED = false
+void SINSAL_YEOKMA_V2_ENABLED  // v3 전환 — tsc 미사용 경고 억제
+
+// §3 역마(驛馬) v3 "방향타" 활성 플래그 — 콤보 finishingElement 오버라이드형.
+// 시뮬 게이트 전용 (이든 TASKS.md row85 확정 2026-07-21).
+const SINSAL_YEOKMA_V3_ENABLED = true
+
+// 5오행 배열 (역마 v2 오행 필터용)
+const ALL_ELEMENTS: Element[] = ['mok', 'hwa', 'to', 'geum', 'su']
 
 function combinations<T>(arr: T[], k: number): T[][] {
   if (k === 0) return [[]]
@@ -898,6 +910,10 @@ function createDeterministicState(
     // §3 신살 초기화 — 기본 탑재 금지 (forceAcquire.kind='sinsal'로만 주입)
     yeokmaCharges: 0,
     hwagaeApplied: false,
+    // §3 역마 v3 방향타 초기화
+    yeokmaV3Override: undefined,
+    // §3 신살 공용 인프라 — 봇은 forceAcquire 방식 유지, 실게임 인벤토리는 빈 배열
+    sinsalInventory: [],
   }
 }
 
@@ -1041,6 +1057,8 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         // §3 신살: 런 스코프 유지 (층 전환 시 소모량 그대로 유지)
         yeokmaCharges: state.yeokmaCharges ?? 0,
         hwagaeApplied: state.hwagaeApplied ?? false,
+        // §3 역마 v3: 층 전환 시 pending override 소멸
+        yeokmaV3Override: undefined,
       }
     } else {
       state = { ...state, playerHp }
@@ -1139,40 +1157,83 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
       const currentPrimaryEl = state.enemyPhaseSwitch ? baseSub : basePrimary
       const currentSubEl = state.enemyPhaseSwitch ? basePrimary : baseSub
 
-      // §3 역마(驛馬) 발동 판단 — 불리 매치업에서 손패 1장 오행 변환 (봇 정책 §3 확정판)
-      // 조건: yeokmaCharges > 0 AND 현재 손패 최선 상성 ≤ ANTI_GEUK_PENALTY(역극·생 불리)
-      // 정책: 변환 전후 예상 데미지 델타가 최대인 손패·목표 오행 조합 선택
-      if (SINSAL_YEOKMA_ENABLED && (state.yeokmaCharges ?? 0) > 0 && currentPrimaryEl) {
-        // 현재 손패의 최선 상성 배율 계산
-        const bestCurrentMult = state.hand.reduce((best, card) => {
+      // §3 역마(驛馬) v1 폐기 — v2로 대체 (SINSAL_YEOKMA_ENABLED=false 격리 유지)
+      // §3 역마(驛馬) v2 — 손패 전면 교체형 (이든 G10 확정 2026-07-21)
+      // 봇 정책: 역극·생 매치업 && 현 손패 조합 EV 저조 시 fullCapSelectCards 전에 발동
+      if (SINSAL_YEOKMA_V2_ENABLED && (state.yeokmaCharges ?? 0) > 0 && currentPrimaryEl) {
+        // 사용 가능 여부: 손패에 5오행 전부 존재 시 사용 불가
+        const handElements = new Set(state.hand.map(c => c.element))
+        const allFivePresent = ALL_ELEMENTS.every(el => handElements.has(el))
+        if (!allFivePresent && state.hand.length > 0) {
+          // 봇 발동 판단: 현재 손패 최선 상성 배율이 역극·생 이하(불리)이고
+          // 발동 후 개선 가능한 오행이 존재할 때
+          const bestCurrentMult = state.hand.reduce((best, card) => {
+            const m = getAffinityMultiplier(card.element, currentPrimaryEl)
+            return m > best ? m : best
+          }, 0)
+          // 역극(×0.75) 이하 불리 매치업 → 발동 (evalYeokmaTrigger 재사용)
+          if (evalYeokmaTrigger(bestCurrentMult, 1)) {
+            // v2 효과: 손패 전체 버리고 같은 장수만큼 덱 밖 카드 생성
+            // 새 카드 = 발동 시점 손패에 없던 오행에서만 생성
+            const missingElements = ALL_ELEMENTS.filter(el => !handElements.has(el))
+            const handCount = state.hand.length
+            const newHand: Card[] = []
+            for (let ci = 0; ci < handCount; ci++) {
+              // 없던 오행 중 무작위 선택 (rng 사용)
+              const targetEl = missingElements[Math.floor(rng() * missingElements.length)]
+              // 값 2~10 무작위 (왕족 제외)
+              const cardValue = 2 + Math.floor(rng() * 9)  // 2~10
+              const newCard: Card = {
+                id: `yeokma-v2-${floor}-${attackCount}-${ci}-${(rng() * 0xffff | 0).toString(16)}`,
+                element: targetEl,
+                polarity: rng() < 0.5 ? 'yang' : 'yin',
+                value: cardValue,
+                type: 'soldier',
+                rarity: 'common',
+                // royalType 미설정 = 평민 카드 (왕족 제외)
+              }
+              newHand.push(newCard)
+            }
+            state = {
+              ...state,
+              hand: newHand,
+              yeokmaCharges: (state.yeokmaCharges ?? 0) - 1,
+            }
+            yeokmaActivations++
+          }
+        }
+      }
+
+      // §3 역마(驛馬) v3 "방향타" 발동 판단
+      // 조건: yeokmaCharges > 0 AND v3Override 미활성 AND 역극·생 불리 AND 다음 콤보 대형
+      // 봇 정책: 극(克) 오행 지정 → 다음 콤보 1회 finishingElement 강제 전환
+      if (SINSAL_YEOKMA_V3_ENABLED && (state.yeokmaCharges ?? 0) > 0 && !state.yeokmaV3Override && currentPrimaryEl) {
+        const bestCurrentMultV3 = state.hand.reduce((best, card) => {
           const m = getAffinityMultiplier(card.element, currentPrimaryEl)
           return m > best ? m : best
         }, 0)
-        // 불리 판정: 역극(×0.75) 이하 = 상성 불리
-        if (evalYeokmaTrigger(bestCurrentMult, 1)) {
-          // 유리 오행 탐색: currentPrimaryEl을 극하는 오행 (GEUK_MAP[el] === currentPrimaryEl)
-          const favorableEl = (Object.entries(GEUK_MAP) as Array<[Element, Element]>)
-            .find(([, target]) => target === currentPrimaryEl)?.[0]
-          if (favorableEl) {
-            // 최대 EV 델타 조합: 각 손패 카드를 favorableEl로 변환했을 때 delta = after - before
-            let bestDelta = 0
-            let bestTargetCardId: string | null = null
-            for (const card of state.hand) {
-              const before = getAffinityMultiplier(card.element, currentPrimaryEl) * card.value
-              const after = getAffinityMultiplier(favorableEl, currentPrimaryEl) * card.value
-              const delta = after - before
-              if (delta > bestDelta) {
-                bestDelta = delta
-                bestTargetCardId = card.id
-              }
-            }
-            if (bestTargetCardId !== null && bestDelta > 0) {
-              // 손패 1장 오행 변환 적용
+        // 불리 판정: 역극(×0.75) 이하 = 역극·생 불리
+        if (evalYeokmaTrigger(bestCurrentMultV3, 1)) {
+          // 다음 콤보가 대형인지 preview — 현재 손패 최선 5장 기준
+          const previewCards = state.hand.slice(0, Math.min(state.hand.length, 5))
+          const previewCombo = judgeCombo(
+            previewCards,
+            state.recipeMultipliers,
+            undefined,
+            state.gatherUsedInBattle ?? 0,
+          )
+          const isLargeComboV3 =
+            previewCombo.type === 'ohang-yeonhwan' ||
+            previewCombo.type === 'fusion-hone' ||
+            (previewCombo.type === 'gather' && previewCombo.multiplier >= 4.5)
+          if (isLargeComboV3) {
+            // 극 오행 탐색: currentPrimaryEl을 극하는 오행
+            const geukTarget = (Object.entries(GEUK_MAP) as Array<[Element, Element]>)
+              .find(([, target]) => target === currentPrimaryEl)?.[0]
+            if (geukTarget) {
               state = {
                 ...state,
-                hand: state.hand.map(c =>
-                  c.id === bestTargetCardId ? { ...c, element: favorableEl } : c
-                ),
+                yeokmaV3Override: geukTarget,
                 yeokmaCharges: (state.yeokmaCharges ?? 0) - 1,
               }
               yeokmaActivations++
@@ -1679,4 +1740,128 @@ export function evalHwagaeTrigger(
 ): boolean {
   // §3 정밀 조건: 최고값 카드(value === max)에 사용 시 분식 효과 극대화
   return targetCardValue >= handMaxValue
+}
+
+// ─── §3 역마(驛馬) v2 헬퍼 함수 (시뮬 게이트 전용, 이든 G10 확정 2026-07-21) ──────
+
+/**
+ * §3 역마 v2: 손패에서 없는 오행 집합 반환
+ * 5오행 전부 존재 시 빈 배열 반환 → 사용 불가 판정
+ */
+export function getYeokmaV2MissingElements(hand: Card[]): Element[] {
+  const handElements = new Set(hand.map(c => c.element))
+  return ALL_ELEMENTS.filter(el => !handElements.has(el))
+}
+
+/**
+ * §3 역마 v2: 사용 가능 여부 판정
+ * 손패에 5오행 전부 존재 시 false (떠날 곳이 없다)
+ * 손패가 비어있을 때도 false (버릴 카드 없음)
+ */
+export function isYeokmaV2Usable(hand: Card[]): boolean {
+  if (hand.length === 0) return false
+  return getYeokmaV2MissingElements(hand).length > 0
+}
+
+/**
+ * §3 역마 v2: 덱 밖 카드 생성기
+ * 값 2~10 무작위, 왕족(royalType) 제외, 지정 오행
+ * @param element  생성할 오행
+ * @param rng      결정론적 난수 함수
+ * @param idSuffix 카드 ID 고유 접미사
+ */
+export function createYeokmaV2Card(
+  element: Element,
+  rng: () => number,
+  idSuffix: string,
+): Card {
+  const cardValue = 2 + Math.floor(rng() * 9)  // 2~10
+  return {
+    id: `yeokma-v2-${idSuffix}`,
+    element,
+    polarity: rng() < 0.5 ? 'yang' : 'yin',
+    value: cardValue,
+    type: 'soldier' as const,
+    rarity: 'common' as const,
+    // royalType 미설정 = 평민 카드 (왕족 제외)
+  }
+}
+
+/**
+ * §3 역마(驛馬) v2 — 봇 발동 판단 함수 (시뮬 게이트 전용)
+ *
+ * 봇 정책 (이든 G10 확정):
+ *  - 역극·생 매치업 (bestCurrentMult ≤ ANTI_GEUK_PENALTY) → 발동 고려
+ *  - 손패에 5오행 전부 없어야 사용 가능 (isYeokmaV2Usable)
+ *  - 발동 후 없던 오행 카드로 매치업 개선 가능할 때 발동 권장
+ *
+ * @param hand              현재 손패
+ * @param enemyPrimaryEl    적 주 원소
+ * @returns 발동 권장 여부
+ */
+export function evalYeokmaTriggerV2(
+  hand: Card[],
+  enemyPrimaryEl: Element,
+): boolean {
+  if (!isYeokmaV2Usable(hand)) return false
+  const bestCurrentMult = hand.reduce((best, card) => {
+    const m = getAffinityMultiplier(card.element, enemyPrimaryEl)
+    return m > best ? m : best
+  }, 0)
+  // 역극(×0.75) 이하 불리 매치업에서만 발동 (evalYeokmaTrigger 기준 동일)
+  return evalYeokmaTrigger(bestCurrentMult, 1)
+}
+
+// ─── §3 역마(驛馬) v3 "방향타" 전용 헬퍼 ──────────────────────────────────────
+//
+// v3 스펙: 오행 1종 지정 → 다음 콤보 1회 finishingElement 오버라이드.
+// 콤보 구성·배율 불변. 타격 속성(finishingElement)만 전환.
+// v1(낱장 변환)·v2(손패 전면 교체) 폐기. v3는 콤보 완성 후 최종 타격속성만 오버라이드.
+
+/**
+ * §3 역마 v3: 불리 매치업 + 대형 콤보 조건 통합 발동 판단
+ * @param hand 현재 손패
+ * @param enemyEl 적 주 기운
+ * @param comboType 현재 손패 최선 콤보 타입
+ * @param comboMultiplier 현재 손패 최선 콤보 배율
+ */
+export function evalYeokmaV3Trigger(
+  hand: Card[],
+  enemyEl: Element,
+  comboType: string,
+  comboMultiplier: number,
+): boolean {
+  if (hand.length === 0) return false
+  const bestMult = hand.reduce((best, card) => {
+    const m = getAffinityMultiplier(card.element, enemyEl)
+    return m > best ? m : best
+  }, 0)
+  // 불리 판정: 역극(×0.75) 이하
+  if (bestMult > ANTI_GEUK_PENALTY) return false
+  // 대형 콤보 판정
+  if (comboType === 'ohang-yeonhwan') return true
+  if (comboType === 'fusion-hone') return true
+  if (comboType === 'gather' && comboMultiplier >= 4.5) return true  // gather5 이상
+  return false
+}
+
+/**
+ * §3 역마 v3: 적 원소를 극하는 오행 반환 (봇이 지정할 오행).
+ * @param enemyEl 적 주 기운
+ */
+export function getYeokmaV3TargetElement(enemyEl: Element): Element | undefined {
+  return (Object.entries(GEUK_MAP) as Array<[Element, Element]>)
+    .find(([, target]) => target === enemyEl)?.[0]
+}
+
+/**
+ * §3 역마 v3: 다음 콤보가 대형(gather5+·대융합·연환) 인지 확인.
+ * @param comboType 판정된 콤보 타입
+ * @param comboMultiplier 판정된 배율
+ */
+export function isYeokmaV3LargeCombo(comboType: string, comboMultiplier: number): boolean {
+  if (comboType === 'ohang-yeonhwan') return true
+  if (comboType === 'fusion-hone') return true
+  if (comboType === 'gather' && comboMultiplier >= 4.5) return true
+  return false
 }

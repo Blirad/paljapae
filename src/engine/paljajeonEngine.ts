@@ -3,7 +3,7 @@
  * 순수 함수 모듈 — UI 의존 없음
  */
 
-import type { Card, GameState, Element, SavedHeroProfile } from '../types/game'
+import type { Card, GameState, Element, SavedHeroProfile, SinsalId } from '../types/game'
 import {
   judgeHand,
   GEUK_MAP,
@@ -211,6 +211,8 @@ export function createInitialGameState(floorIndex = 0, heroProfile?: SavedHeroPr
     bigyeonCopyUsed: false,
     jeonginUsed: false,
     jeonginBuff: false,
+    // §3 신살 공용 인프라 — 실게임 소지 목록 (빈 배열로 초기화)
+    sinsalInventory: [],
   }
 }
 
@@ -283,7 +285,8 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
   // 기운 모으기: finishingElement = 모으는 기운 (단일 원소)
   // 오행연환: finishingElement = 'mok' (임시 — 모든 기운이 관여, 상성 중립 처리)
   // 다수결 로직 완전 제거
-  const repEl: Element = result.finishingElement
+  // §3 역마 v3 "방향타": yeokmaV3Override 지정 시 타격속성만 오버라이드 (콤보 배율 불변)
+  const repEl: Element = state.yeokmaV3Override ?? result.finishingElement
 
   // 상생상극 매트릭스 적용 (스펙 v2 — 유일한 원소 상성 배율)
   if (floorEnemyEl) {
@@ -996,6 +999,8 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
     bigyeonCopyUsed: newBigyeonCopyUsed,
     jeonginUsed: newJeonginUsed,
     jeonginBuff: newJeonginBuff,
+    // §3 역마 v3 "방향타": 사용 후 즉시 소비 (1콤보 1회)
+    yeokmaV3Override: undefined,
   }
 }
 
@@ -1232,6 +1237,8 @@ export function advanceToNextFloor(state: GameState): GameState {
     bigyeonCopyUsed: false,       // 층마다 리셋
     jeonginUsed: state.jeonginUsed ?? false,  // 런 유지
     jeonginBuff: state.jeonginBuff ?? false,  // 이월 (미소비 시 유지)
+    // §3 신살 공용 인프라 — 소지 목록 런 유지 (층 전환 시 유지)
+    sinsalInventory: state.sinsalInventory ?? [],
   }
 }
 
@@ -1347,6 +1354,10 @@ export type RewardOption =
   | { type: 'upgrade-card'; targetId: string; bonusPct: number }
   | { type: 'remove-card'; targetId: string }
   | { type: 'add-relic'; relic: any }
+  | { type: 'add-sinsal'; sinsalId: SinsalId }
+
+/** 신살 보상 등장 가중치 (카드·가호와 경쟁) */
+export const SINSAL_REWARD_WEIGHT = 0.15  // 신살이 전체 보상 풀의 약 15% 차지 (균등 금지)
 
 export function applyRewardOption(deck: Card[], option: RewardOption): Card[] {
   switch (option.type) {
@@ -1362,7 +1373,93 @@ export function applyRewardOption(deck: Card[], option: RewardOption): Card[] {
       return deck.filter(c => c.id !== option.targetId)
     case 'add-relic':
       return deck  // relics are handled separately in GameState
+    case 'add-sinsal':
+      return deck  // sinsal is handled separately in GameState via acquireSinsal
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §3 신살 공용 인프라 — 실게임 엔진 (2026-07-21)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 신살 소지 상한 */
+export const SINSAL_INVENTORY_MAX = 3
+
+/**
+ * 신살 획득 — 소지 목록에 추가 (상한 3 초과 시 거부)
+ *
+ * @param state     현재 게임 상태
+ * @param sinsalId  획득할 신살 ID
+ * @returns         성공 시 갱신된 GameState, 상한 초과 시 원본 state + { rejected: true } 반킹
+ */
+export function acquireSinsal(
+  state: GameState,
+  sinsalId: SinsalId,
+): { state: GameState; rejected: boolean } {
+  const inventory = state.sinsalInventory ?? []
+  if (inventory.length >= SINSAL_INVENTORY_MAX) {
+    return { state, rejected: true }
+  }
+  return {
+    state: { ...state, sinsalInventory: [...inventory, sinsalId] },
+    rejected: false,
+  }
+}
+
+/**
+ * 신살 사용 — 순수 함수 (공격·버리기와 별개 액션)
+ *
+ * 화개(hwagae) 효과:
+ *   손패 카드 1장 지정(targetCardId) → 값 +3 (런 영구)
+ *   지정 카드에 hwagaeMarked: true 플래그 — 케일 UI 華 마크 렌더링용
+ *   덱 전체 동일 ID 카드에도 동일 갱신 적용 (영속 덱 구조 대응)
+ *
+ * @param state        현재 게임 상태
+ * @param sinsalId     사용할 신살 ID
+ * @param targetCardId 화개 지정 카드 ID (화개 사용 시 필수)
+ * @returns            갱신된 GameState. 사용 불가 조건(미소지/잘못된 대상) 시 원본 반환
+ */
+export function useSinsal(
+  state: GameState,
+  sinsalId: SinsalId,
+  targetCardId?: string,
+): GameState {
+  const inventory = state.sinsalInventory ?? []
+
+  // 소지 여부 확인
+  const idx = inventory.indexOf(sinsalId)
+  if (idx === -1) return state  // 미소지 — 무시
+
+  if (sinsalId === 'hwagae') {
+    if (!targetCardId) return state  // 화개는 targetCardId 필수
+
+    // 손패에서 대상 카드 확인
+    const targetInHand = state.hand.find(c => c.id === targetCardId)
+    const targetInDeck  = state.deck.find(c => c.id === targetCardId)
+    if (!targetInHand && !targetInDeck) return state  // 대상 없음
+
+    // +3 영구 적용 + hwagaeMarked 플래그
+    const applyHwagae = (cards: Card[]) =>
+      cards.map(c =>
+        c.id === targetCardId
+          ? { ...c, value: c.value + 3, hwagaeMarked: true }
+          : c
+      )
+
+    // 소지 목록에서 소비 (1회 사용)
+    const newInventory = [...inventory]
+    newInventory.splice(idx, 1)
+
+    return {
+      ...state,
+      hand: applyHwagae(state.hand),
+      deck: applyHwagae(state.deck),
+      discardPile: applyHwagae(state.discardPile),
+      sinsalInventory: newInventory,
+    }
+  }
+
+  return state  // 미지원 신살 — 무시
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

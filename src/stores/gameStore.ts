@@ -17,7 +17,10 @@ import {
   acquireTalisman,
   applyCondense,
   applyRewardOption,
+  acquireSinsal,
+  useSinsal,
 } from '../engine/paljajeonEngine'
+import type { SinsalId } from '../types/game'
 import { HAND_SIZE, RELIC_DEFS, ROYAL_CARDS, ROYAL_DECK_CAP, createRoyalCard, countRoyalCards } from '../engine/balance'
 import type { RelicId } from '../engine/balance'
 import { judgeHand } from '../engine/pokerHandJudge'
@@ -98,7 +101,7 @@ interface GameStore extends GameState {
   toggleCardSelect: (cardId: string) => void
   playSelectedCards: (effectMode?: boolean) => void
   discardSelectedCards: () => void
-  proceedToNextFloor: (rewardIndex: number, selectedRelicId?: string) => void
+  proceedToNextFloor: (rewardIndex: number, selectedRelicId?: string, selectedSinsalId?: string) => void
   resetGame: () => void
   markFirstHandShown: () => void
   markFirstDiscardShown: () => void
@@ -115,6 +118,8 @@ interface GameStore extends GameState {
   setActivePassiveIds: (ids: string[]) => void
   // T8: 유물 획득 (중복 차단 내장)
   acquireRelic: (relicId: string) => void
+  // §3 신살 사용 액션 — 공격·버리기와 별개 액션
+  useSinsalAction: (sinsalId: SinsalId, targetCardId?: string) => void
 }
 
 const INITIAL_BATTLE_STATS: BattleStats = {
@@ -180,10 +185,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
   },
 
-  proceedToNextFloor: (rewardIndex: number, selectedRelicId?: string) => {
+  proceedToNextFloor: (rewardIndex: number, selectedRelicId?: string, selectedSinsalId?: string) => {
     const state = get()
-    // T8: 보상 유형 확장 — add-relic 포함
-    const REWARD_TYPES = ['add-card', 'upgrade-card', 'remove-card', 'add-relic']
+    // §3 신살 추가: 보상 유형 확장 — add-sinsal 포함
+    const REWARD_TYPES = ['add-card', 'upgrade-card', 'remove-card', 'add-relic', 'add-sinsal']
     const rewardType = REWARD_TYPES[rewardIndex] || 'add-card'
 
     // 현재 덱 수집 (hand + deck + discardPile)
@@ -192,6 +197,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // 보상 유형별 적용
     let updatedDeck = allCurrentCards
     let newRelics = state.relics
+    let updatedSinsalInventory = state.sinsalInventory ?? []
 
     if (rewardType === 'add-card') {
       const newCard = generateRandomCard(allCurrentCards)
@@ -223,6 +229,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
           newRelics = [...state.relics, newRelic]
         }
       }
+    } else if (rewardType === 'add-sinsal' && selectedSinsalId) {
+      // §3 신살 획득 — 상한 3 초과 시 거부 (acquireSinsal 위임)
+      const result = acquireSinsal(state, selectedSinsalId as SinsalId)
+      if (!result.rejected) {
+        updatedSinsalInventory = result.state.sinsalInventory
+      }
     }
 
     // 다음 층으로 진행
@@ -235,9 +247,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
       hand: updatedDeck.slice(0, handSize),
       deck: updatedDeck.slice(handSize),
       relics: newRelics,
+      // §3 신살 인벤토리 — advanceToNextFloor가 state를 유지하지만 보상 획득을 덮어써야 하므로 명시
+      sinsalInventory: updatedSinsalInventory,
       previewResult: null,
       selectedCards: [],
     })
+  },
+
+  // §3 신살 사용 액션 — 공격·버리기와 별개. 화개(hwagae): targetCardId 필수
+  useSinsalAction: (sinsalId: SinsalId, targetCardId?: string) => {
+    const state = get()
+    const nextState = useSinsal(state, sinsalId, targetCardId)
+    set({ ...nextState })
   },
 
   resetGame: () => {

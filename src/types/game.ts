@@ -28,6 +28,7 @@ export interface Card {
   flavorText?: string
   lifesteal?: boolean  // lifesteal: 데미지의 30%를 HP 회복으로 전환
   royalType?: RoyalType  // 배치 2 §2: 왕(양간) / 여왕(음간). 평민=undefined
+  hwagaeMarked?: boolean  // 화개(華蓋) 각인 — 케일 UI에서 華 마크 렌더링용
 }
 
 export type HandRank =
@@ -160,8 +161,15 @@ export interface GameState {
   pyeongwanActivationsThisTurn?: number    // 배치 2 §1: 편관 이번 턴 발동 횟수 (최대 1, 턴당 1회 제한)
   // §3 신살(驛馬·華蓋) 상태 — 보상 3택으로 획득, 기본 탑재 금지
   yeokmaCharges?: number    // 역마 남은 발동 횟수 (런 스코프, 초기 3회)
-  hwagaeApplied?: boolean   // 화개 부여 여부 (런 영구, 최고값 카드에 1회 부여)
+  hwagaeApplied?: boolean   // 화개 부여 여부 (런 영구, 최고값 카드에 1회 부여) [fullCapBot 호환 유지]
+  // §3 역마 v3 "방향타" — 다음 콤보 1회 finishingElement 오버라이드 (시뮬 게이트 전용)
+  yeokmaV3Override?: Element  // undefined = 비활성, Element = 다음 콤보 타격속성 강제 지정
+  // §3 신살 공용 인프라 — 실게임 엔진 (2026-07-21)
+  sinsalInventory: SinsalId[]  // 소지 신살 목록 (상한 3, 초과 획득 거부)
 }
+
+/** 신살 ID 유니온 (현재: 화개만. 역마는 v2 게이트 후 추가) */
+export type SinsalId = 'hwagae'
 
 export type FortuneLevel = 'daegil' | 'gil' | 'pyeong' | 'hyung' | 'daehyung'
 

@@ -296,6 +296,7 @@ function createDeterministicState(floorIndex: number, rng: () => number): GameSt
     bigyeonCopyUsed: false,
     jeonginUsed: false,
     jeonginBuff: false,
+    sinsalInventory: [],
   }
 }
 

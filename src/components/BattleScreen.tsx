@@ -1,28 +1,4 @@
-/**
- * 팔자전 — (6) 전투 화면
- * 4층 출정, 1층 turn-based
- * 핸드 8장 중 1~5장 출수
- *
- * VFX 구현:
- *  - Score Popup (Section 5, line 87): 300ms, stagger 150ms, 위로 부유+페이드
- *  - Chain Glow (Section 5, line 88): 180ms/카드, 오방색 SVG 라인
- *  - Screen Shake (Section 5, line 90): 250ms, 4~12px 피해 비례
- *  - Elemental Sequence (Section 5, line 91): 2500ms 3단계 시퀀스
- *  - Speed Toggle (Section 5, line 93): 1x/2x — getCssDuration/getDuration
- *
- * G1 종합 수정 11건 (2026-07-09):
- *  A1: 용어 한글화 — 조합/기운잇기/같은기운모으기/음양짝/공격력/죽은기운/공격
- *  A2: 순환 바 상시 표시 — 나무→불→흙→쇠→물→나무, 탭하면 반화면 오버레이
- *  A3: 관계 시각화 — 초록 연결선(상생), 붉은 화살표(상극)
- *  A4: 훈수 버튼 — 최강 조합 1.5초 하이라이트
- *  A5: 첫 판 가이드 — localStorage 플래그, 3스텝, 스킵 버튼
- *  B6: 횟수 압박 — 남은 공격 중앙 상단 크게, 줄어들 때 펄스, 마지막 테두리 경고
- *  B7: 예측 표시 — "이 속도면 N번 더 필요" / "다음 한 방으로 끝!"
- *  B8: 피격 체감 — shake + 붉은 플래시 + 피격음
- *  B9: 결과의 근거 — 승리/패배 구체 수치
- *  C10: 적 연출 4종 — 돌진/선언배너/입장연출/기믹 실제 적용
- *  D11: 영웅 실루엣 + 조합 발동 시퀀스
- */
+/** 팔자전 전투화면 — 신살 A~E2 포함 */
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useGameStore } from '../stores/gameStore'
@@ -46,20 +22,7 @@ import RecipeNavigator from './RecipeNavigator'
 import YongsinDescentBanner from './YongsinDescentBanner'
 import { getDevComboRuleset, getDevDescentEnabled } from '../engine/devSettings'
 
-// 레시피 ID → 한글명 (발주서 2-c 정본 명명)
-// 낳는(연료): 숲·샘·광맥·옹기가마·들불 / 벼리는(촉매): 벼림·개간·제방·담금질·주물
-const RECIPE_KO_NAMES: Record<string, string> = {
-  fusion_forest:   '숲',
-  fusion_spring:   '샘',
-  fusion_mine:     '광맥',
-  fusion_kiln:     '옹기가마',
-  fusion_wildfire: '들불',
-  fusion_keen:     '벼림',
-  fusion_harvest:  '개간',
-  fusion_pierce:   '제방',
-  fusion_snipe:    '담금질',
-  fusion_temper:   '주물',
-}
+const RECIPE_KO_NAMES: Record<string, string> = { fusion_forest:'숲', fusion_spring:'샘', fusion_mine:'광맥', fusion_kiln:'옹기가마', fusion_wildfire:'들불', fusion_keen:'벼림', fusion_harvest:'개간', fusion_pierce:'제방', fusion_snipe:'담금질', fusion_temper:'주물' }
 
 /** recipe ID → 한글명 변환 (v3 모드 이름은 그대로 통과) */
 function resolveComboKoName(comboName: string): string {
@@ -75,23 +38,9 @@ const ELEMENT_COLORS: Record<string, string> = {
   mok: '#4A9B6E', hwa: '#C63D2F', to: '#D9A441', geum: '#C8C0B0', su: '#3D5A80',
 }
 
-// 오방색 글로우 (Section 1-2)
-const ELEMENT_GLOW_COLORS: Record<string, string> = {
-  mok: '#7BD4A3',
-  hwa: '#FF7A5C',
-  to: '#FFD98A',
-  geum: '#E8E3D5',
-  su: '#8FB8DE',
-}
+const ELEMENT_GLOW_COLORS: Record<string, string> = { mok: '#7BD4A3', hwa: '#FF7A5C', to: '#FFD98A', geum: '#E8E3D5', su: '#8FB8DE' }
 
-// 오방색 배경 (적 속성 뱃지용)
-const ELEMENT_BG_COLORS: Record<string, string> = {
-  mok: 'rgba(74,155,110,0.25)',
-  hwa: 'rgba(198,61,47,0.25)',
-  to: 'rgba(217,164,65,0.25)',
-  geum: 'rgba(200,192,176,0.25)',
-  su: 'rgba(61,90,128,0.25)',
-}
+const ELEMENT_BG_COLORS: Record<string, string> = { mok: 'rgba(74,155,110,0.25)', hwa: 'rgba(198,61,47,0.25)', to: 'rgba(217,164,65,0.25)', geum: 'rgba(200,192,176,0.25)', su: 'rgba(61,90,128,0.25)' }
 
 // 오행 상극: A가 B를 극한다
 const GEUK_MAP: Record<Element, Element> = {
@@ -173,30 +122,23 @@ type AffinityResult = 'geuk' | 'saeng' | 'anti-geuk' | 'yikseang' | 'donggi' | '
 
 /** 대표 원소(A)와 적 원소(B)의 상성 판정 */
 function calcAffinity(repEl: Element, enemyEl: Element): AffinityResult {
-  if (GEUK_MAP[repEl] === enemyEl) return 'geuk'        // 내가 적을 극
-  if (SANG_MAP[repEl] === enemyEl) return 'saeng'       // 내가 적을 생
-  if (GEUK_MAP[enemyEl] === repEl) return 'anti-geuk'   // 적이 나를 극
-  if (YIKSEANG_MAP[repEl] === enemyEl) return 'yikseang' // 역생: 적이 나를 생 → 연료를 삼킨다
-  if (repEl === enemyEl) return 'donggi'                 // 동기: 같은 기운은 스며든다
+  if (GEUK_MAP[repEl] === enemyEl) return 'geuk'
+  if (SANG_MAP[repEl] === enemyEl) return 'saeng'
+  if (GEUK_MAP[enemyEl] === repEl) return 'anti-geuk'
+  if (YIKSEANG_MAP[repEl] === enemyEl) return 'yikseang'
+  if (repEl === enemyEl) return 'donggi'
   return 'neutral'
 }
-
-/** 상성 배율 (balance.ts 값만 참조 — 소스 오브 트루스) */
 function getAffinityMultiplier(affinity: AffinityResult): number {
   switch (affinity) {
-    case 'geuk':      return GEUK_BONUS_MULTIPLIER    // ×1.7
-    case 'saeng':     return SANG_PENALTY_MULTIPLIER  // ×0.5
-    case 'anti-geuk': return ANTI_GEUK_PENALTY        // ×0.75
-    case 'yikseang':  return YIKSEANG_MULT            // ×1.0
-    case 'donggi':    return DONGGI_MULTIPLIER        // ×0.85
-    default:          return 1.0
+    case 'geuk': return GEUK_BONUS_MULTIPLIER
+    case 'saeng': return SANG_PENALTY_MULTIPLIER
+    case 'anti-geuk': return ANTI_GEUK_PENALTY
+    case 'yikseang': return YIKSEANG_MULT
+    case 'donggi': return DONGGI_MULTIPLIER
+    default: return 1.0
   }
 }
-
-/**
- * T18: 융합 조합명 → 특성 1줄 미리보기 텍스트
- * 형식: "특성명 — 효과 설명"
- */
 function getFusionTraitLine(comboName: string): string | undefined {
   const traitId = FUSION_TRAIT_MAP[comboName]
   if (!traitId) return undefined
@@ -1339,7 +1281,11 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     useJeungpok,
     applyCondenseAction,
     setActivePassiveIds,
+    sinsalInventory,
+    useSinsalAction,
   } = useGameStore()
+  // sinsalInventory 안전 기본값
+  const _sinsalInv = sinsalInventory ?? []
 
   const { getCssDuration, getDuration, playbackSpeed, togglePlaybackSpeed } = useGameContext()
 
@@ -1434,6 +1380,16 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
   // §3-c G2: 버리기 후 임시 교체 안내 메시지
   const [discardNoticeMsg, setDiscardNoticeMsg] = useState<string | null>(null)
   const discardNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // 신살 — 화개 지정 플로우 상태
+  const [isHwagaeMode, setIsHwagaeMode] = useState(false)
+  const [hwagaeTargetId, setHwagaeTargetId] = useState<string | null>(null)
+  const [hwagaeAnimating, setHwagaeAnimating] = useState(false)
+  const [hwagaePopupCardId, setHwagaePopupCardId] = useState<string | null>(null)
+  const [hwagaeBannerPhase, setHwagaeBannerPhase] = useState<'idle' | 'confirm' | 'done'>('idle')
+  const hwagaeAnimTimerRef = useRef<ReturnType<typeof setTimeout>[]>([])
+  const [sinsalTooltipCardIdx, setSinsalTooltipCardIdx] = useState<number | null>(null)
+  const sinsalTooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // §3-b G2: 드로우 하이라이트 (근접 레시피 부족 원소 카드 1초 강조)
   const [highlightCardIds, setHighlightCardIds] = useState<string[]>([])
@@ -2320,6 +2276,66 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     discardSelectedCards()
   }, [selectedCards, discardsLeft, discardSelectedCards, currentFloor, enemyPhaseSwitch, getDuration])
 
+  // 신살 — 화개 플로우 핸들러
+  const hasHwagae = (sinsalInventory ?? []).includes('hwagae')
+
+  const handleSinsalUseButton = useCallback(() => {
+    if (!hasHwagae || isHwagaeMode) return
+    if (hand.length === 0) {
+      showBanner('손패가 없다 — 화개를 쓸 카드가 없다')
+      return
+    }
+    setIsHwagaeMode(true)
+    setHwagaeTargetId(null)
+    setHwagaeBannerPhase('confirm')
+  }, [hasHwagae, isHwagaeMode, hand.length, showBanner])
+
+  const handleHwagaeCardSelect = useCallback((cardId: string) => {
+    if (!isHwagaeMode) return
+    setHwagaeTargetId(prev => prev === cardId ? null : cardId)
+  }, [isHwagaeMode])
+
+  const handleHwagaeCancel = useCallback(() => {
+    setIsHwagaeMode(false)
+    setHwagaeTargetId(null)
+    setHwagaeBannerPhase('idle')
+    hwagaeAnimTimerRef.current.forEach(t => clearTimeout(t))
+    hwagaeAnimTimerRef.current = []
+  }, [])
+
+  const handleHwagaeConfirm = useCallback(() => {
+    if (!hwagaeTargetId || !isHwagaeMode) return
+    const targetId = hwagaeTargetId
+
+    // 0ms: 華 도장 등장 (hwagaeAnimating = true)
+    setHwagaeAnimating(true)
+    setHwagaePopupCardId(null)
+
+    const t1 = setTimeout(() => {
+      // 200ms: "+3" 팝업
+      setHwagaePopupCardId(targetId)
+    }, 200)
+    const t2 = setTimeout(() => {
+      // 400ms: 배너 전환 "화개가 문양을 새겼다"
+      setHwagaeBannerPhase('done')
+    }, 400)
+    const t3 = setTimeout(() => {
+      // 600ms: 연출 종료, 엔진 액션 실행
+      setHwagaeAnimating(false)
+      setHwagaePopupCardId(null)
+      setIsHwagaeMode(false)
+      setHwagaeTargetId(null)
+      useSinsalAction('hwagae', targetId)
+    }, 600)
+    const t4 = setTimeout(() => {
+      // 1600ms: 배너 소멸
+      setHwagaeBannerPhase('idle')
+    }, 1600)
+
+    hwagaeAnimTimerRef.current.forEach(c => clearTimeout(c))
+    hwagaeAnimTimerRef.current = [t1, t2, t3, t4]
+  }, [hwagaeTargetId, isHwagaeMode, useSinsalAction])
+
   const enemyHpPercent = Math.max(0, (enemyHp / enemyMaxHp) * 100)
   const playerHpPercent = Math.max(0, (playerHp / playerMaxHp) * 100)
 
@@ -2397,9 +2413,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
   void primaryEl
 
   const bonusPct = Math.round((GEUK_BONUS_MULTIPLIER - 1) * 100)
-  void bonusPct
-  void hasGeukOnEnemy
-  void geukAttacker
+  void bonusPct; void hasGeukOnEnemy; void geukAttacker
 
   // G1 수정 #6 — 배경 격자: 4층은 붉은 격자
   const isBossFloor = currentFloor === 4
@@ -3058,6 +3072,34 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
               册
             </button>
           </div>
+        </div>
+
+        {/* 신살 슬롯 행 (A) — 상한 3, 채움/빈 구분 */}
+        <div style={{ padding: '4px 16px', backgroundColor: '#1A1512', borderBottom: '1px solid #2A2620', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ color: '#6A6560', fontSize: '10px', letterSpacing: '0.08em', flexShrink: 0 }}>신살</span>
+          {[0, 1, 2].map(i => {
+            const sid = _sinsalInv[i]
+            const filled = !!sid
+            return (
+              <div key={i} style={{ width: '28px', height: '28px', border: filled ? '1px solid #D9A441' : '1px dashed #4A4540', backgroundColor: filled ? 'rgba(40,30,8,0.7)' : 'transparent', borderRadius: '2px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: filled ? 'pointer' : 'default', position: 'relative' }}
+                onClick={() => { if (filled) { setSinsalTooltipCardIdx(p => p === i ? null : i); if (sinsalTooltipTimerRef.current) clearTimeout(sinsalTooltipTimerRef.current); sinsalTooltipTimerRef.current = setTimeout(() => setSinsalTooltipCardIdx(null), 2000) } }}
+              >
+                {filled ? (
+                  <>
+                    <span style={{ color: '#D9A441', fontSize: '12px', fontWeight: 'bold', lineHeight: 1 }}>華</span>
+                    <span style={{ color: '#D9A441', fontSize: '7px', opacity: 0.8, lineHeight: 1 }}>개</span>
+                    {sinsalTooltipCardIdx === i && (
+                      <div style={{ position: 'absolute', top: '32px', left: '0', backgroundColor: 'rgba(22,19,15,0.97)', border: '1px solid #D9A441', color: '#D8CCB4', fontSize: '11px', padding: '6px 10px', borderRadius: '2px', whiteSpace: 'nowrap', zIndex: 80, pointerEvents: 'none' }}>
+                        화개(華蓋) — 카드 1장을 지정해 힘을 영구히 +3 깊어지게 한다
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: '#4A4540' }} />
+                )}
+              </div>
+            )
+          })}
         </div>
 
         {/* 적 영역 (24vh) */}
@@ -3793,7 +3835,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
         })()}
 
         {/* G1 수정 #4 — 인라인 안내 배너 (핸드 위) */}
-        <InlineBanner message={bannerMessage} visible={bannerVisible} getCssDuration={getCssDuration} />
+        {isHwagaeMode && hwagaeBannerPhase !== 'idle' ? (<div style={{ backgroundColor: 'rgba(40,30,8,0.95)', borderLeft: '2px solid #D9A441', borderRight: '2px solid #D9A441', color: '#D9A441', fontSize: '13px', padding: '8px 16px', letterSpacing: '0.06em', textAlign: 'center', animation: `inlineBannerIn ${getCssDuration(300)} ease-out forwards`, pointerEvents: 'none' }}>{hwagaeBannerPhase === 'done' ? '화개가 문양을 새겼다 — 이 카드의 힘이 영구히 깊어진다' : '화개가 카드에 문양을 새길 준비를 한다 — 강화할 카드를 고르라'}</div>) : (<InlineBanner message={bannerMessage} visible={bannerVisible} getCssDuration={getCssDuration} />)}
 
         {/* 핸드 + 부적 슬롯 (가로 배치) */}
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
@@ -3995,7 +4037,10 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
               <button
                 key={card.id}
                 draggable={!isBlockedByDiversity}
-                onClick={() => !isDraggingThis && !isBlockedByDiversity && handleCardSelect(card.id)}
+                onClick={() => {
+                  if (isHwagaeMode) { handleHwagaeCardSelect(card.id); return }
+                  if (!isDraggingThis && !isBlockedByDiversity) handleCardSelect(card.id)
+                }}
                 onDragStart={() => !isBlockedByDiversity && handleDragStart(card.id)}
                 onDragOver={e => { e.preventDefault(); handleDragOver(card.id, hand) }}
                 onDrop={() => {
@@ -4022,7 +4067,9 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                   height: h,
                   // Phase 1.9.3: 기세 죽음 카드 배경색 유지 (#E8DCC4) — 카드면 색상 변경 금지
                   backgroundColor: '#E8DCC4',
-                  border: isHinted
+                  border: isHwagaeMode && hwagaeTargetId === card.id
+                    ? `2px solid #D9A441`
+                    : isHinted
                     ? `2px solid #D9A441`
                     : isYeonhwanCandidate && !isSelected
                     ? `2px solid #FFD98A`
@@ -4042,7 +4089,9 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                   transition: isRejectAnim
                     ? `transform 0.1s ease-out`
                     : `transform ${getCssDuration(120)} ease-out, border-color ${getCssDuration(120)} ease-out, box-shadow 200ms ease-out`,
-                  boxShadow: isHinted
+                  boxShadow: isHwagaeMode && hwagaeTargetId === card.id
+                    ? `0 0 10px rgba(217,164,65,0.6)`
+                    : isHinted
                     ? `0 0 12px #D9A441`
                     : highlightCardIds.includes(card.id)
                     ? `0 0 0 2px ${ELEMENT_GLOW_COLORS[card.element]}, 0 0 8px ${ELEMENT_GLOW_COLORS[card.element]}`  // §3-b: 드로우 하이라이트 1초
@@ -4181,6 +4230,48 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
                     {card.royalType === 'king' ? '王' : '后'}
                   </span>
                 )}
+                {/* E: 화개(華蓋) 각인 도장 — 우하단 20×20 (hwagaeMarked 시 항시 표시) */}
+                {(card.hwagaeMarked === true || (hwagaeAnimating && hwagaeTargetId === card.id)) && (
+                  <div style={{
+                    position: 'absolute',
+                    bottom: '4px',
+                    right: '4px',
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '50%',
+                    background: 'radial-gradient(circle at 35% 35%, #FFD98A, #D9A441, #A07820)',
+                    border: '1px solid rgba(217,164,65,0.9)',
+                    boxShadow: '0 0 4px rgba(217,164,65,0.7), inset 0 1px 2px rgba(255,240,150,0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 3,
+                    animation: hwagaeAnimating && hwagaeTargetId === card.id
+                      ? `fadeInScale ${getCssDuration(200)} ease-out forwards, sealShimmer 2s ease-in-out 0.2s infinite`
+                      : 'sealShimmer 2s ease-in-out infinite',
+                  }}>
+                    <span style={{ color: '#FFFDF7', fontSize: '8px', fontWeight: 'bold' }}>華</span>
+                  </div>
+                )}
+                {/* E: 화개 발동 시 +3 팝업 (scorePop 재활용) */}
+                {hwagaePopupCardId === card.id && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '-8px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    color: '#D9A441',
+                    fontSize: '18px',
+                    fontWeight: 'bold',
+                    textShadow: '0 0 8px rgba(217,164,65,0.8)',
+                    animation: `scorePop ${getCssDuration(400)} ease-out forwards`,
+                    pointerEvents: 'none',
+                    zIndex: 10,
+                    whiteSpace: 'nowrap',
+                  }}>
+                    +3
+                  </div>
+                )}
                 {/* A-1 Phase 1.9: 죽은 기운 카드 剋 표시 제거 (리본으로 대체됨) */}
                 {/* Phase 1.9.5: 그을음 폐지 (단일 특성 전면 폐지) */}
                 {/* Phase 1.8: 역극 툴팁 팝업 */}
@@ -4312,18 +4403,18 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           )}
           <button
             onClick={handleDiscardCards}
-            disabled={selectedCards.length === 0 || discardsLeft <= 0 || isInputLocked}
+            disabled={selectedCards.length === 0 || discardsLeft <= 0 || isInputLocked || isHwagaeMode}
             style={{
               flex: 1,
               height: '48px',
               backgroundColor: 'transparent',
               border: '1px solid #4A4540',
-              color: discardsLeft <= 0 ? '#4A4540' : '#D8CCB4',
+              color: discardsLeft <= 0 || isHwagaeMode ? '#4A4540' : '#D8CCB4',
               fontSize: '14px',
               cursor: selectedCards.length === 0 || discardsLeft <= 0 || isInputLocked ? 'not-allowed' : 'pointer',
-              opacity: discardsLeft <= 0 || isInputLocked ? 0.4 : 1,
+              opacity: discardsLeft <= 0 || isInputLocked || isHwagaeMode ? 0.4 : 1,
               letterSpacing: '0.1em',
-              pointerEvents: isInputLocked ? 'none' : undefined,
+              pointerEvents: isInputLocked || isHwagaeMode ? 'none' : undefined,
             }}
           >
             버리기 (공격과 별개 · 남은 {discardsLeft}회)
@@ -4341,6 +4432,35 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
               </div>
             )}
           </button>
+          {/* B: 신살 사용 버튼 — 리라 스펙 §B (flex: 0.8, 버리기와 공격 사이) */}
+          {(() => {
+            const sinsalActive = hasHwagae && !isHwagaeMode && !isInputLocked
+            const sinsalLabel = hasHwagae ? '신살\n사용' : '신살\n없음'
+            return (
+              <button
+                onClick={sinsalActive ? handleSinsalUseButton : undefined}
+                disabled={!sinsalActive}
+                style={{
+                  flex: 0.8,
+                  height: '48px',
+                  backgroundColor: sinsalActive ? 'rgba(40,30,8,0.9)' : 'transparent',
+                  border: `1px solid ${sinsalActive ? '#D9A441' : '#4A4540'}`,
+                  color: sinsalActive ? '#D9A441' : '#4A4540',
+                  fontSize: '13px',
+                  letterSpacing: '0.1em',
+                  cursor: sinsalActive ? 'pointer' : 'not-allowed',
+                  borderRadius: '2px',
+                  opacity: sinsalActive ? 1 : 0.4,
+                  lineHeight: 1.3,
+                  whiteSpace: 'pre-line',
+                  flexShrink: 0,
+                  pointerEvents: !sinsalActive ? 'none' : undefined,
+                }}
+              >
+                {sinsalLabel}
+              </button>
+            )
+          })()}
           {/* B1-1: 양자택일 + Phase 1.9.2: 토 타격 조합 선택 시 2분할 */}
           {(() => {
             const selectedComboResult = selectedCardObjs.length >= 2
@@ -4350,7 +4470,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
             const condenseAvail = selectedComboResult
               ? getCondenseAvailability(selectedComboResult.name ?? '', selectedComboResult.finishingElement)
               : null
-            const canAttack = selectedCards.length > 0 && playsLeft > 0 && !isInputLocked
+            const canAttack = selectedCards.length > 0 && playsLeft > 0 && !isInputLocked && !isHwagaeMode
 
             // B1-1: 양자택일 효과 미리보기 (fusion 10쌍 전체)
             const getEffectPreview = (): string => {
@@ -4589,6 +4709,55 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
             }
             return null
           })()}
+          {/* C: 화개 지정 모드 — 취소/각인확정 오버레이 버튼 행 */}
+          {isHwagaeMode && (
+            <div style={{
+              position: 'absolute',
+              inset: '8px 16px',
+              display: 'flex',
+              gap: '8px',
+              alignItems: 'center',
+              backgroundColor: '#16130F',
+              zIndex: 20,
+            }}>
+              <button
+                onClick={handleHwagaeCancel}
+                style={{
+                  flex: 1,
+                  height: '48px',
+                  backgroundColor: 'transparent',
+                  border: '1px solid #4A4540',
+                  color: '#D8CCB4',
+                  fontSize: '14px',
+                  letterSpacing: '0.1em',
+                  cursor: 'pointer',
+                  borderRadius: '2px',
+                }}
+              >
+                취소
+              </button>
+              <button
+                onClick={hwagaeTargetId ? handleHwagaeConfirm : undefined}
+                disabled={!hwagaeTargetId}
+                style={{
+                  flex: 2,
+                  height: '48px',
+                  backgroundColor: hwagaeTargetId ? '#D9A441' : '#2A2620',
+                  border: 'none',
+                  color: hwagaeTargetId ? '#16130F' : '#E8DCC4',
+                  fontSize: '14px',
+                  fontWeight: hwagaeTargetId ? 'bold' : 'normal',
+                  letterSpacing: '0.06em',
+                  cursor: hwagaeTargetId ? 'pointer' : 'not-allowed',
+                  borderRadius: '2px',
+                  opacity: hwagaeTargetId ? 1 : 0.4,
+                  pointerEvents: hwagaeTargetId ? undefined : 'none',
+                }}
+              >
+                {hwagaeTargetId ? '화개 각인 — 값 +3 영구' : '각인 확정'}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* T8: 유물 아이콘 바 — 보유 유물 표시 */}
