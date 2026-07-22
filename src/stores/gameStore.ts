@@ -21,6 +21,7 @@ import {
   useSinsal,
   equipSlot,
   unequipSlot,
+  seedCommonSlots,
 } from '../engine/paljajeonEngine'
 import type { SinsalId } from '../types/game'
 import { HAND_SIZE, RELIC_DEFS, ROYAL_CARDS, ROYAL_DECK_CAP, createRoyalCard, countRoyalCards } from '../engine/balance'
@@ -99,7 +100,8 @@ interface GameStore extends GameState {
   battleStats: BattleStats
 
   // 액션
-  startGame: () => void
+  // 통합 슬롯 개편 1단계: seedTalismanIds(선택 십성 가호 ID) 전달 시 common tier 슬롯 선점.
+  startGame: (seedTalismanIds?: string[]) => void
   toggleCardSelect: (cardId: string) => void
   playSelectedCards: (effectMode?: boolean) => void
   discardSelectedCards: () => void
@@ -146,9 +148,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // B9: 전투 통계 초기값
   battleStats: { ...INITIAL_BATTLE_STATS },
 
-  startGame: () => {
+  startGame: (seedTalismanIds?: string[]) => {
     const hp = loadHeroProfileForStore()
-    set({ ...createInitialGameState(0, hp), previewResult: null, hasShownFirstHand: false, hasShownFirstDiscard: false, hasShownFirstAffinity: false, battleStats: { ...INITIAL_BATTLE_STATS } })
+    // 통합 슬롯 개편 1단계: 선택 십성 가호를 common tier로 슬롯 선점 ("타고남" 물화)
+    let initial = createInitialGameState(0, hp)
+    if (seedTalismanIds && seedTalismanIds.length > 0) {
+      initial = seedCommonSlots(initial, seedTalismanIds)
+    }
+    set({ ...initial, previewResult: null, hasShownFirstHand: false, hasShownFirstDiscard: false, hasShownFirstAffinity: false, battleStats: { ...INITIAL_BATTLE_STATS } })
   },
 
   toggleCardSelect: (cardId: string) => {

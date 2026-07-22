@@ -154,7 +154,8 @@ export default function App() {
   const handlePreBattleComplete = useCallback((passives: Passive[]) => {
     setSelectedPassives(passives)
     // Phase 1.8: "오늘의 패" 중간 화면 폐기 — PreBattle 완료 후 바로 전투 진입
-    startGame()
+    // 통합 슬롯 개편 1단계: 선택 십성 가호 id를 common tier로 슬롯 선점 주입
+    startGame(passives.map(p => p.id))
     setScreen('battle')
   }, [startGame])
 
