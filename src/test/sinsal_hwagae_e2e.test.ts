@@ -17,6 +17,7 @@ import {
   useSinsal,
   advanceToNextFloor,
   SINSAL_INVENTORY_MAX,
+  MAX_SLOTS,
 } from '../engine/paljajeonEngine'
 import { evalHwagaeTrigger } from '../engine/fullCapBot'
 import type { Card, GameState } from '../types/game'
@@ -43,40 +44,43 @@ function makeCard(id: string, value: number): Card {
 // 1. 획득 → 소지 경로
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('신살 획득 → 소지', () => {
-  it('화개 acquireSinsal: 빈 인벤토리에 hwagae 획득 시 sinsalInventory에 적재', () => {
+describe('신살 획득 → 통합 슬롯(rare) 장착', () => {
+  it('화개 acquireSinsal: 빈 통합 슬롯에 hwagae 획득 시 rare tier로 장착 + 레거시 sinsalInventory 파생', () => {
     const state = makeState()
     expect(state.sinsalInventory).toEqual([])
+    expect(state.unifiedSlots).toEqual([])
 
     const result = acquireSinsal(state, 'hwagae')
     expect(result.rejected).toBe(false)
+    // 통합 슬롯에 rare tier로 장착
+    expect(result.state.unifiedSlots).toEqual([{ tier: 'rare', cardId: 'hwagae' }])
+    // 레거시 파생 필드 동기화
     expect(result.state.sinsalInventory).toEqual(['hwagae'])
   })
 
-  it('소지 상한 3 — 정확히 3개까지 허용', () => {
+  it('통합 상한 5 — 신살 별도 상한3 폐지, 통합 5칸까지 허용', () => {
     let state = makeState()
-    let result = acquireSinsal(state, 'hwagae')
-    state = result.state
-    result = acquireSinsal(state, 'hwagae')
-    state = result.state
-    result = acquireSinsal(state, 'hwagae')
-    state = result.state
-
-    expect(state.sinsalInventory.length).toBe(3)
-    expect(result.rejected).toBe(false)
+    for (let i = 0; i < 5; i++) {
+      const result = acquireSinsal(state, 'hwagae')
+      state = result.state
+      expect(result.rejected).toBe(false)
+    }
+    expect(state.unifiedSlots.length).toBe(5)
+    expect(state.sinsalInventory.length).toBe(5)  // 통합 5칸이 유일 상한 (구 상한3 폐지)
   })
 
-  it('소지 상한 초과 거부 — 4번째 획득 시 rejected=true, 인벤토리 불변', () => {
-    let state = makeState({ sinsalInventory: ['hwagae', 'hwagae', 'hwagae'] })
+  it('통합 5칸 full 초과 거부 — 6번째 획득 시 rejected=true, 슬롯 불변', () => {
+    const fullSlots = Array.from({ length: 5 }, () => ({ tier: 'rare' as const, cardId: 'hwagae' }))
+    const state = makeState({ unifiedSlots: fullSlots })
     const result = acquireSinsal(state, 'hwagae')
 
     expect(result.rejected).toBe(true)
-    expect(result.state.sinsalInventory).toEqual(['hwagae', 'hwagae', 'hwagae'])
-    expect(result.state.sinsalInventory.length).toBe(SINSAL_INVENTORY_MAX)
+    expect(result.state.unifiedSlots.length).toBe(MAX_SLOTS)
   })
 
-  it('상한 SINSAL_INVENTORY_MAX = 3', () => {
-    expect(SINSAL_INVENTORY_MAX).toBe(3)
+  it('통합 슬롯 상한 MAX_SLOTS = 5 (구 SINSAL_INVENTORY_MAX=3은 레거시 상수로 보존)', () => {
+    expect(MAX_SLOTS).toBe(5)
+    expect(SINSAL_INVENTORY_MAX).toBe(3)  // 레거시 상수 보존 (동작에는 미사용)
   })
 })
 
@@ -89,7 +93,7 @@ describe('화개 사용 — 값 +3 효과', () => {
     const card = makeCard('c1', 6)
     const state = makeState({
       hand: [card, makeCard('c2', 4)],
-      sinsalInventory: ['hwagae'],
+      unifiedSlots: [{ tier: 'rare', cardId: 'hwagae' }],
     })
 
     const next = useSinsal(state, 'hwagae', 'c1')
@@ -101,7 +105,7 @@ describe('화개 사용 — 값 +3 효과', () => {
     const card = makeCard('c1', 6)
     const state = makeState({
       hand: [card],
-      sinsalInventory: ['hwagae'],
+      unifiedSlots: [{ tier: 'rare', cardId: 'hwagae' }],
     })
 
     const next = useSinsal(state, 'hwagae', 'c1')
@@ -122,7 +126,7 @@ describe('화개 사용 — 값 +3 효과', () => {
   it('useSinsal: targetCardId 미전달 시 원본 반환', () => {
     const state = makeState({
       hand: [makeCard('c1', 6)],
-      sinsalInventory: ['hwagae'],
+      unifiedSlots: [{ tier: 'rare', cardId: 'hwagae' }],
     })
 
     const next = useSinsal(state, 'hwagae', undefined)
@@ -134,7 +138,7 @@ describe('화개 사용 — 값 +3 효과', () => {
     const state = makeState({
       hand: [],
       deck: [card, makeCard('c2', 4)],
-      sinsalInventory: ['hwagae'],
+      unifiedSlots: [{ tier: 'rare', cardId: 'hwagae' }],
     })
 
     const next = useSinsal(state, 'hwagae', 'c1')
@@ -152,7 +156,7 @@ describe('화개 각인 플래그 (hwagaeMarked)', () => {
     const card = makeCard('c1', 6)
     const state = makeState({
       hand: [card],
-      sinsalInventory: ['hwagae'],
+      unifiedSlots: [{ tier: 'rare', cardId: 'hwagae' }],
     })
 
     const next = useSinsal(state, 'hwagae', 'c1')
@@ -165,7 +169,7 @@ describe('화개 각인 플래그 (hwagaeMarked)', () => {
     const c2 = makeCard('c2', 4)
     const state = makeState({
       hand: [c1, c2],
-      sinsalInventory: ['hwagae'],
+      unifiedSlots: [{ tier: 'rare', cardId: 'hwagae' }],
     })
 
     const next = useSinsal(state, 'hwagae', 'c1')
@@ -178,7 +182,7 @@ describe('화개 각인 플래그 (hwagaeMarked)', () => {
     const state = makeState({
       hand: [],
       deck: [card],
-      sinsalInventory: ['hwagae'],
+      unifiedSlots: [{ tier: 'rare', cardId: 'hwagae' }],
     })
 
     const next = useSinsal(state, 'hwagae', 'c1')
@@ -200,7 +204,7 @@ describe('화개 효과 지속 — 층 전환 후 유지', () => {
       hand: [card, ...others.slice(0, 4)],
       deck: [...others.slice(4)],
       currentFloor: 1,
-      sinsalInventory: ['hwagae'],
+      unifiedSlots: [{ tier: 'rare', cardId: 'hwagae' }],
     })
 
     // 화개 사용: c1에 +3
@@ -225,7 +229,7 @@ describe('화개 효과 지속 — 층 전환 후 유지', () => {
       hand: [card, ...others.slice(0, 4)],
       deck: [...others.slice(4)],
       currentFloor: 1,
-      sinsalInventory: ['hwagae'],
+      unifiedSlots: [{ tier: 'rare', cardId: 'hwagae' }],
     })
 
     const afterUse = useSinsal(state, 'hwagae', 'c1')
@@ -242,7 +246,7 @@ describe('화개 효과 지속 — 층 전환 후 유지', () => {
       hand: [...others.slice(0, 5)],
       deck: [...others.slice(5)],
       currentFloor: 1,
-      sinsalInventory: ['hwagae'],
+      unifiedSlots: [{ tier: 'rare', cardId: 'hwagae' }],
     })
 
     // 화개 미사용 상태로 층 전환
@@ -277,7 +281,7 @@ describe('evalHwagaeTrigger 정합 — 실게임 효과와 동일 규칙', () =>
     const lowCard = makeCard('c-low', 4)
     const state = makeState({
       hand: [highCard, lowCard],
-      sinsalInventory: ['hwagae'],
+      unifiedSlots: [{ tier: 'rare', cardId: 'hwagae' }],
     })
 
     // 봇이 권장하는 카드 (최고값)

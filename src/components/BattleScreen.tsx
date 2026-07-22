@@ -1282,10 +1282,13 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     applyCondenseAction,
     setActivePassiveIds,
     sinsalInventory,
+    unifiedSlots,
     useSinsalAction,
   } = useGameStore()
-  // sinsalInventory 안전 기본값
-  const _sinsalInv = sinsalInventory ?? []
+  // sinsalInventory — 레거시 호환 (직접 렌더 금지, unifiedSlots가 정본)
+  void sinsalInventory  // 미사용 경고 방지 (레거시 필드 보존)
+  // 통합 슬롯 정본 (없으면 빈 배열)
+  const _unifiedSlots = unifiedSlots ?? []
 
   const { getCssDuration, getDuration, playbackSpeed, togglePlaybackSpeed } = useGameContext()
 
@@ -1388,8 +1391,9 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
   const [hwagaePopupCardId, setHwagaePopupCardId] = useState<string | null>(null)
   const [hwagaeBannerPhase, setHwagaeBannerPhase] = useState<'idle' | 'confirm' | 'done'>('idle')
   const hwagaeAnimTimerRef = useRef<ReturnType<typeof setTimeout>[]>([])
-  const [sinsalTooltipCardIdx, setSinsalTooltipCardIdx] = useState<number | null>(null)
-  const sinsalTooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // 통합 슬롯 1단계: 신살 툴팁 상태 (레거시 신살 슬롯 행 폐지 — 변수 보존 후 미사용 처리)
+  // const [sinsalTooltipCardIdx, setSinsalTooltipCardIdx] = useState<number | null>(null)
+  // const sinsalTooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // §3-b G2: 드로우 하이라이트 (근접 레시피 부족 원소 카드 1초 강조)
   const [highlightCardIds, setHighlightCardIds] = useState<string[]>([])
@@ -2277,7 +2281,8 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
   }, [selectedCards, discardsLeft, discardSelectedCards, currentFloor, enemyPhaseSwitch, getDuration])
 
   // 신살 — 화개 플로우 핸들러
-  const hasHwagae = (sinsalInventory ?? []).includes('hwagae')
+  // 통합 슬롯 정본 기준으로 화개 소지 여부 확인 (rare tier cardId='hwagae')
+  const hasHwagae = _unifiedSlots.some(s => s.tier === 'rare' && s.cardId === 'hwagae')
 
   const handleSinsalUseButton = useCallback(() => {
     if (!hasHwagae || isHwagaeMode) return
@@ -3074,33 +3079,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           </div>
         </div>
 
-        {/* 신살 슬롯 행 (A) — 상한 3, 채움/빈 구분 */}
-        <div style={{ padding: '4px 16px', backgroundColor: '#1A1512', borderBottom: '1px solid #2A2620', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ color: '#6A6560', fontSize: '10px', letterSpacing: '0.08em', flexShrink: 0 }}>신살</span>
-          {[0, 1, 2].map(i => {
-            const sid = _sinsalInv[i]
-            const filled = !!sid
-            return (
-              <div key={i} style={{ width: '28px', height: '28px', border: filled ? '1px solid #D9A441' : '1px dashed #4A4540', backgroundColor: filled ? 'rgba(40,30,8,0.7)' : 'transparent', borderRadius: '2px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: filled ? 'pointer' : 'default', position: 'relative' }}
-                onClick={() => { if (filled) { setSinsalTooltipCardIdx(p => p === i ? null : i); if (sinsalTooltipTimerRef.current) clearTimeout(sinsalTooltipTimerRef.current); sinsalTooltipTimerRef.current = setTimeout(() => setSinsalTooltipCardIdx(null), 2000) } }}
-              >
-                {filled ? (
-                  <>
-                    <span style={{ color: '#D9A441', fontSize: '12px', fontWeight: 'bold', lineHeight: 1 }}>華</span>
-                    <span style={{ color: '#D9A441', fontSize: '7px', opacity: 0.8, lineHeight: 1 }}>개</span>
-                    {sinsalTooltipCardIdx === i && (
-                      <div style={{ position: 'absolute', top: '32px', left: '0', backgroundColor: 'rgba(22,19,15,0.97)', border: '1px solid #D9A441', color: '#D8CCB4', fontSize: '11px', padding: '6px 10px', borderRadius: '2px', whiteSpace: 'nowrap', zIndex: 80, pointerEvents: 'none' }}>
-                        화개(華蓋) — 카드 1장을 지정해 힘을 영구히 +3 깊어지게 한다
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: '#4A4540' }} />
-                )}
-              </div>
-            )
-          })}
-        </div>
+        {/* 통합 슬롯 개편 1단계: 신살 슬롯 행 폐지 → PassiveSlot 하단 통합 슬롯으로 이관 */}
 
         {/* 적 영역 (24vh) */}
         <div
@@ -4799,10 +4778,19 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           </div>
         )}
 
-        {/* 패시브 슬롯 (3-A: 실제 카드로 표시) */}
+        {/* 통합 슬롯 (1단계 개편: unifiedSlots 정본. 전투 중=발동버튼, 전투 밖=해제 불가) */}
         <PassiveSlot
           passives={passives}
           flashCardId={activationState.flashCardId}
+          unifiedSlots={_unifiedSlots}
+          isEquipPhase={false}
+          isInBattle={phase === 'select' || phase === 'play' || phase === 'enemy' || phase === 'draw'}
+          onActivateSinsal={(sinsalId) => {
+            // 신살 발동 버튼 — 화개만 현재 지원. 화개 모드 진입.
+            if (sinsalId === 'hwagae') {
+              handleSinsalUseButton()
+            }
+          }}
         />
       </div>
     </>

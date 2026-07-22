@@ -19,6 +19,8 @@ import {
   applyRewardOption,
   acquireSinsal,
   useSinsal,
+  equipSlot,
+  unequipSlot,
 } from '../engine/paljajeonEngine'
 import type { SinsalId } from '../types/game'
 import { HAND_SIZE, RELIC_DEFS, ROYAL_CARDS, ROYAL_DECK_CAP, createRoyalCard, countRoyalCards } from '../engine/balance'
@@ -101,7 +103,7 @@ interface GameStore extends GameState {
   toggleCardSelect: (cardId: string) => void
   playSelectedCards: (effectMode?: boolean) => void
   discardSelectedCards: () => void
-  proceedToNextFloor: (rewardIndex: number, selectedRelicId?: string, selectedSinsalId?: string) => void
+  proceedToNextFloor: (rewardIndex: number, selectedRelicId?: string, selectedSinsalId?: string, replaceSlotIndex?: number) => void
   resetGame: () => void
   markFirstHandShown: () => void
   markFirstDiscardShown: () => void
@@ -120,6 +122,8 @@ interface GameStore extends GameState {
   acquireRelic: (relicId: string) => void
   // §3 신살 사용 액션 — 공격·버리기와 별개 액션
   useSinsalAction: (sinsalId: SinsalId, targetCardId?: string) => void
+  // 통합 슬롯 개편 1단계: 슬롯 해제(소멸) — 전투 밖에서만
+  unequipSlotAction: (index: number) => void
 }
 
 const INITIAL_BATTLE_STATS: BattleStats = {
@@ -185,7 +189,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
   },
 
-  proceedToNextFloor: (rewardIndex: number, selectedRelicId?: string, selectedSinsalId?: string) => {
+  proceedToNextFloor: (rewardIndex: number, selectedRelicId?: string, selectedSinsalId?: string, replaceSlotIndex?: number) => {
     const state = get()
     // §3 신살 추가: 보상 유형 확장 — add-sinsal 포함
     const REWARD_TYPES = ['add-card', 'upgrade-card', 'remove-card', 'add-relic', 'add-sinsal']
@@ -198,6 +202,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     let updatedDeck = allCurrentCards
     let newRelics = state.relics
     let updatedSinsalInventory = state.sinsalInventory ?? []
+    // 통합 슬롯 개편 1단계 — 신살 획득 시 통합 슬롯(rare) 반영
+    let updatedUnifiedSlots = state.unifiedSlots ?? []
 
     if (rewardType === 'add-card') {
       const newCard = generateRandomCard(allCurrentCards)
@@ -230,15 +236,30 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       }
     } else if (rewardType === 'add-sinsal' && selectedSinsalId) {
-      // §3 신살 획득 — 상한 3 초과 시 거부 (acquireSinsal 위임)
-      const result = acquireSinsal(state, selectedSinsalId as SinsalId)
-      if (!result.rejected) {
-        updatedSinsalInventory = result.state.sinsalInventory
+      // §3 신살 획득 — 통합 슬롯(rare) 장착
+      // full 상태 + replaceSlotIndex 있으면: equipSlot 교체 경로 (기존 칸 소멸)
+      // 빈 칸 있으면: acquireSinsal 단순 추가 경로
+      const slots = state.unifiedSlots ?? []
+      if (slots.length >= 5 && replaceSlotIndex !== undefined) {
+        // floor-reward phase이므로 equipSlot이 허용됨
+        const { state: nextState } = equipSlot(
+          { ...state, phase: 'floor-reward' },
+          { tier: 'rare', cardId: selectedSinsalId },
+          replaceSlotIndex,
+        )
+        updatedSinsalInventory = nextState.sinsalInventory
+        updatedUnifiedSlots = nextState.unifiedSlots
+      } else {
+        const result = acquireSinsal(state, selectedSinsalId as SinsalId)
+        if (!result.rejected) {
+          updatedSinsalInventory = result.state.sinsalInventory
+          updatedUnifiedSlots = result.state.unifiedSlots
+        }
       }
     }
 
-    // 다음 층으로 진행
-    const newState = advanceToNextFloor(state)
+    // 다음 층으로 진행 (통합 슬롯 반영 후 advance — advanceToNextFloor가 슬롯 런 유지)
+    const newState = advanceToNextFloor({ ...state, unifiedSlots: updatedUnifiedSlots })
 
     // 적용된 덱 설정 (분배는 advanceToNextFloor 이후)
     const handSize = Math.min(HAND_SIZE, updatedDeck.length)
@@ -247,8 +268,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       hand: updatedDeck.slice(0, handSize),
       deck: updatedDeck.slice(handSize),
       relics: newRelics,
-      // §3 신살 인벤토리 — advanceToNextFloor가 state를 유지하지만 보상 획득을 덮어써야 하므로 명시
-      sinsalInventory: updatedSinsalInventory,
+      // 통합 슬롯 개편 1단계 — 통합 슬롯이 정본. advanceToNextFloor가 슬롯에서 sinsalInventory 파생.
+      unifiedSlots: newState.unifiedSlots,
+      sinsalInventory: newState.sinsalInventory ?? updatedSinsalInventory,
       previewResult: null,
       selectedCards: [],
     })
@@ -259,6 +281,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const state = get()
     const nextState = useSinsal(state, sinsalId, targetCardId)
     set({ ...nextState })
+  },
+
+  // 통합 슬롯 개편 1단계: 슬롯 해제(소멸) — 전투 밖(floor-reward/result)에서만
+  unequipSlotAction: (index: number) => {
+    const state = get()
+    const { state: nextState, rejected } = unequipSlot(state, index)
+    if (!rejected) {
+      set({ ...nextState })
+    }
   },
 
   resetGame: () => {

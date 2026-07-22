@@ -115,9 +115,11 @@ export default function App() {
     floorsCleared,
     relics,
     sinsalInventory,
+    unifiedSlots,
     rngState,
     startGame,
     proceedToNextFloor,
+    unequipSlotAction,
   } = useGameStore()
 
   // 마운트 시 localStorage 체크
@@ -174,8 +176,8 @@ export default function App() {
     setScreen('result')
   }, [])
 
-  const handleFloorRewardProceed = useCallback((rewardIndex: number, selectedRelicId?: string, selectedSinsalId?: string) => {
-    proceedToNextFloor(rewardIndex, selectedRelicId, selectedSinsalId)
+  const handleFloorRewardProceed = useCallback((rewardIndex: number, selectedRelicId?: string, selectedSinsalId?: string, replaceSlotIndex?: number) => {
+    proceedToNextFloor(rewardIndex, selectedRelicId, selectedSinsalId, replaceSlotIndex)
     setScreen('battle')
   }, [proceedToNextFloor])
 
@@ -234,9 +236,11 @@ export default function App() {
         <FloorRewardScreen
           currentFloor={currentFloor}
           currentRelicIds={relics.map(r => r.id)}
+          currentUnifiedSlots={unifiedSlots}
           currentSinsalInventory={sinsalInventory}
           runSeed={rngState}
           onProceed={handleFloorRewardProceed}
+          onUnequipSlot={unequipSlotAction}
         />
       )}
       {screen === 'result' && (

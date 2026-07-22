@@ -3,7 +3,7 @@
  * 순수 함수 모듈 — UI 의존 없음
  */
 
-import type { Card, GameState, Element, SavedHeroProfile, SinsalId } from '../types/game'
+import type { Card, GameState, Element, SavedHeroProfile, SinsalId, UnifiedSlot } from '../types/game'
 import {
   judgeHand,
   GEUK_MAP,
@@ -211,9 +211,27 @@ export function createInitialGameState(floorIndex = 0, heroProfile?: SavedHeroPr
     bigyeonCopyUsed: false,
     jeonginUsed: false,
     jeonginBuff: false,
-    // §3 신살 공용 인프라 — 실게임 소지 목록 (빈 배열로 초기화)
+    // §3 신살 공용 인프라 — 실게임 소지 목록 (빈 배열로 초기화, 통합 슬롯에서 파생)
     sinsalInventory: [],
+    // 통합 슬롯 개편 1단계 — 5칸 단일 슬롯 (빈 배열로 초기화, 십성 선점은 seedCommonSlots로 주입)
+    unifiedSlots: [],
   }
+}
+
+/**
+ * 통합 슬롯 개편 1단계 — 시작 시 십성 가호 선점.
+ * selectTalismanBySaju(fullCapBot) 결과 1~2개를 tier='common'으로 통합 슬롯에 선점 장착한다.
+ * "타고남 vs 얻음"의 긴장을 슬롯 구성에 물화 (사주 게임 철학).
+ *
+ * @param state       초기 게임 상태 (createInitialGameState 결과)
+ * @param talismanIds 선점할 십성 가호 ID 목록 (selectTalismanBySaju 결과, 상위 MAX_SLOTS까지)
+ * @returns           십성이 common tier로 선점된 GameState (레거시 필드 동기화)
+ */
+export function seedCommonSlots(state: GameState, talismanIds: string[]): GameState {
+  const seeded: UnifiedSlot[] = talismanIds
+    .slice(0, MAX_SLOTS)
+    .map(id => ({ tier: 'common' as const, cardId: id }))
+  return syncLegacySlotFields({ ...state, unifiedSlots: seeded })
 }
 
 /** 역극 여부 판단: 플레이어 카드들이 적 오행에 의해 극 당하면 역극 */
@@ -1256,8 +1274,10 @@ export function advanceToNextFloor(state: GameState): GameState {
     bigyeonCopyUsed: false,       // 층마다 리셋
     jeonginUsed: state.jeonginUsed ?? false,  // 런 유지
     jeonginBuff: state.jeonginBuff ?? false,  // 이월 (미소비 시 유지)
-    // §3 신살 공용 인프라 — 소지 목록 런 유지 (층 전환 시 유지)
-    sinsalInventory: state.sinsalInventory ?? [],
+    // 통합 슬롯 개편 1단계 — 런 유지 (층 전환해도 슬롯 구성 보존)
+    unifiedSlots: state.unifiedSlots ?? [],
+    // §3 신살 공용 인프라 — 통합 슬롯 rare tier에서 파생 (레거시 호환)
+    sinsalInventory: deriveSinsalInventory(state.unifiedSlots ?? []),
   }
 }
 
@@ -1409,26 +1429,130 @@ export function applyRewardOption(deck: Card[], option: RewardOption): Card[] {
 // §3 신살 공용 인프라 — 실게임 엔진 (2026-07-21)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 신살 소지 상한 */
+/**
+ * 신살 소지 상한 (레거시 — 통합 슬롯 개편 1단계에서 폐지됨).
+ * 통합 5칸(MAX_SLOTS)이 유일 상한. 하위 호환/기존 테스트 참조용으로 상수만 보존.
+ */
 export const SINSAL_INVENTORY_MAX = 3
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 통합 슬롯 개편 1단계 — 5칸 단일 슬롯 엔진 API (2026-07-22)
+//   가호(common) + 신살(rare) + 운성패(legendary, 2단계 예약)가 5칸을 경쟁.
+//   장착/해제는 전투 밖(층 보상 화면)에서만. 해제=소멸(보관함 없음).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 통합 슬롯 상한 = 5 (유일 상한. 6장 금지 — 변경 금지) */
+export const MAX_SLOTS = 5
+
+/** 슬롯이 장착/해제 가능한 전투 밖 phase (층 보상 화면) */
+export const EQUIP_ALLOWED_PHASES: ReadonlyArray<GameState['phase']> = ['floor-reward', 'result']
+
+/** 전투 밖(장착/해제 허용) 여부 판정 */
+export function isEquipPhase(state: GameState): boolean {
+  return EQUIP_ALLOWED_PHASES.includes(state.phase)
+}
+
+/** 통합 슬롯 → 가호(common) ID 목록 파생 (activePassiveIds 레거시 호환) */
+export function deriveActivePassiveIds(slots: UnifiedSlot[]): string[] {
+  return slots.filter(s => s.tier === 'common').map(s => s.cardId)
+}
+
+/** 통합 슬롯 → 신살(rare) ID 목록 파생 (sinsalInventory 레거시 호환) */
+export function deriveSinsalInventory(slots: UnifiedSlot[]): SinsalId[] {
+  return slots.filter(s => s.tier === 'rare').map(s => s.cardId as SinsalId)
+}
+
 /**
- * 신살 획득 — 소지 목록에 추가 (상한 3 초과 시 거부)
+ * 레거시 필드(activePassiveIds/sinsalInventory)를 통합 슬롯에서 재파생하여 동기화.
+ * 통합 슬롯이 정본 — 슬롯 변경 후 항상 호출해 파생 필드 일관성 유지.
+ */
+export function syncLegacySlotFields(state: GameState): GameState {
+  const slots = state.unifiedSlots ?? []
+  return {
+    ...state,
+    activePassiveIds: deriveActivePassiveIds(slots),
+    sinsalInventory: deriveSinsalInventory(slots),
+  }
+}
+
+/**
+ * 통합 슬롯 장착 — 전투 밖에서만. 5칸 full 시 replaceIndex로 교체(해제=소멸).
+ *
+ * @param state         현재 게임 상태
+ * @param slot          장착할 통합 슬롯 엔트리 { tier, cardId }
+ * @param replaceIndex  (선택) full일 때 교체할 기존 슬롯 인덱스 — 해당 칸 소멸 후 장착
+ * @returns             { state, rejected, reason }. 거부 시 원본 state 반환.
+ */
+export function equipSlot(
+  state: GameState,
+  slot: UnifiedSlot,
+  replaceIndex?: number,
+): { state: GameState; rejected: boolean; reason?: string } {
+  // 전투 중 장착 거부
+  if (!isEquipPhase(state)) {
+    return { state, rejected: true, reason: 'combat-locked' }
+  }
+  const slots = state.unifiedSlots ?? []
+
+  if (slots.length >= MAX_SLOTS) {
+    // full — 교체 경로: replaceIndex 필수
+    if (replaceIndex === undefined || replaceIndex < 0 || replaceIndex >= slots.length) {
+      return { state, rejected: true, reason: 'full-no-replace-index' }
+    }
+    // 기존 칸 해제(소멸) → 신규 장착
+    const next = slots.map((s, i) => (i === replaceIndex ? slot : s))
+    return { state: syncLegacySlotFields({ ...state, unifiedSlots: next }), rejected: false }
+  }
+
+  // 빈 칸 존재 — 단순 추가
+  return {
+    state: syncLegacySlotFields({ ...state, unifiedSlots: [...slots, slot] }),
+    rejected: false,
+  }
+}
+
+/**
+ * 통합 슬롯 해제 — 전투 밖에서만. **해제 = 소멸**(보관함 없음, 잔존 0).
+ *
+ * @param state  현재 게임 상태
+ * @param index  해제할 슬롯 인덱스
+ * @returns      { state, rejected, reason }. 거부 시 원본 state 반환.
+ */
+export function unequipSlot(
+  state: GameState,
+  index: number,
+): { state: GameState; rejected: boolean; reason?: string } {
+  if (!isEquipPhase(state)) {
+    return { state, rejected: true, reason: 'combat-locked' }
+  }
+  const slots = state.unifiedSlots ?? []
+  if (index < 0 || index >= slots.length) {
+    return { state, rejected: true, reason: 'index-out-of-range' }
+  }
+  // 소멸 — 해당 칸 제거, 잔존 어디에도 남기지 않음
+  const next = slots.filter((_, i) => i !== index)
+  return { state: syncLegacySlotFields({ ...state, unifiedSlots: next }), rejected: false }
+}
+
+/**
+ * 신살 획득 — 통합 슬롯 rare tier로 장착 (레거시 acquireSinsal 시그니처 승계).
+ * 상한 폐지: 통합 5칸(MAX_SLOTS)이 유일 상한. 5칸 full 시 rejected=true.
  *
  * @param state     현재 게임 상태
  * @param sinsalId  획득할 신살 ID
- * @returns         성공 시 갱신된 GameState, 상한 초과 시 원본 state + { rejected: true } 반킹
+ * @returns         성공 시 갱신된 GameState, 5칸 full 시 원본 state + { rejected: true }
  */
 export function acquireSinsal(
   state: GameState,
   sinsalId: SinsalId,
 ): { state: GameState; rejected: boolean } {
-  const inventory = state.sinsalInventory ?? []
-  if (inventory.length >= SINSAL_INVENTORY_MAX) {
+  const slots = state.unifiedSlots ?? []
+  if (slots.length >= MAX_SLOTS) {
     return { state, rejected: true }
   }
+  const next = [...slots, { tier: 'rare' as const, cardId: sinsalId }]
   return {
-    state: { ...state, sinsalInventory: [...inventory, sinsalId] },
+    state: syncLegacySlotFields({ ...state, unifiedSlots: next }),
     rejected: false,
   }
 }
@@ -1451,11 +1575,13 @@ export function useSinsal(
   sinsalId: SinsalId,
   targetCardId?: string,
 ): GameState {
-  const inventory = state.sinsalInventory ?? []
+  // 통합 슬롯 개편 1단계: 소지 배열이 아니라 통합 슬롯(rare tier)에서 발동·비움.
+  // 발동 흐름·효과 수치는 완전 불변 — 소비 대상만 인벤토리 → 통합 슬롯으로 이관.
+  const slots = state.unifiedSlots ?? []
 
-  // 소지 여부 확인
-  const idx = inventory.indexOf(sinsalId)
-  if (idx === -1) return state  // 미소지 — 무시
+  // rare tier에서 해당 신살 슬롯 인덱스 확인
+  const slotIdx = slots.findIndex(s => s.tier === 'rare' && s.cardId === sinsalId)
+  if (slotIdx === -1) return state  // 미소지(미장착) — 무시
 
   if (sinsalId === 'hwagae') {
     if (!targetCardId) return state  // 화개는 targetCardId 필수
@@ -1465,7 +1591,7 @@ export function useSinsal(
     const targetInDeck  = state.deck.find(c => c.id === targetCardId)
     if (!targetInHand && !targetInDeck) return state  // 대상 없음
 
-    // +3 영구 적용 + hwagaeMarked 플래그
+    // +3 영구 적용 + hwagaeMarked 플래그 (효과·수치 완전 불변)
     const applyHwagae = (cards: Card[]) =>
       cards.map(c =>
         c.id === targetCardId
@@ -1473,17 +1599,16 @@ export function useSinsal(
           : c
       )
 
-    // 소지 목록에서 소비 (1회 사용)
-    const newInventory = [...inventory]
-    newInventory.splice(idx, 1)
+    // 통합 슬롯에서 소비 — 발동한 rare 칸을 비움(제거). 1회 소비.
+    const newSlots = slots.filter((_, i) => i !== slotIdx)
 
-    return {
+    return syncLegacySlotFields({
       ...state,
       hand: applyHwagae(state.hand),
       deck: applyHwagae(state.deck),
       discardPile: applyHwagae(state.discardPile),
-      sinsalInventory: newInventory,
-    }
+      unifiedSlots: newSlots,
+    })
   }
 
   return state  // 미지원 신살 — 무시

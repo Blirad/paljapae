@@ -21,6 +21,7 @@ import {
   getCondenseAvailability,
   applyRewardOption,
   initYongsinDescent,
+  MAX_SLOTS,
 } from './paljajeonEngine'
 import type { RewardOption } from './paljajeonEngine'
 import { generateSajuDeck } from './deckGenerator'
@@ -914,6 +915,8 @@ function createDeterministicState(
     yeokmaV3Override: undefined,
     // §3 신살 공용 인프라 — 봇은 forceAcquire 방식 유지, 실게임 인벤토리는 빈 배열
     sinsalInventory: [],
+    // 통합 슬롯 개편 1단계 — 시작 시 십성 가호 선점(common tier). 봇은 activePassiveIds를 통합 슬롯으로 선점.
+    unifiedSlots: (opts?.activePassiveIds ?? []).slice(0, MAX_SLOTS).map(id => ({ tier: 'common' as const, cardId: id })),
   }
 }
 
@@ -1740,6 +1743,59 @@ export function evalHwagaeTrigger(
 ): boolean {
   // §3 정밀 조건: 최고값 카드(value === max)에 사용 시 분식 효과 극대화
   return targetCardValue >= handMaxValue
+}
+
+// ─── 통합 슬롯 개편 1단계: 봇 슬롯 교체 EV (T33 문법 확장) ──────────────────────
+//
+// T33 슬롯 EV 문법(fullCapBot:398-423, 가호 지향 가중)을 통합 5칸 tier 판정으로 확장.
+// 5칸 full 상태에서 신규 획득 시 "어떤 tier를 남기고 자를지" EV 판정.
+// 운성패(legendary) 효과·먹이 가중은 2단계 — 여기선 tier 우선순위만 (구조 확장).
+
+/**
+ * 슬롯 tier 기본 EV 우선순위 (높을수록 보존 가치 큼).
+ *  - legendary(운성패): 런 방향을 바꾸는 전설 — 최우선 보존 (2단계에서 먹이 가중 추가)
+ *  - rare(신살): 발동형 액티브 — 1회성이나 강력, 중간 보존
+ *  - common(가호): 십성 패시브 — 조건부 자동 발동, 가장 흔함
+ * (수치는 T33 정신 승계 — 과가중 금지, 최소 계수로 tier 서열만 성립)
+ */
+export const SLOT_TIER_EV_PRIORITY: Record<'common' | 'rare' | 'legendary', number> = {
+  common: 1.0,
+  rare: 1.5,
+  legendary: 3.0,
+}
+
+/**
+ * 통합 5칸 슬롯 교체 EV — full 상태에서 신규 슬롯 획득 시 자를 슬롯 인덱스 판정.
+ *
+ * T33 문법 확장: 각 슬롯의 tier EV를 비교해 "가장 자를만한(EV 최소)" 슬롯을 교체 대상으로.
+ * 동률 시 앞선 인덱스(먼저 장착된 것) 유지 — 안정성.
+ * 신규 슬롯의 tier EV가 현 최저 슬롯 EV보다 크지 않으면 교체 비권장(reject).
+ *
+ * @param currentTiers 현재 5칸 슬롯의 tier 배열
+ * @param incomingTier 신규 획득 슬롯의 tier
+ * @returns { replaceIndex, recommend } — recommend=false면 신규를 버리는 게 EV 우위
+ */
+export function evalSlotReplacementEV(
+  currentTiers: Array<'common' | 'rare' | 'legendary'>,
+  incomingTier: 'common' | 'rare' | 'legendary',
+): { replaceIndex: number; recommend: boolean } {
+  if (currentTiers.length < MAX_SLOTS) {
+    // full 아님 — 빈 칸에 그냥 장착 (교체 불필요)
+    return { replaceIndex: currentTiers.length, recommend: true }
+  }
+  // 최저 EV 슬롯 탐색 (동률 시 앞선 인덱스 = 먼저 발견된 최저값 유지 → 뒤쪽 우선 교체)
+  let minIdx = 0
+  let minEv = SLOT_TIER_EV_PRIORITY[currentTiers[0]]
+  for (let i = 1; i < currentTiers.length; i++) {
+    const ev = SLOT_TIER_EV_PRIORITY[currentTiers[i]]
+    if (ev < minEv) {
+      minEv = ev
+      minIdx = i
+    }
+  }
+  // 신규 tier EV가 최저 슬롯 EV를 초과할 때만 교체 권장 (동률·이하면 신규 폐기 우위)
+  const incomingEv = SLOT_TIER_EV_PRIORITY[incomingTier]
+  return { replaceIndex: minIdx, recommend: incomingEv > minEv }
 }
 
 // ─── §3 역마(驛馬) v2 헬퍼 함수 (시뮬 게이트 전용, 이든 G10 확정 2026-07-21) ──────

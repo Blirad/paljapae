@@ -6,7 +6,7 @@
  * sipsong 코드 기존 명칭 유지 + 신규: pyeongwan/jeonggwan/jeongin
  */
 
-export type PassiveRarity = 'common' | 'rare' | 'hero'
+export type PassiveRarity = 'common' | 'rare' | 'hero' | 'legendary'
 
 export interface Passive {
   id: string
@@ -94,23 +94,42 @@ export const PASSIVE_POOL: Passive[] = [
   },
 ]
 
-/** 등급별 색상 */
+/** 등급별 색상 (이름/등급 텍스트) */
 export const PASSIVE_RARITY_COLORS: Record<PassiveRarity, string> = {
-  common: '#D8CCB4',
-  rare:   '#4A9B6E',
-  hero:   '#D9A441',
+  common:    '#D8CCB4',
+  rare:      '#A8B4C0',
+  hero:      '#D9A441',
+  legendary: '#C9A227',
 }
 
 /** 등급별 테두리 색상 */
 export const PASSIVE_RARITY_BORDER: Record<PassiveRarity, string> = {
-  common: '#4A4540',
-  rare:   '#3A7A55',
-  hero:   '#B38A30',
+  common:    '#4A4540',
+  rare:      '#A8B4C0',
+  hero:      '#B38A30',
+  legendary: '#C9A227',
+}
+
+/** 등급별 테두리 두께 */
+export const PASSIVE_RARITY_BORDER_WIDTH: Record<PassiveRarity, string> = {
+  common:    '1px',
+  rare:      '2px',
+  hero:      '1px',
+  legendary: '2px',
+}
+
+/** 등급별 box-shadow (글로우) */
+export const PASSIVE_RARITY_SHADOW: Record<PassiveRarity, string> = {
+  common:    'none',
+  rare:      '0 0 6px 1px rgba(168,180,192,0.35)',
+  hero:      'none',
+  legendary: '0 0 8px 2px rgba(201,162,39,0.45)',
 }
 
 /** 등급 표시 이름 */
 export const PASSIVE_RARITY_LABEL: Record<PassiveRarity, string> = {
-  common: '일반',
-  rare:   '희귀',
-  hero:   '영웅',
+  common:    '일반',
+  rare:      '희귀',
+  hero:      '영웅',
+  legendary: '전설',
 }

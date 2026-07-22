@@ -165,11 +165,37 @@ export interface GameState {
   // §3 역마 v3 "방향타" — 다음 콤보 1회 finishingElement 오버라이드 (시뮬 게이트 전용)
   yeokmaV3Override?: Element  // undefined = 비활성, Element = 다음 콤보 타격속성 강제 지정
   // §3 신살 공용 인프라 — 실게임 엔진 (2026-07-21)
-  sinsalInventory: SinsalId[]  // 소지 신살 목록 (상한 3, 초과 획득 거부)
+  sinsalInventory: SinsalId[]  // 소지 신살 목록 (레거시 — 통합 슬롯 rare tier에서 파생. 하위 호환 유지)
+  // ── 통합 슬롯 개편 1단계 (2026-07-22) ──
+  // 가호(activePassiveIds 상한없음) + 신살(sinsalInventory 상한3)을 5칸 단일 슬롯으로 병합.
+  // 통합 슬롯이 정본. activePassiveIds/sinsalInventory는 파생 getter(deriveActivePassiveIds/deriveSinsalInventory)로 유지.
+  unifiedSlots: UnifiedSlot[]  // 5칸 고정 (MAX_SLOTS). tier=common(가호)/rare(신살)/legendary(운성패 예약)
 }
 
 /** 신살 ID 유니온 (현재: 화개만. 역마는 v2 게이트 후 추가) */
 export type SinsalId = 'hwagae'
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 통합 슬롯 개편 1단계 — 3층 위계 데이터 모델 (2026-07-22)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 슬롯 3층 위계 (Balatro형 통합 슬롯 경쟁).
+ *  - common    : 가호(십성) 패시브 — 조건 충족 시 자동 발동
+ *  - rare      : 신살 장착형 액티브 — 슬롯 점유, 발동 시 슬롯 비움 (화개 승계)
+ *  - legendary : 운성패 성장형 패시브 — 2단계 구현 (1단계는 자리 예약만)
+ */
+export type SlotTier = 'common' | 'rare' | 'legendary'
+
+/**
+ * 통합 슬롯 단일 엔트리.
+ *  - tier : 3층 위계
+ *  - cardId : 층별 식별자 (common=가호 십성 ID / rare=신살 ID / legendary=운성패 ID)
+ */
+export interface UnifiedSlot {
+  tier: SlotTier
+  cardId: string
+}
 
 export type FortuneLevel = 'daegil' | 'gil' | 'pyeong' | 'hyung' | 'daehyung'
 
