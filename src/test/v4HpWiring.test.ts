@@ -1,58 +1,70 @@
 /**
- * v4 HP 런타임 배선 단위 테스트 (2026-07-17)
+ * v4 HP 런타임 배선 단위 테스트 (2026-07-22 v4 정본 전환 재작성)
  *
- * 검증 항목:
- *   1. getFloorHp — v4 모드 시 V4_FLOOR_HP_TABLE 값 반환
- *   2. getFloorHp — v3 모드 시 FLOOR_CONFIGS.enemyHp 불변 반환
- *   3. v4 모드 시 createInitialGameState / createDeterministicState 가 V4_FLOOR_HP_TABLE 값 적용
- *   4. v3 모드 시 createInitialGameState HP 불변 확인
+ * 시대: v4 정식 전환 (devSettings 기본값 = 'v4', 강림 게이트 ON)
+ * 대체: 이전 v3 기본 가정 테스트는 measurements/ 격리됨.
+ *
+ * 검증 항목 (v4 기준):
+ *   1. getFloorHp — 기본(v4) 모드 시 V4_FLOOR_HP_TABLE 값 반환
+ *   2. getFloorHp — versionOverride='v3' 시 FLOOR_CONFIGS.enemyHp 반환 (역방향 회귀 방지)
+ *   3. createInitialGameState — 기본(v4) 모드 시 V4_FLOOR_HP_TABLE 값 적용
+ *   4. V4_FLOOR_HP_TABLE — ×1.60 계수 확정값 회귀 방지 (352 / 712 / 1088 / 680)
  */
 
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 
-// ─── 테스트 1·2: getFloorHp 직접 단위 테스트 ──────────────────────────────
+// ─── 테스트 1: getFloorHp — v4 기본 모드 ─────────────────────────────────────
 
-describe('getFloorHp — v4 모드', () => {
-  // 이 describe 블록은 vi.mock 오버라이드로 v4 강제
-  // vi.mock은 호이스팅되므로 describe 바깥에 선언해야 하지만,
-  // 각 테스트 파일 내 vi.mock은 파일 최상단에 단 하나만 유효함.
-  // 이 파일은 vi.mock 없이 실제 기본값(v3)으로 동작하므로
-  // getFloorHp 자체의 v4 경로는 아래 별도 mock 파일 패턴으로 커버.
-  // → 본 테스트에서는 v3 불변만 검증하고, v4 주입은 통합 경로(g3V4Gate)에서 이미 검증됨.
-  it('skip: vi.mock 단일 파일 제약 — v4 HP 주입은 g3V4Gate.test.ts 통합 경로에서 검증', () => {
-    expect(true).toBe(true)
+describe('getFloorHp — v4 정본 (기본 모드)', () => {
+  it('4개 층 전부 V4_FLOOR_HP_TABLE 값과 일치', async () => {
+    const { getFloorHp, V4_FLOOR_HP_TABLE } = await import('../engine/balance')
+    for (let i = 0; i < 4; i++) {
+      const expected = V4_FLOOR_HP_TABLE[i + 1]
+      const actual = getFloorHp(i)
+      expect(actual).toBe(expected)
+    }
+  })
+
+  it('층별 확정값: 352 / 712 / 1088 / 680 (×1.60 재기준선)', async () => {
+    const { getFloorHp } = await import('../engine/balance')
+    expect(getFloorHp(0)).toBe(352)   // 1층 = 220 × 1.60
+    expect(getFloorHp(1)).toBe(712)   // 2층 = 445 × 1.60
+    expect(getFloorHp(2)).toBe(1088)  // 3층 = 680 × 1.60
+    expect(getFloorHp(3)).toBe(680)   // 4층 = 불변 (극상성 사망층)
   })
 })
 
-// ─── 테스트 2: v3 기본값에서 getFloorHp = FLOOR_CONFIGS HP ────────────────
+// ─── 테스트 2: getFloorHp — v3 오버라이드 역방향 회귀 방지 ─────────────────
 
-describe('getFloorHp — v3 기본 모드 (mock 없음)', () => {
-  it('4개 층 전부 FLOOR_CONFIGS.enemyHp와 일치', async () => {
+describe('getFloorHp — v3 오버라이드 (측정용 하위 호환)', () => {
+  it('versionOverride="v3" 시 FLOOR_CONFIGS.enemyHp 반환', async () => {
     const { getFloorHp, FLOOR_CONFIGS } = await import('../engine/balance')
     for (let i = 0; i < 4; i++) {
       const expected = FLOOR_CONFIGS[i].enemyHp
-      const actual = getFloorHp(i)
+      const actual = getFloorHp(i, 'v3')
       expect(actual).toBe(expected)
     }
   })
 })
 
-// ─── 테스트 3: v3 모드 createInitialGameState HP 불변 ─────────────────────
+// ─── 테스트 3: createInitialGameState — v4 기본 모드 HP 반영 ───────────────
 
-describe('createInitialGameState — v3 모드 HP 불변', () => {
-  it('1층 enemyHp = 220 (FLOOR_CONFIGS[0])', async () => {
+describe('createInitialGameState — v4 정본 HP 반영', () => {
+  it('1층 enemyHp = 352 (V4_FLOOR_HP_TABLE[1] = 220 × 1.60)', async () => {
     const { createInitialGameState } = await import('../engine/paljajeonEngine')
-    const { FLOOR_CONFIGS } = await import('../engine/balance')
+    const { V4_FLOOR_HP_TABLE } = await import('../engine/balance')
     const state = createInitialGameState(0)
-    expect(state.enemyHp).toBe(FLOOR_CONFIGS[0].enemyHp)
-    expect(state.enemyMaxHp).toBe(FLOOR_CONFIGS[0].enemyHp)
+    expect(state.enemyHp).toBe(V4_FLOOR_HP_TABLE[1])
+    expect(state.enemyMaxHp).toBe(V4_FLOOR_HP_TABLE[1])
+    expect(state.enemyHp).toBe(352)
   })
 
-  it('4층 enemyHp = 540 (FLOOR_CONFIGS[3])', async () => {
+  it('4층 enemyHp = 680 (V4_FLOOR_HP_TABLE[4] = 불변)', async () => {
     const { createInitialGameState } = await import('../engine/paljajeonEngine')
-    const { FLOOR_CONFIGS } = await import('../engine/balance')
+    const { V4_FLOOR_HP_TABLE } = await import('../engine/balance')
     const state = createInitialGameState(3)
-    expect(state.enemyHp).toBe(FLOOR_CONFIGS[3].enemyHp)
-    expect(state.enemyMaxHp).toBe(FLOOR_CONFIGS[3].enemyHp)
+    expect(state.enemyHp).toBe(V4_FLOOR_HP_TABLE[4])
+    expect(state.enemyMaxHp).toBe(V4_FLOOR_HP_TABLE[4])
+    expect(state.enemyHp).toBe(680)
   })
 })

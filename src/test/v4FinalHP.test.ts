@@ -81,11 +81,11 @@ describe('v4 최종 벌 — HP 정밀 타격 채점 (강림 ON)', () => {
     const hp3 = getFloorHp(2)
     const hp4 = getFloorHp(3)
 
-    console.log(`[HP assert] 1층=${hp1}(기대=319) / 2층=${hp2}(기대=645) / 3층=${hp3}(기대=1085) / 4층=${hp4}(기대=680)`)
-    expect(hp1).toBe(319)
-    expect(hp2).toBe(645)
-    expect(hp3).toBe(1085)
-    expect(hp4).toBe(680)
+    console.log(`[HP assert] 1층=${hp1}(기대=352) / 2층=${hp2}(기대=712) / 3층=${hp3}(기대=1088) / 4층=${hp4}(기대=680)`)
+    expect(hp1).toBe(352)   // ×1.60 재기준선 (구 319=×1.45 → 352)
+    expect(hp2).toBe(712)   // ×1.60 (구 645 → 712)
+    expect(hp3).toBe(1088)  // ×1.60 (구 1085 → 1088)
+    expect(hp4).toBe(680)   // 불변
     console.log('✓ HP 실효값 PASS\n')
 
     const results: Array<{

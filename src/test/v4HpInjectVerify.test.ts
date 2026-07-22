@@ -15,19 +15,19 @@ import { getFloorHp, V4_FLOOR_HP_TABLE, FLOOR_CONFIGS } from '../engine/balance'
 
 describe('v4 HP 배선 — getFloorHp versionOverride 검증', () => {
   describe('v4 모드 — V4_FLOOR_HP_TABLE 주입', () => {
-    it('1층: getFloorHp(0, "v4") === V4_FLOOR_HP_TABLE[1] (308)', () => {
+    it('1층: getFloorHp(0, "v4") === V4_FLOOR_HP_TABLE[1] (352, ×1.60)', () => {
       expect(getFloorHp(0, 'v4')).toBe(V4_FLOOR_HP_TABLE[1])
-      expect(getFloorHp(0, 'v4')).toBe(308)
+      expect(getFloorHp(0, 'v4')).toBe(352)  // ×1.60 재기준선 (구 308=×1.35 → 363=×1.65 → 352=×1.60)
     })
 
-    it('2층: getFloorHp(1, "v4") === V4_FLOOR_HP_TABLE[2] (623)', () => {
+    it('2층: getFloorHp(1, "v4") === V4_FLOOR_HP_TABLE[2] (712, ×1.60)', () => {
       expect(getFloorHp(1, 'v4')).toBe(V4_FLOOR_HP_TABLE[2])
-      expect(getFloorHp(1, 'v4')).toBe(623)
+      expect(getFloorHp(1, 'v4')).toBe(712)  // ×1.60 재기준선 (구 623 → 712)
     })
 
-    it('3층: getFloorHp(2, "v4") === V4_FLOOR_HP_TABLE[3] (952)', () => {
+    it('3층: getFloorHp(2, "v4") === V4_FLOOR_HP_TABLE[3] (1088, ×1.60)', () => {
       expect(getFloorHp(2, 'v4')).toBe(V4_FLOOR_HP_TABLE[3])
-      expect(getFloorHp(2, 'v4')).toBe(952)
+      expect(getFloorHp(2, 'v4')).toBe(1088)  // ×1.60 재기준선 (구 952 → 1088)
     })
 
     it('4층: getFloorHp(3, "v4") === V4_FLOOR_HP_TABLE[4] (680)', () => {

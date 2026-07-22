@@ -14,7 +14,10 @@ import {
   FLOOR_ENEMY_ELEMENTS,
 } from '../engine/paljajeonEngine'
 import { judgeHand } from '../engine/pokerHandJudge'
-import { FLOOR_CONFIGS } from '../engine/balance'
+import { FLOOR_CONFIGS, V4_FLOOR_HP_TABLE } from '../engine/balance'
+// v4 정본 전환 (2026-07-22): 기본모드 = v4 + 강림 ON
+// 층별 HP 기대값은 V4_FLOOR_HP_TABLE[floor] (×1.60 계수 반영)
+// 참고: FLOOR_CONFIGS[i].enemyHp = v3 base (파생 계산용, 이 테스트에서 직접 사용 안 함)
 
 describe('createFixedDeck', () => {
   it('20장 덱 생성', () => {
@@ -60,7 +63,7 @@ describe('createInitialGameState', () => {
     expect(state.hand).toHaveLength(8)
     expect(state.playerHp).toBe(100)
     expect(state.currentFloor).toBe(1)
-    expect(state.enemyHp).toBe(FLOOR_CONFIGS[0].enemyHp)  // balance v2.0: L1 HP
+    expect(state.enemyHp).toBe(V4_FLOOR_HP_TABLE[1])  // v4 정본: L1 HP = 352 (×1.60)
   })
 
   it('에너지 개념 없음 — energy 필드 없어야', () => {
@@ -224,7 +227,7 @@ describe('advanceToNextFloor', () => {
     const state = { ...createInitialGameState(0), currentFloor: 1, floorsCleared: 1 }
     const newState = advanceToNextFloor(state)
     expect(newState.currentFloor).toBe(2)
-    expect(newState.enemyHp).toBe(FLOOR_CONFIGS[1].enemyHp)  // balance v2.0: L2 HP
+    expect(newState.enemyHp).toBe(V4_FLOOR_HP_TABLE[2])  // v4 정본: L2 HP = 712 (×1.60)
   })
 
   it('4층 클리어 → 결과 화면 (승리)', () => {

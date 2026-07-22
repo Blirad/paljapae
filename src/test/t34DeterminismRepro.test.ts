@@ -68,13 +68,13 @@ function runOnce(preset: typeof REPRO_PRESET): { victories: number; results: boo
 
 describe('T34 결정론 재현성 — 회귀 가드 (2026-07-19)', () => {
   it(
-    'HP assert: getFloorHp mock 검증 (374/757/1156/680)',
+    'HP assert: getFloorHp mock 검증 (352/712/1088/680, ×1.60 재기준선)',
     () => {
-      expect(V4_FLOOR_HP_TABLE[1]).toBe(374)
-      expect(V4_FLOOR_HP_TABLE[2]).toBe(757)
-      expect(V4_FLOOR_HP_TABLE[3]).toBe(1156)
-      expect(V4_FLOOR_HP_TABLE[4]).toBe(680)
-      console.log('[HP assert PASS] 1층=374 / 2층=757 / 3층=1156 / 4층=680')
+      expect(V4_FLOOR_HP_TABLE[1]).toBe(352)   // ×1.60 재기준선 (구 374=×1.70 → 352)
+      expect(V4_FLOOR_HP_TABLE[2]).toBe(712)   // ×1.60 (구 757 → 712)
+      expect(V4_FLOOR_HP_TABLE[3]).toBe(1088)  // ×1.60 (구 1156 → 1088)
+      expect(V4_FLOOR_HP_TABLE[4]).toBe(680)   // 불변
+      console.log('[HP assert PASS] 1층=352 / 2층=712 / 3층=1088 / 4층=680')
     },
   )
 
