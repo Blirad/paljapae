@@ -18,6 +18,25 @@ import { generateSajuDeck } from './deckGenerator'
 import { getFavorableElement } from './manseryeok'
 // T17: 가호(십성) 효과 반영
 import { PASSIVE_POOL } from '../types/passive'
+// 운성패 개편 2단계 — 전설층 성장형 패시브 (생왕묘절 × 왕상휴수)
+import {
+  type UnseongpaeId,
+  type UnseongpaeState,
+  createUnseongpaeState,
+  accrueFeed,
+  saengjiDrawCount,
+  SAENGJI_WANG_BIRTH_PCT,
+  wangjiEffectiveGatherCount,
+  wangjiRepeatMultiplier,
+  myojiStoreDiscarded,
+  myojiRelease,
+  myojiResetPerFloor,
+  jeoljiRevive,
+  jeoljiAwakenMultiplier,
+  jeoljiClearAwaken,
+  feedNeededForNext,
+  ALL_UNSEONGPAE,
+} from './unseongpae'
 
 // --------------- 배치 2 §1: 결정론 RNG 헬퍼 (LCG) ---------------
 /**
@@ -215,6 +234,10 @@ export function createInitialGameState(floorIndex = 0, heroProfile?: SavedHeroPr
     sinsalInventory: [],
     // 통합 슬롯 개편 1단계 — 5칸 단일 슬롯 (빈 배열로 초기화, 십성 선점은 seedCommonSlots로 주입)
     unifiedSlots: [],
+    // 운성패 개편 2단계 — 전설층 런타임 상태 (획득 전 빈 배열, acquireUnseongpae로 주입)
+    unseongpaeStates: [],
+    lastFusionSignature: undefined,
+    fusionRepeatCount: 0,
   }
 }
 
@@ -267,7 +290,18 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
 
   // α 수확 체감: 동일 전투 내 gather5 활성화 횟수 추적
   const currentGatherCount = state.gatherUsedInBattle ?? 0
-  const result = judgeHand(playedCards, state.recipeMultipliers, currentGatherCount)
+  // 운성패 왕지(旺地) — 수확 체감 면제: 판정에 넘길 유효 체감 카운터를 격별로 낮춘다.
+  //   수=1단계 면제 / 휴=2단계 / 상·왕=완전 면제(항상 0). 실제 gatherUsedInBattle은 무증가 처리(하단).
+  const wangjiState = getUnseongpaeState(state, 'wangji')
+  const hasWangjiEquipped = wangjiState !== undefined &&
+    deriveUnseongpaeIds(state.unifiedSlots ?? []).includes('wangji')
+  const effectiveGatherCount = hasWangjiEquipped
+    ? wangjiEffectiveGatherCount(wangjiState!.gyeok, currentGatherCount)
+    : currentGatherCount
+  // 왕지 발동 카운터 배선 (2026-07-23) — 체감 면제 실발생 시 +1 (효과 수식 무수정, 계측만).
+  //   effectiveGatherCount < currentGatherCount = 실제로 체감 단계가 깎였음 = 면제 발동.
+  const wangjiExemptThisCall = (hasWangjiEquipped && effectiveGatherCount < currentGatherCount) ? 1 : 0
+  const result = judgeHand(playedCards, state.recipeMultipliers, effectiveGatherCount)
 
   // T8 수정: 오색실 — 배율 전 baseScore에 +15 가산 (15×N 증폭 목적)
   // 연환 발동 + 오색실 보유 시, totalScore를 (baseScore + 15) × 배율로 재계산
@@ -420,6 +454,50 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
   const isFusionEarly = result.rank === 'fusion-birth' || result.rank === 'fusion-hone'
   const isSmallFusion = isFusionEarly && playedCards.length === 2
 
+  // ── 운성패 융합 배율 훅 (왕지 왕격 반복 누적 + 절지 왕격 각성) ──
+  //   운성패 상태를 이번 공격에서 갱신할 워킹 카피 (return 시 반영).
+  let newUnseongpaeStates: UnseongpaeState[] | undefined =
+    state.unseongpaeStates ? [...state.unseongpaeStates] : undefined
+  let newLastFusionSignature = state.lastFusionSignature
+  let newFusionRepeatCount = state.fusionRepeatCount ?? 0
+  const equippedUnseongpae = deriveUnseongpaeIds(state.unifiedSlots ?? [])
+
+  if (isFusionEarly && !isBlocked && newUnseongpaeStates) {
+    // 왕지(旺地) — 동일 융합 반복 추적 + 왕격 반복 2회째마다 ×1.1 누적
+    if (equippedUnseongpae.includes('wangji')) {
+      const sig = fusionSignature(playedCards)
+      newFusionRepeatCount = sig === newLastFusionSignature ? newFusionRepeatCount + 1 : 0
+      newLastFusionSignature = sig
+      const wj = newUnseongpaeStates.find(u => u.id === 'wangji')
+      if (wj) {
+        const repMult = wangjiRepeatMultiplier(wj.gyeok, newFusionRepeatCount)
+        if (repMult !== 1.0) damage = Math.round(damage * repMult)
+        // 먹이: 융합 1회당 +1 (반복 시 +1 추가). "이미 하는 행동(융합 반복)의 누적".
+        //   게이트 튜닝(2026-07-22): 연속 동일서명만 세면 봇 인터리브로 거의 불성립 →
+        //   융합 자체를 기본 먹이(+1)로, 연속 반복은 가속 먹이(+1)로 이원화.
+        const feedAmt = 1 + (newFusionRepeatCount >= 1 ? 1 : 0)
+        const fed = accrueFeed(wj, feedAmt)
+        newUnseongpaeStates = newUnseongpaeStates.map(u => (u.id === 'wangji' ? fed.state : u))
+      }
+    }
+    // 절지(絶地) 왕격 — 부활 전투 동안 전 융합 ×1.5 (각성)
+    if (equippedUnseongpae.includes('jeolji')) {
+      const jj = newUnseongpaeStates.find(u => u.id === 'jeolji')
+      if (jj) {
+        const awakenMult = jeoljiAwakenMultiplier(jj)
+        if (awakenMult !== 1.0) damage = Math.round(damage * awakenMult)
+      }
+    }
+    // 생지(生地) — 융합 1회당 먹이 +1 (융합 누적 30회 골자)
+    if (equippedUnseongpae.includes('saengji')) {
+      const sj = newUnseongpaeStates.find(u => u.id === 'saengji')
+      if (sj) {
+        const fed = accrueFeed(sj, 1)
+        newUnseongpaeStates = newUnseongpaeStates.map(u => (u.id === 'saengji' ? fed.state : u))
+      }
+    }
+  }
+
   if (!isBlocked) {
     const activeIds = state.activePassiveIds ?? []
     const activePassives = PASSIVE_POOL.filter(p => activeIds.includes(p.id))
@@ -529,7 +607,11 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
   // α 수확 체감: gather5(5장 모으기) 활성화 판정
   const isGather5 = result.rank === 'gather' && playedCards.length === 5
   let newGatherUsedInBattle = currentGatherCount
-  if (isGather5) {
+  // 운성패 왕지(旺地) 상·왕격 — 수확 체감 완전 면제: 체감 카운터를 증가시키지 않음.
+  //   (E2E: 체감 카운터 무증가 assert. 수·휴격은 부분 면제이므로 카운터는 정상 증가.)
+  const wangjiFullyExempt = hasWangjiEquipped &&
+    (wangjiState!.gyeok === 'sang' || wangjiState!.gyeok === 'wang')
+  if (isGather5 && !wangjiFullyExempt) {
     newGatherUsedInBattle = currentGatherCount + 1
   }
   let newLastTraitTriggered: string | undefined = undefined
@@ -669,6 +751,55 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
     drawnCards.push(newDeck.shift()!)
   }
   let newHand = [...remainHand, ...drawnCards]
+
+  // ── 운성패 생지(生地) 속도 — 융합 소모 카드 수만큼 즉시 드로우 (매 공격) ──
+  //   "생명은 마르지 않는다". 격별 배수(수0.34/휴0.5/상0.75/왕1.0, 최소 1장).
+  //   왕격: 드로우 중 12% 신규 카드 잉태(덱 밖 생성) — 결정론 nextRng 사용.
+  // 생지 발동 카운터 배선 (2026-07-23) — saengjiDrawn.length>0 시 +1 (효과 수식 무수정, 계측만).
+  let saengjiDrewThisCall = 0
+  if (isFusionEarly && !isBlocked && equippedUnseongpae.includes('saengji')) {
+    const sj = (newUnseongpaeStates ?? []).find(u => u.id === 'saengji')
+    if (sj) {
+      const drawN = saengjiDrawCount(sj.gyeok, playedCards.length)
+      const saengjiDrawn: Card[] = []
+      for (let i = 0; i < drawN; i++) {
+        // 왕격: 15% 확률로 신규 카드 잉태 (덱 밖 생성), 아니면 덱에서 드로우
+        let birthed = false
+        if (sj.gyeok === 'wang') {
+          const roll = nextRng(newRngState)
+          newRngState = roll.next
+          if (roll.value < SAENGJI_WANG_BIRTH_PCT) {
+            // 신규 카드 잉태 — 융합 소모 카드 중 하나의 원소를 계승(생명 잉태)
+            const elRoll = nextRng(newRngState)
+            newRngState = elRoll.next
+            const parent = playedCards[Math.floor(elRoll.value * playedCards.length)] ?? playedCards[0]
+            const valRoll = nextRng(newRngState)
+            newRngState = valRoll.next
+            saengjiDrawn.push({
+              id: `saengji-birth-${newRngState}-${i}`,
+              element: parent.element,
+              polarity: parent.polarity,
+              value: 2 + Math.floor(valRoll.value * 9), // 2~10
+              type: 'soldier',
+              rarity: 'common',
+            })
+            birthed = true
+          }
+        }
+        if (!birthed) {
+          if (newDeck.length === 0 && newDiscardPile.length > 0) {
+            newDeck = shuffleDeck([...newDiscardPile], newRngState)
+            const adv = nextRng(newRngState)
+            newRngState = adv.next
+            newDiscardPile = []
+          }
+          if (newDeck.length > 0) saengjiDrawn.push(newDeck.shift()!)
+        }
+      }
+      newHand = [...newHand, ...saengjiDrawn]
+      if (saengjiDrawn.length > 0) saengjiDrewThisCall = 1
+    }
+  }
 
   // 배치 2 §1: 정재(正財) v2 — 오행연환 발동 시 카드 2장 드로우 (손패리필 직후)
   // 정재(正財): result.rank==='ohang-yeonhwan' 성립 시 카드 2장 드로우
@@ -863,6 +994,25 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
     ? true
     : newJeonginUsed_pre
 
+  // 운성패 절지(絶地) 부활 훅 — 엔진 내부 이관 (2026-07-23, 정인 :985 패턴 동일).
+  //   기존: 부활 호출이 봇 루프 도달 불가 지점(dead code)에 있어 발동0.
+  //   이관: playerDead 판정 직후·phase 분기 전에 부활 훅 배치 → 봇 세계에서도 측정 성립.
+  //   playerDead && 절지장착 && 미소진 && !floorCleared → jeoljiRevive 순수함수 실행.
+  //   성공 시 playerDead=false로 phase='result' 회피 → finalPlayerHp에 부활 HP 반영(deferred).
+  //   jeoljiRevive 순수함수 무수정 — 호출 위치만 dead code에서 엔진 내부로 이관.
+  let jeoljiReviveHp = 0
+  if (playerDead && !floorCleared && equippedUnseongpae.includes('jeolji') && newUnseongpaeStates) {
+    const jeolji = newUnseongpaeStates.find(u => u.id === 'jeolji')
+    if (jeolji && !jeolji.jeoljiUsed) {
+      const { state: nextJeolji, reviveHp } = jeoljiRevive(jeolji, state.playerMaxHp)
+      if (reviveHp > 0) {
+        newUnseongpaeStates = replaceUnseongpaeState(newUnseongpaeStates, nextJeolji)
+        playerDead = false      // 생존 처리 → phase='result' 회피
+        jeoljiReviveHp = reviveHp // 이후 finalPlayerHp 계산 시 반영 (deferred)
+      }
+    }
+  }
+
   // Phase 1.7: 기운 전환 판정 (3~4층, 1회만)
   const phaseSwitchThreshold = floorConfig.forcePhaseSwitch?.hpPct ?? null
   const newEnemyPhaseSwitch =
@@ -901,6 +1051,12 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
   // playerDead가 false(가로채기 발동)이고 newPlayerHp<=0인 경우에 적용
   if (!playerDead && newPlayerHp <= 0 && newJeonginUsed) {
     finalPlayerHp = 1
+  }
+
+  // 운성패 절지(絶地) 부활 — finalPlayerHp에 부활 HP 반영 (2026-07-23 이관 훅 deferred).
+  // jeoljiReviveHp>0 이면 부활 발동 → 부활 HP로 강제 (정인 패턴 동일 위치).
+  if (jeoljiReviveHp > 0) {
+    finalPlayerHp = Math.min(state.playerMaxHp, jeoljiReviveHp)
   }
 
   // 배치 2 §1: 편재(偏財) 턴 종료 훅 — 손패리필(L600) 직후, floorCleared/playerDead 아닌 경우에만
@@ -997,6 +1153,12 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
     phase: finalPhase,
     isVictory: finalIsVictory,
     floorsCleared: finalFloorsCleared,
+    // 운성패 2단계 — 융합 훅에서 갱신된 상태/반복 추적 전파
+    unseongpaeStates: newUnseongpaeStates ?? state.unseongpaeStates,
+    // UI 계약(Lyra §7) — 전투 중 격/먹이 성장을 슬롯 파생 필드에 즉시 반영
+    unifiedSlots: syncUnseongpaeSlotFields(state.unifiedSlots ?? [], newUnseongpaeStates ?? state.unseongpaeStates),
+    lastFusionSignature: newLastFusionSignature,
+    fusionRepeatCount: newFusionRepeatCount,
     amplifyActive: false,  // 증폭부 1회 소모
     attackCount: newAttackCount,
     enemyPhaseSwitch: newEnemyPhaseSwitch,
@@ -1038,6 +1200,9 @@ export function playCards(state: GameState, cardIds: string[], effectMode?: bool
     jeonginBuff: newJeonginBuff,
     // §3 역마 v3 "방향타": 사용 후 즉시 소비 (1콤보 1회)
     yeokmaV3Override: undefined,
+    // 운성패 발동 카운터 배선 (2026-07-23) — 런 스코프 누적 (효과 수식 무수정, 계측 전용)
+    saengjiActivations: (state.saengjiActivations ?? 0) + saengjiDrewThisCall,
+    wangjiActivations: (state.wangjiActivations ?? 0) + wangjiExemptThisCall,
   }
 }
 
@@ -1097,6 +1262,18 @@ export function discardCards(state: GameState, cardIds: string[]): GameState {
   // sikshin D안 하위 호환 (v2에서는 사용 안 함, false 유지)
   const newSikshinDiscardBonus = false
 
+  // ── 운성패 묘지(墓地) 버리기 — 버린 카드 묘고 적재 + 먹이(버리기 누적 20장) ──
+  //   "죽은 것은 창고에서 기다린다". 묘고에 버린 카드 원본 적재(격별 상한). 방출은 releaseMyogo.
+  let newUnseongpaeStates = state.unseongpaeStates
+  if (newUnseongpaeStates && deriveUnseongpaeIds(state.unifiedSlots ?? []).includes('myoji') && discarded.length > 0) {
+    const myoji = newUnseongpaeStates.find(u => u.id === 'myoji')
+    if (myoji) {
+      const stored = myojiStoreDiscarded(myoji, discarded)
+      const fed = accrueFeed(stored, discarded.length) // 버린 장수만큼 먹이
+      newUnseongpaeStates = newUnseongpaeStates.map(u => (u.id === 'myoji' ? fed.state : u))
+    }
+  }
+
   return {
     ...state,
     hand: [...remainHand, ...drawnCards],
@@ -1108,6 +1285,10 @@ export function discardCards(state: GameState, cardIds: string[]): GameState {
     reshuffled,
     sikshinDiscardBonus: newSikshinDiscardBonus,
     sikshinRicegrains: newSikshinRicegrains,
+    // 운성패 묘지 — 묘고 적재/먹이 갱신 전파
+    unseongpaeStates: newUnseongpaeStates,
+    // UI 계약(Lyra §7) — 버리기 먹이 성장을 슬롯 파생 필드에 즉시 반영
+    unifiedSlots: syncUnseongpaeSlotFields(state.unifiedSlots ?? [], newUnseongpaeStates),
     // T34: rngState 갱신 (버리기 재순환 시 시드 전진)
     rngState: discardRngState,
   }
@@ -1275,9 +1456,18 @@ export function advanceToNextFloor(state: GameState): GameState {
     jeonginUsed: state.jeonginUsed ?? false,  // 런 유지
     jeonginBuff: state.jeonginBuff ?? false,  // 이월 (미소비 시 유지)
     // 통합 슬롯 개편 1단계 — 런 유지 (층 전환해도 슬롯 구성 보존)
-    unifiedSlots: state.unifiedSlots ?? [],
+    // UI 계약(Lyra §7) — 리셋된 운성패 상태를 슬롯 파생 필드에 반영
+    unifiedSlots: syncUnseongpaeSlotFields(
+      state.unifiedSlots ?? [],
+      (state.unseongpaeStates ?? []).map(u => jeoljiClearAwaken(myojiResetPerFloor(u))),
+    ),
     // §3 신살 공용 인프라 — 통합 슬롯 rare tier에서 파생 (레거시 호환)
     sinsalInventory: deriveSinsalInventory(state.unifiedSlots ?? []),
+    // 운성패 2단계 — 격/먹이/묘고는 런 유지, 전투당 플래그(묘지 방출/절지 각성)만 리셋
+    unseongpaeStates: (state.unseongpaeStates ?? []).map(u => jeoljiClearAwaken(myojiResetPerFloor(u))),
+    // 왕지 반복 추적 — 전투(층) 전환 시 리셋
+    lastFusionSignature: undefined,
+    fusionRepeatCount: 0,
   }
 }
 
@@ -1470,9 +1660,34 @@ export function syncLegacySlotFields(state: GameState): GameState {
   const slots = state.unifiedSlots ?? []
   return {
     ...state,
+    unifiedSlots: syncUnseongpaeSlotFields(slots, state.unseongpaeStates),
     activePassiveIds: deriveActivePassiveIds(slots),
     sinsalInventory: deriveSinsalInventory(slots),
   }
+}
+
+/**
+ * 운성패 UI 계약 동기화 (Lyra §7) — legendary tier 슬롯에 격/먹이 파생 필드를 채운다.
+ * 엔진 로직은 unseongpaeStates가 정본. 이 함수는 UI가 slot.gyeok/feedCount/feedTarget을
+ * 직접 읽을 수 있도록 슬롯에 읽기전용 스냅샷을 투영할 뿐 (순수, 상태 불변).
+ * common/rare 슬롯은 undefined 유지 → UI 격 배지·게이지 미렌더.
+ */
+export function syncUnseongpaeSlotFields(
+  slots: UnifiedSlot[],
+  states: UnseongpaeState[] | undefined,
+): UnifiedSlot[] {
+  return slots.map(s => {
+    if (s.tier !== 'legendary') return s
+    const st = (states ?? []).find(u => u.id === s.cardId)
+    if (!st) return { ...s, gyeok: undefined, feedCount: undefined, feedTarget: undefined }
+    const need = feedNeededForNext(st)
+    return {
+      ...s,
+      gyeok: st.gyeok,
+      feedCount: st.feed,
+      feedTarget: need === null ? undefined : need, // 왕격 = 만렙
+    }
+  })
 }
 
 /**
@@ -1612,6 +1827,112 @@ export function useSinsal(
   }
 
   return state  // 미지원 신살 — 무시
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 운성패 개편 2단계 — 전설층 성장형 패시브 (생왕묘절 × 왕상휴수) 엔진 통합
+//   장착: 통합 슬롯 legendary tier cardId = 운성패 ID. 런타임 상태는 unseongpaeStates.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 통합 슬롯 legendary tier에서 장착 중인 운성패 ID 목록 파생 */
+export function deriveUnseongpaeIds(slots: UnifiedSlot[]): UnseongpaeId[] {
+  return slots
+    .filter(s => s.tier === 'legendary')
+    .map(s => s.cardId)
+    .filter((id): id is UnseongpaeId => (ALL_UNSEONGPAE as readonly string[]).includes(id))
+}
+
+/** 특정 운성패 상태 조회 (미장착/미보유 시 undefined) */
+export function getUnseongpaeState(state: GameState, id: UnseongpaeId): UnseongpaeState | undefined {
+  return (state.unseongpaeStates ?? []).find(u => u.id === id)
+}
+
+/** 장착 중인지 여부 (legendary 슬롯 + 런타임 상태 모두 존재) */
+export function hasUnseongpae(state: GameState, id: UnseongpaeId): boolean {
+  const equipped = deriveUnseongpaeIds(state.unifiedSlots ?? []).includes(id)
+  return equipped && getUnseongpaeState(state, id) !== undefined
+}
+
+/** 운성패 상태 목록에서 특정 종을 갱신한 새 배열 반환 (순수) */
+function replaceUnseongpaeState(states: UnseongpaeState[], next: UnseongpaeState): UnseongpaeState[] {
+  const idx = states.findIndex(u => u.id === next.id)
+  if (idx === -1) return [...states, next]
+  return states.map((u, i) => (i === idx ? next : u))
+}
+
+/**
+ * 운성패 획득 — legendary tier 통합 슬롯 장착 + 런타임 상태(수격) 생성.
+ * "명외자가 남긴 패 — 네 명 안에서 길러라". 5칸 full 시 rejected.
+ */
+export function acquireUnseongpae(
+  state: GameState,
+  id: UnseongpaeId,
+  replaceIndex?: number,
+): { state: GameState; rejected: boolean; reason?: string } {
+  const eq = equipSlot(state, { tier: 'legendary', cardId: id }, replaceIndex)
+  if (eq.rejected) return eq
+  const states = eq.state.unseongpaeStates ?? []
+  // 이미 상태가 있으면 유지(중복 획득 방지), 없으면 수격 신규 생성
+  const nextStates = getUnseongpaeState(eq.state, id)
+    ? states
+    : replaceUnseongpaeState(states, createUnseongpaeState(id))
+  // UI 계약(Lyra §7) — 신규 수격 상태를 슬롯 파생 필드에 반영
+  return { state: syncLegacySlotFields({ ...eq.state, unseongpaeStates: nextStates }), rejected: false }
+}
+
+/**
+ * 묘지(墓地) 방출 발동 — 묘고 전체를 손패로 복귀 (전투당 1회).
+ * 왕격이면 방출 카드 값 +1 숙성. 발동 불가(미장착/이미 사용/묘고 비움) 시 원본 반환.
+ * 유저 시점 선택 액티브 — BattleScreen에서 호출.
+ */
+export function releaseMyogo(state: GameState): GameState {
+  if (!hasUnseongpae(state, 'myoji')) return state
+  const myoji = getUnseongpaeState(state, 'myoji')!
+  const { state: nextMyoji, released } = myojiRelease(myoji)
+  if (released === null) return state // 발동 불가
+  return syncLegacySlotFields({
+    ...state,
+    hand: [...state.hand, ...released],
+    unseongpaeStates: replaceUnseongpaeState(state.unseongpaeStates ?? [], nextMyoji),
+  })
+}
+
+/**
+ * 절지(絶地) 부활 처리 — 플레이어 HP가 0 이하로 떨어진 시점에 호출.
+ * 부활 성공 시 playerHp를 부활 HP로 회복 + 1격 꺾임 + 부활 소진(런당 1회).
+ * 왕격 발동 시 부활 전투 동안 각성(전 융합 ×1.5) 세팅.
+ * 미장착/이미 소진/HP>0 이면 원본 반환.
+ */
+export function tryJeoljiRevive(state: GameState): { state: GameState; revived: boolean } {
+  if (state.playerHp > 0) return { state, revived: false }
+  if (!hasUnseongpae(state, 'jeolji')) return { state, revived: false }
+  const jeolji = getUnseongpaeState(state, 'jeolji')!
+  const { state: nextJeolji, reviveHp } = jeoljiRevive(jeolji, state.playerMaxHp)
+  if (reviveHp <= 0) return { state, revived: false }
+  return {
+    state: syncLegacySlotFields({
+      ...state,
+      playerHp: reviveHp,
+      unseongpaeStates: replaceUnseongpaeState(state.unseongpaeStates ?? [], nextJeolji),
+    }),
+    revived: true,
+  }
+}
+
+/**
+ * 전투(층) 전환 시 운성패 상태 리셋 — 묘지 방출 플래그 해제 + 절지 각성 해제.
+ * 격·먹이·묘고 내용물은 런 스코프로 유지.
+ */
+export function resetUnseongpaePerFloor(state: GameState): GameState {
+  const states = state.unseongpaeStates
+  if (!states || states.length === 0) return state
+  const next = states.map(u => jeoljiClearAwaken(myojiResetPerFloor(u)))
+  return syncLegacySlotFields({ ...state, unseongpaeStates: next, lastFusionSignature: undefined, fusionRepeatCount: 0 })
+}
+
+/** 융합 조합 서명 — 소모 카드 원소를 정렬해 문자열화 (동일 융합 반복 감지용) */
+export function fusionSignature(cards: Card[]): string {
+  return cards.map(c => c.element).sort().join('-')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

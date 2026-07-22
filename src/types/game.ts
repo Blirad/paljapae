@@ -170,6 +170,18 @@ export interface GameState {
   // 가호(activePassiveIds 상한없음) + 신살(sinsalInventory 상한3)을 5칸 단일 슬롯으로 병합.
   // 통합 슬롯이 정본. activePassiveIds/sinsalInventory는 파생 getter(deriveActivePassiveIds/deriveSinsalInventory)로 유지.
   unifiedSlots: UnifiedSlot[]  // 5칸 고정 (MAX_SLOTS). tier=common(가호)/rare(신살)/legendary(운성패 예약)
+  // ── 운성패 개편 2단계 (2026-07-22) — 전설층 성장형 패시브 ──
+  // 장착 중인 운성패의 런타임 상태(격/먹이/묘고/부활). legendary 슬롯 cardId와 종별 대응.
+  // undefined = 운성패 미장착 (하위 호환). 정의는 src/engine/unseongpae.ts.
+  unseongpaeStates?: import('../engine/unseongpae').UnseongpaeState[]
+  // 왕지(旺地) 반복 추적 — 마지막 융합 조합 서명 + 연속 반복 횟수 (동일 융합 반복 감지).
+  lastFusionSignature?: string  // 마지막 융합 조합 서명(정렬된 소모 카드 원소열). 층 전환 시 리셋.
+  fusionRepeatCount?: number    // 동일 융합 연속 반복 횟수 (0-based, 층 전환 시 리셋).
+  // 운성패 발동 카운터 배선 (2026-07-23) — 효과 로직 무관, 계측 전용 누적 카운터.
+  //   생지: 드로우 실발생(saengjiDrawn.length>0) 시 +1. 왕지: 체감 면제 실발생 시 +1.
+  //   런 스코프 누적 → 봇 리턴 → 게이트 발동 열 패별 분리 집계. 효과 수식 무수정.
+  saengjiActivations?: number   // 생지 드로우 발동 누적 (계측 전용)
+  wangjiActivations?: number    // 왕지 체감면제 발동 누적 (계측 전용)
 }
 
 /** 신살 ID 유니온 (현재: 화개만. 역마는 v2 게이트 후 추가) */
@@ -195,6 +207,12 @@ export type SlotTier = 'common' | 'rare' | 'legendary'
 export interface UnifiedSlot {
   tier: SlotTier
   cardId: string
+  // ── 운성패 2단계 UI 계약 (Lyra §7) — legendary tier에서만 유효 ──
+  // 엔진이 unseongpaeStates에서 파생해 공급(syncUnseongpaeSlotFields), UI는 읽기만.
+  // common/rare 슬롯은 undefined → UI 격 배지·게이지 미렌더.
+  gyeok?: import('../engine/unseongpae').Gyeok // 현재 격 (획득 시 'su')
+  feedCount?: number // 현재 격 먹이 누적 (격+1 진행도)
+  feedTarget?: number // 다음 격까지 목표 (왕격이면 undefined = 만렙)
 }
 
 export type FortuneLevel = 'daegil' | 'gil' | 'pyeong' | 'hyung' | 'daehyung'

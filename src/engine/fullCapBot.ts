@@ -22,8 +22,12 @@ import {
   applyRewardOption,
   initYongsinDescent,
   MAX_SLOTS,
+  releaseMyogo,
+  getUnseongpaeState,
 } from './paljajeonEngine'
 import type { RewardOption } from './paljajeonEngine'
+import type { UnseongpaeId } from './unseongpae'
+import { createUnseongpaeState, accrueFeed } from './unseongpae'
 import { generateSajuDeck } from './deckGenerator'
 import {
   FLOOR_CONFIGS,
@@ -559,6 +563,16 @@ export interface FullCapRunResult {
   yeokmaActivations?: number
   /** §3 신살: 화개 실제 발동 횟수 (유령측정 차단용) */
   hwagaeActivations?: number
+  /** 운성패 종료 시 격 (장착 종별). 미장착 시 undefined. 유령측정 차단용. */
+  unseongpaeFinalGyeok?: import('./unseongpae').Gyeok
+  /** 운성패 절지 부활 발동 횟수 (0 또는 1, 런당 1회) */
+  jeoljiRevives?: number
+  /** 운성패 묘지 묘고 방출 횟수 */
+  myogoReleases?: number
+  /** 운성패 생지 드로우 발동 횟수 (계측 전용 — 엔진 누적치) */
+  saengjiDraws?: number
+  /** 운성패 왕지 체감면제 발동 횟수 (계측 전용 — 엔진 누적치) */
+  wangjiExempts?: number
 }
 
 function makeLcg(seed: number): () => number {
@@ -667,6 +681,18 @@ export interface FullCapSimOptions {
    * A/B 양군 동일 주입 시 순수 가호 효과만 측정 가능.
    */
   startingExtraCards?: Card[]
+  /**
+   * 운성패 개편 2단계 — 강제 장착 측정 하네스 (게이트 A/B 전용).
+   * 지정 시 런 시작 시 legendary tier 통합 슬롯에 해당 운성패를 장착하고 수격 상태로 시작.
+   * 봇은 먹이 지향 가중으로 격을 성장시킨다. undefined = 미장착(B군 기준선).
+   */
+  forceUnseongpae?: UnseongpaeId
+  /**
+   * 운성패 격 고정 측정 옵션 — 지정 시 격 성장을 막고 이 격으로 고정.
+   *  - 'su' : 수격 방치 델타 측정용 (성장 없이도 존재감 확인)
+   *  - undefined : 정상 성장 (먹이 누적으로 격 상승)
+   */
+  fixUnseongpaeGyeok?: import('./unseongpae').Gyeok
 }
 
 /**
@@ -916,7 +942,17 @@ function createDeterministicState(
     // §3 신살 공용 인프라 — 봇은 forceAcquire 방식 유지, 실게임 인벤토리는 빈 배열
     sinsalInventory: [],
     // 통합 슬롯 개편 1단계 — 시작 시 십성 가호 선점(common tier). 봇은 activePassiveIds를 통합 슬롯으로 선점.
-    unifiedSlots: (opts?.activePassiveIds ?? []).slice(0, MAX_SLOTS).map(id => ({ tier: 'common' as const, cardId: id })),
+    // 운성패 2단계 — forceUnseongpae 지정 시 legendary tier 1칸 추가 장착 (십성 선점 뒤).
+    unifiedSlots: [
+      ...(opts?.activePassiveIds ?? []).slice(0, MAX_SLOTS).map(id => ({ tier: 'common' as const, cardId: id })),
+      ...(opts?.forceUnseongpae ? [{ tier: 'legendary' as const, cardId: opts.forceUnseongpae }] : []),
+    ].slice(0, MAX_SLOTS),
+    // 운성패 2단계 — 강제 장착 시 런타임 상태(격 고정 옵션 반영) 주입
+    unseongpaeStates: opts?.forceUnseongpae
+      ? [{ ...createUnseongpaeState(opts.forceUnseongpae), gyeok: opts.fixUnseongpaeGyeok ?? 'su' }]
+      : [],
+    lastFusionSignature: undefined,
+    fusionRepeatCount: 0,
   }
 }
 
@@ -962,6 +998,9 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
   // §3 신살 발동 횟수 추적 (유령측정 차단)
   let yeokmaActivations = 0
   let hwagaeActivations = 0
+  // 운성패 발동 추적 (유령측정 차단)
+  let jeoljiRevives = 0
+  let myogoReleases = 0
 
   // createDeterministicState에 resolvedFavorableElement + resolvedActivePassiveIds 반영을 위해 opts 래핑
   const resolvedOpts: FullCapSimOptions | undefined = opts
@@ -976,6 +1015,13 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
   // R4.5 영속 덱: 런 시작 시 1회 덱 생성 — 이후 층에서 재사용
   let state = createDeterministicState(0, rng, resolvedOpts)
   let playerHp = PLAYER_BASE_HP
+
+  // 운성패 격 고정 클램프 — fixUnseongpaeGyeok 지정 시 성장을 막고 지정 격 유지 (수격 방치 델타 측정).
+  const clampUnseongpaeGyeok = (s: GameState): GameState => {
+    const fixed = opts?.fixUnseongpaeGyeok
+    if (!fixed || !s.unseongpaeStates || s.unseongpaeStates.length === 0) return s
+    return { ...s, unseongpaeStates: s.unseongpaeStates.map(u => ({ ...u, gyeok: fixed, feed: 0 })) }
+  }
 
   // §3 신살 강제 획득 처리 (forceAcquire.kind='sinsal')
   // royalForceAcquire 패턴 승계 — 시뮬 초기에 신살 상태 주입
@@ -1076,6 +1122,18 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         floorStats.push({ floor, attackCount, cleared: true })
         playerHp = state.playerHp
 
+        // 운성패 절지(絶地) — 전투 승리 시 먹이 +1 (전투 승리 10회 골자). 격 고정 옵션 시 스킵.
+        if (state.unseongpaeStates && !opts?.fixUnseongpaeGyeok) {
+          const jj = state.unseongpaeStates.find(u => u.id === 'jeolji')
+          if (jj) {
+            const fed = accrueFeed(jj, 1)
+            state = {
+              ...state,
+              unseongpaeStates: state.unseongpaeStates.map(u => (u.id === 'jeolji' ? fed.state : u)),
+            }
+          }
+        }
+
         // R4.5 층 보상 3택: 영속 덱에 즉시 적용 (id 불일치 버그 수정)
         if (opts?.enableFloorReward) {
           const allCurrentCards = [...state.hand, ...state.deck, ...state.discardPile]
@@ -1130,19 +1188,24 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
           deathFloor = floor
           floorStats.push({ floor, attackCount, cleared: false })
         }
-        return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived, royalObtainedCount, yeokmaActivations, hwagaeActivations }
+        return { victory: state.isVictory, floorsCleared: state.floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived, royalObtainedCount, yeokmaActivations, hwagaeActivations, unseongpaeFinalGyeok: state.unseongpaeStates?.[0]?.gyeok, jeoljiRevives, myogoReleases, saengjiDraws: state.saengjiActivations ?? 0, wangjiExempts: state.wangjiActivations ?? 0 }
       }
 
       if (state.playsLeft <= 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived, royalObtainedCount, yeokmaActivations, hwagaeActivations }
+        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived, royalObtainedCount, yeokmaActivations, hwagaeActivations, unseongpaeFinalGyeok: state.unseongpaeStates?.[0]?.gyeok, jeoljiRevives, myogoReleases, saengjiDraws: state.saengjiActivations ?? 0, wangjiExempts: state.wangjiActivations ?? 0 }
       }
 
+      // 운성패 절지(絶地) 부활 — 트리거를 엔진 내부(paljajeonEngine playerDead 판정 직후)로 이관함
+      //   (2026-07-23). 기존 이 지점의 봇 부활 호출은 도달 불가 dead code였음(엔진이 사망 시
+      //   phase='result' 선전환 → :1180에서 먼저 return). 부활 발동 카운트는 playCards 호출부에서
+      //   jeoljiUsed false→true 전이로 계측한다(아래 :1568 인근). 이 블록은 무력화.
       if (state.playerHp <= 0) {
+        // 엔진 부활 훅 이관 후 이 경로는 정상 흐름에서 도달하지 않음(방어적 종료).
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived, royalObtainedCount, yeokmaActivations, hwagaeActivations }
+        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived, royalObtainedCount, yeokmaActivations, hwagaeActivations, unseongpaeFinalGyeok: state.unseongpaeStates?.[0]?.gyeok, jeoljiRevives, myogoReleases, saengjiDraws: state.saengjiActivations ?? 0, wangjiExempts: state.wangjiActivations ?? 0 }
       }
 
       // 랜덤화된 층별 원소 사용 (작업 2) — R7-2 검증용 4층 강제 옵션 지원
@@ -1245,6 +1308,45 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         }
       }
 
+      // 운성패 묘지(墓地) 봇 정책 — 가치 기반 방출 (2026-07-23 재설계).
+      //   폐기: 기존 공간 조건 `hand.length < HAND_SIZE` (버리기 리필로 상시 false → 발동0).
+      //   신규 관점(가치 기반, 신살 액티브 측정 원칙): "쌓인 묘고를 언제 터뜨리는 게 이득인가".
+      //   조건: 묘고 적재 ≥5장 && 다음 조립이 대형(연환·융합 다장·gather 고배율)일 때 방출.
+      //     → 대형 조립 직전에 방출해 융합 연료(손패)를 최대화, 큰 콤보를 더 크게 만든다.
+      //   수치(≥5, 대형 임계)는 재량, 관점(가치 기반 방출)은 고정. releaseMyogo 내부 무수정.
+      {
+        const myoji = getUnseongpaeState(state, 'myoji')
+        const myogoLoaded = myoji?.myogo?.length ?? 0
+        if (myoji && !myoji.myogoUsedThisFloor && myogoLoaded >= 5) {
+          // 다음 조립 크기 preview — 현재 손패 최선 5장 기준 콤보 판정.
+          const previewCards = state.hand.slice(0, Math.min(state.hand.length, 5))
+          const previewCombo = judgeCombo(
+            previewCards,
+            state.recipeMultipliers,
+            undefined,
+            state.gatherUsedInBattle ?? 0,
+          )
+          const isLargeAssembly =
+            previewCombo.type === 'ohang-yeonhwan' ||   // 오행연환 (대형)
+            previewCombo.type === 'fusion-hone' ||       // 융합 다장 (연마)
+            (previewCombo.type === 'gather' && previewCombo.multiplier >= 4.5) // gather 고배율
+          if (isLargeAssembly) {
+            const before = getUnseongpaeState(state, 'myoji')?.myogoUsedThisFloor
+            state = releaseMyogo(state)
+            if (before !== getUnseongpaeState(state, 'myoji')?.myogoUsedThisFloor) {
+              myogoReleases++
+              // b 방출 시점 로그 (게이트 캡처용) — 묘고 적재수 + 조립 크기.
+              if (opts?.enableEffectMode) {
+                console.log(
+                  `[MYOGO-RELEASE] floor=${floor} 묘고적재=${myogoLoaded}장 ` +
+                  `조립=${previewCombo.type}(×${previewCombo.multiplier.toFixed(2)})`,
+                )
+              }
+            }
+          }
+        }
+      }
+
       const decision = fullCapSelectCards(
         state.hand,
         currentPrimaryEl,
@@ -1267,7 +1369,7 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
       if (decision.cardIds.length === 0) {
         deathFloor = floor
         floorStats.push({ floor, attackCount, cleared: false })
-        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived, royalObtainedCount, yeokmaActivations, hwagaeActivations }
+        return { victory: false, floorsCleared, deathFloor, floorStats, discardCount, condenseCount, fusionCount, traitCounts, reachedFloor4: floor4PlayedElements.length > 0, floor4PlayedElements, descentActivated, descentDeferred, descentVanished, descentSlotsArrived, royalObtainedCount, yeokmaActivations, hwagaeActivations, unseongpaeFinalGyeok: state.unseongpaeStates?.[0]?.gyeok, jeoljiRevives, myogoReleases, saengjiDraws: state.saengjiActivations ?? 0, wangjiExempts: state.wangjiActivations ?? 0 }
       }
 
       // 버리기 전략 — B1-4: discardCards는 MAX_DISCARD_PER_USE(3)장 초과 리젝 → 슬라이스로 무한루프 방지
@@ -1286,6 +1388,7 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
           )
         }
         discardCount++
+        state = clampUnseongpaeGyeok(state) // 격 고정 옵션 시 버리기 먹이 성장 무효화
         // sikshin D안: 버리기 후 보너스 설정 횟수 추적 (activePassiveIds에 sikshin 있을 때)
         if ((state.activePassiveIds ?? []).includes('sikshin') && state.sikshinDiscardBonus === true) {
           traitCounts['passive_sikshin_discard'] = (traitCounts['passive_sikshin_discard'] ?? 0) + 1
@@ -1501,6 +1604,19 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
           `[V3-무한루프-픽스] playCards 리젝 감지 — floor=${floor} cardIds=${JSON.stringify(decision.cardIds)} phase=${state.phase}`
         )
       }
+      // 운성패 절지 부활 발동 계측 (2026-07-23) — 엔진 내부 이관 훅의 발동을
+      //   jeoljiUsed false→true 전이로 감지 (봇 dead code 대체). clamp 전에 판정.
+      {
+        const prevJeolji = getUnseongpaeState(prevState, 'jeolji')
+        const nowJeolji = getUnseongpaeState(state, 'jeolji')
+        if (nowJeolji?.jeoljiUsed && !prevJeolji?.jeoljiUsed) {
+          jeoljiRevives++
+          if (opts?.enableEffectMode) {
+            console.log(`[JEOLJI-REVIVE] floor=${floor} 부활HP=${state.playerHp} 격=${nowJeolji.gyeok}`)
+          }
+        }
+      }
+      state = clampUnseongpaeGyeok(state) // 격 고정 옵션 시 융합 먹이 성장 무효화
       // R10-5: 특성 발동 추적
       if (state.lastTraitTriggered) {
         traitCounts[state.lastTraitTriggered] = (traitCounts[state.lastTraitTriggered] ?? 0) + 1
@@ -1540,6 +1656,13 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
     descentVanished,
     descentSlotsArrived,
     royalObtainedCount,
+    yeokmaActivations,
+    hwagaeActivations,
+    unseongpaeFinalGyeok: state.unseongpaeStates?.[0]?.gyeok,
+    jeoljiRevives,
+    myogoReleases,
+    saengjiDraws: state.saengjiActivations ?? 0,
+    wangjiExempts: state.wangjiActivations ?? 0,
   }
 }
 
