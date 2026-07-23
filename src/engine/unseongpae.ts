@@ -36,12 +36,15 @@ export const GYEOK_LABEL: Record<Gyeok, string> = {
   wang: '왕(旺)',
 }
 
-/** 운성패 한글 명칭 (UI 표기용, 명리 정본) */
+/** 운성패 한글 명칭 (UI 표기용, 명리 정본)
+ *  G13 개체명 개정 최종(2026-07-23 이든): 카드 표면 개체명 = 장생/제왕/금고/환생.
+ *  분류명(생왕묘절)은 도감·설명 층으로 강등. 엔진 식별자 키(saengji 등)는 파급 최소화 위해 유지.
+ *  "묘고(墓庫)"는 금고 카드 내부 창고(적재 슬롯) 명칭으로만 존치 — 카드 표면명=금고. */
 export const UNSEONGPAE_LABEL: Record<UnseongpaeId, string> = {
-  saengji: '생지(生地)',
-  wangji: '왕지(旺地)',
-  myoji: '묘지(墓地)',
-  jeolji: '절지(絶地)',
+  saengji: '장생(長生)',
+  wangji: '제왕(帝旺)',
+  myoji: '금고(金庫)',
+  jeolji: '환생(還生)',
 }
 
 /** 4종 전체 목록 */
@@ -51,8 +54,9 @@ export const ALL_UNSEONGPAE: readonly UnseongpaeId[] = ['saengji', 'wangji', 'my
  * 운성패 런타임 상태 (GameState.unseongpaeStates에 종별로 보관).
  *  - gyeok     : 현재 격
  *  - feed      : 먹이 게이지 누적 (해당 격→다음 격 필요치 대비)
- *  - myogo     : 묘지 전용 — 묘고(墓庫) 적재 카드 (버린 카드 보관, 발동 시 방출)
+ *  - myogo     : 묘지 전용 — 묘고(墓庫) 적재 카드 (버린 카드 보관, 방출 시 즉석 조립 재료)
  *  - myogoUsedThisFloor : 묘지 전용 — 이번 전투 묘고 방출 사용 여부 (전투당 1회)
+ *  - myogoReleaseCount  : 묘지 전용 — 즉석 조립 방출 누적 횟수 (수확 체감 추적, 런 스코프)
  *  - jeoljiUsed : 절지 전용 — 런당 1회 부활 소진 여부
  *  - jeoljiAwakenBattle : 절지 전용 — 부활 각성(전 융합 ×1.5) 잔여 전투 (부활 전투 동안)
  */
@@ -62,6 +66,7 @@ export interface UnseongpaeState {
   feed: number
   myogo?: Card[]
   myogoUsedThisFloor?: boolean
+  myogoReleaseCount?: number
   jeoljiUsed?: boolean
   jeoljiAwakenBattle?: boolean
 }
@@ -72,6 +77,7 @@ export function createUnseongpaeState(id: UnseongpaeId): UnseongpaeState {
   if (id === 'myoji') {
     base.myogo = []
     base.myogoUsedThisFloor = false
+    base.myogoReleaseCount = 0
   }
   if (id === 'jeolji') {
     base.jeoljiUsed = false
@@ -183,8 +189,9 @@ export function wangjiRepeatMultiplier(gyeok: Gyeok, repeatCount: number): numbe
   return Math.pow(1 + WANGJI_WANG_REPEAT_STEP, repeatCount)
 }
 
-// ── 묘지(墓地) 버리기: 버린 카드 묘고 적재, 발동 시 전체 손패로 (전투당 1회) ──
+// ── 묘지(墓地=금고) 버리기: 버린 카드 묘고 적재, 방출 시 "즉석 조립" 즉시 타격 (전투당 1회) ──
 //   왕격: 묘고 카드 값 +1 숙성.
+//   G13 개체명: 카드 표면=금고(金庫), 내부 적재 슬롯=묘고(墓庫). 식별자 키(myoji/myogo) 유지.
 /** 묘지 — 묘고 적재 상한 (수=4/휴=8/상=∞/왕=∞).
  *  게이트 튜닝(2026-07-22): 하위격 적재 상한 상향(수 3→4, 휴 6→8)으로 방출 융합 연료 확대. */
 export const MYOJI_MYOGO_CAP: Record<Gyeok, number> = {
@@ -195,6 +202,13 @@ export const MYOJI_MYOGO_CAP: Record<Gyeok, number> = {
 }
 /** 묘지 왕격 — 방출 시 묘고 카드 값 숙성 (+1) */
 export const MYOJI_WANG_AGING = 1
+
+/**
+ * 즉석 조립 수확 체감 계수 (2026-07-23 5차 재설계).
+ * 방출은 free action(공짜 딜)이므로 정본 조립 대비 체감 계수를 곱해 상한을 넘지 않게 한다.
+ * 방출 데미지 = 즉석 콤보 정본 데미지 × MYOGO_INSTANT_DIMINISH. 배율 상향은 이번 스코프 아님(≤1.0).
+ */
+export const MYOGO_INSTANT_DIMINISH = 1.0
 
 /** 묘지 — 버린 카드를 묘고에 적재 (격별 상한 준수). 순수. */
 export function myojiStoreDiscarded(state: UnseongpaeState, discarded: Card[]): UnseongpaeState {
@@ -207,19 +221,27 @@ export function myojiStoreDiscarded(state: UnseongpaeState, discarded: Card[]): 
 }
 
 /**
- * 묘지 — 묘고 방출 (발동): 묘고 전체를 손패 복귀용으로 반환하고 묘고 비움 (전투당 1회).
- * 왕격이면 방출 카드 값 +1 숙성. 이미 이번 전투 사용했거나 묘고 비었으면 null.
- * @returns { state, released } 또는 { state, released: null }
+ * 묘지(금고) — 묘고 방출 (발동): 5차 재설계 "즉석 조립".
+ * 손패 무경유·불변. 묘고 적재 카드를 **즉석 조립 재료(materials)**로 반환 → 호출부(releaseMyogo)가
+ * 정본 족보(judgeCombo) 내 최대 콤보를 산출해 적에게 즉시 1회 타격한다. 손패는 건드리지 않는다.
+ * 왕격이면 재료 값 +1 숙성. 방출 후 묘고 리셋 + 전투당 1회 소진 + 체감 카운터 증가.
+ * 이미 이번 전투 사용했거나 묘고 비었으면 materials=null.
+ * @returns { state, materials } materials = 즉석 조립 재료 카드 배열 (손패 미개입) 또는 null.
  */
-export function myojiRelease(state: UnseongpaeState): { state: UnseongpaeState; released: Card[] | null } {
-  if (state.id !== 'myoji') return { state, released: null }
-  if (state.myogoUsedThisFloor) return { state, released: null }
+export function myojiRelease(state: UnseongpaeState): { state: UnseongpaeState; materials: Card[] | null } {
+  if (state.id !== 'myoji') return { state, materials: null }
+  if (state.myogoUsedThisFloor) return { state, materials: null }
   const myogo = state.myogo ?? []
-  if (myogo.length === 0) return { state, released: null }
+  if (myogo.length === 0) return { state, materials: null }
   const aged = state.gyeok === 'wang' ? myogo.map(c => ({ ...c, value: c.value + MYOJI_WANG_AGING })) : myogo
   return {
-    state: { ...state, myogo: [], myogoUsedThisFloor: true },
-    released: aged,
+    state: {
+      ...state,
+      myogo: [],
+      myogoUsedThisFloor: true,
+      myogoReleaseCount: (state.myogoReleaseCount ?? 0) + 1, // 수확 체감 추적
+    },
+    materials: aged,
   }
 }
 

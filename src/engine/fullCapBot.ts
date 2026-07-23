@@ -23,6 +23,7 @@ import {
   initYongsinDescent,
   MAX_SLOTS,
   releaseMyogo,
+  bestMyogoCombo,
   getUnseongpaeState,
 } from './paljajeonEngine'
 import type { RewardOption } from './paljajeonEngine'
@@ -1308,38 +1309,31 @@ export function simulateFullCapRun(seed: number, opts?: FullCapSimOptions): Full
         }
       }
 
-      // 운성패 묘지(墓地) 봇 정책 — 가치 기반 방출 (2026-07-23 재설계).
-      //   폐기: 기존 공간 조건 `hand.length < HAND_SIZE` (버리기 리필로 상시 false → 발동0).
-      //   신규 관점(가치 기반, 신살 액티브 측정 원칙): "쌓인 묘고를 언제 터뜨리는 게 이득인가".
-      //   조건: 묘고 적재 ≥5장 && 다음 조립이 대형(연환·융합 다장·gather 고배율)일 때 방출.
-      //     → 대형 조립 직전에 방출해 융합 연료(손패)를 최대화, 큰 콤보를 더 크게 만든다.
-      //   수치(≥5, 대형 임계)는 재량, 관점(가치 기반 방출)은 고정. releaseMyogo 내부 무수정.
+      // 운성패 묘지(금고) 봇 정책 — 즉석 조립 방출 (2026-07-23 5차 재설계 "즉석 조립").
+      //   신 문법: 방출 = 묘고 재료로 정본 족보 내 최대 콤보 즉석 계산 → 적 즉시 타격.
+      //            손패 무경유·불변, free action(공격권·버리기 미소비), 전투당 1회, 공짜 딜.
+      //   자명화 정책(§2): 공짜 딜이므로 EV 계산 단순 —
+      //            "묘고 내 성립 콤보 배율 ≥4.5 시 즉시 방출" 단일 기준.
+      //   기존 hasQualifiedMaterial(≥4)·isLargeAssembly 게이팅 폐기 (손패 회수 문법 소멸).
       {
         const myoji = getUnseongpaeState(state, 'myoji')
-        const myogoLoaded = myoji?.myogo?.length ?? 0
-        if (myoji && !myoji.myogoUsedThisFloor && myogoLoaded >= 5) {
-          // 다음 조립 크기 preview — 현재 손패 최선 5장 기준 콤보 판정.
-          const previewCards = state.hand.slice(0, Math.min(state.hand.length, 5))
-          const previewCombo = judgeCombo(
-            previewCards,
-            state.recipeMultipliers,
-            undefined,
-            state.gatherUsedInBattle ?? 0,
-          )
-          const isLargeAssembly =
-            previewCombo.type === 'ohang-yeonhwan' ||   // 오행연환 (대형)
-            previewCombo.type === 'fusion-hone' ||       // 융합 다장 (연마)
-            (previewCombo.type === 'gather' && previewCombo.multiplier >= 4.5) // gather 고배율
-          if (isLargeAssembly) {
+        const myogoCards = myoji?.myogo ?? []
+        if (myoji && !myoji.myogoUsedThisFloor && myogoCards.length > 0) {
+          // 묘고 재료로 즉석 조립 최대 콤보 배율 산출 (정본 judgeCombo만).
+          const picked = bestMyogoCombo(myogoCards, state.recipeMultipliers, state.gatherUsedInBattle ?? 0)
+          const instantMult = picked ? picked.result.multiplier : 0
+          if (picked && instantMult >= 4.5) {
             const before = getUnseongpaeState(state, 'myoji')?.myogoUsedThisFloor
+            const enemyHpBefore = state.enemyHp
             state = releaseMyogo(state)
             if (before !== getUnseongpaeState(state, 'myoji')?.myogoUsedThisFloor) {
               myogoReleases++
-              // b 방출 시점 로그 (게이트 캡처용) — 묘고 적재수 + 조립 크기.
+              // 방출 시점 로그 (게이트 캡처용) — 묘고 적재수 + 즉석 조립 콤보/배율 + 타격딜.
               if (opts?.enableEffectMode) {
                 console.log(
-                  `[MYOGO-RELEASE] floor=${floor} 묘고적재=${myogoLoaded}장 ` +
-                  `조립=${previewCombo.type}(×${previewCombo.multiplier.toFixed(2)})`,
+                  `[MYOGO-RELEASE] floor=${floor} 묘고적재=${myogoCards.length}장 ` +
+                  `즉석조립=${picked.result.name}(×${instantMult.toFixed(2)}) ` +
+                  `타격딜=${enemyHpBefore - state.enemyHp}`,
                 )
               }
             }

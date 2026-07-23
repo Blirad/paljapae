@@ -20,6 +20,7 @@ import type { Passive } from '../types/passive'
 import ComboGuide from './ComboGuide'
 import RecipeNavigator from './RecipeNavigator'
 import YongsinDescentBanner from './YongsinDescentBanner'
+import { JeoljiReviveOverlay, JeoljiAwakenBanner } from './JeoljiReviveOverlay'
 import { getDevComboRuleset, getDevDescentEnabled } from '../engine/devSettings'
 
 const RECIPE_KO_NAMES: Record<string, string> = { fusion_forest:'숲', fusion_spring:'샘', fusion_mine:'광맥', fusion_kiln:'옹기가마', fusion_wildfire:'들불', fusion_keen:'벼림', fusion_harvest:'개간', fusion_pierce:'제방', fusion_snipe:'담금질', fusion_temper:'주물' }
@@ -1283,6 +1284,7 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
     setActivePassiveIds,
     sinsalInventory,
     unifiedSlots,
+    unseongpaeStates,
     useSinsalAction,
   } = useGameStore()
   // sinsalInventory — 레거시 호환 (직접 렌더 금지, unifiedSlots가 정본)
@@ -1581,6 +1583,27 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
   // 이전 HP 추적
   const prevEnemyHp = useRef(enemyHp)
   const prevPlayerHp = useRef(playerHp)
+
+  // ── 환생(還生·절지) 부활 각성 연출 (§4-D) ──
+  // 엔진이 playCards 내부에서 사망 판정 직후 부활 훅을 실발동한다(jeoljiUsed false→true).
+  // UI는 그 상태 전이를 감지해 §4-D 오버레이(암전→광휘→배너→격 꺾임)를 1회 재생한다.
+  const jeoljiState = unseongpaeStates?.find(u => u.id === 'jeolji')
+  const jeoljiUsed = jeoljiState?.jeoljiUsed ?? false
+  const jeoljiGyeok = jeoljiState?.gyeok ?? 'su'
+  const jeoljiAwakened = jeoljiState?.jeoljiAwakenBattle ?? false
+  const prevJeoljiUsed = useRef(jeoljiUsed)
+  const [reviveOverlay, setReviveOverlay] = useState(false)
+
+  useEffect(() => {
+    // false→true 전이 = 부활 발동 순간. (초기 마운트 시 이미 true인 경우는 재생 안 함)
+    if (!prevJeoljiUsed.current && jeoljiUsed) {
+      setReviveOverlay(true)
+      const t = setTimeout(() => setReviveOverlay(false), 2400) // 연출 총 길이(§4-D)
+      prevJeoljiUsed.current = jeoljiUsed
+      return () => clearTimeout(t)
+    }
+    prevJeoljiUsed.current = jeoljiUsed
+  }, [jeoljiUsed])
 
   // 족보 미리보기 바운스 애니메이션 트리거
   const [previewBounce, setPreviewBounce] = useState(false)
@@ -4376,6 +4399,8 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
             descentEnabled={getDevDescentEnabled()}
             attackCount={attackCount}
           />
+          {/* 환생(還生·절지) 각성 상시 배너 (§4-D — 부활 전투 동안 상주) */}
+          <JeoljiAwakenBanner awakened={jeoljiAwakened} />
           {/* 작업 2-b / 배치 1.5-C: 레시피 내비게이터 접이식 (recipe 모드 한정) */}
           {getDevComboRuleset() === 'recipe' && (
             <RecipeNavigator hand={hand} selectedCards={selectedCards} />
@@ -4793,6 +4818,9 @@ export default function BattleScreen({ onFloorClear, onResult, passives = [] }: 
           }}
         />
       </div>
+
+      {/* 환생(還生·절지) 부활 순간 연출 오버레이 (§4-D: 암전→광휘→배너→격 꺾임) */}
+      <JeoljiReviveOverlay reviving={reviveOverlay} currentGyeok={jeoljiGyeok} />
     </>
   )
 }

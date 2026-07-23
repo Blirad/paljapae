@@ -25,6 +25,20 @@ import {
 } from '../types/passive'
 import { PASSIVE_POOL } from '../types/passive'
 import { MAX_SLOTS } from '../engine/paljajeonEngine'
+import {
+  UNSEONG_SYMBOL,
+  UNSEONG_GRADE_BORDER,
+  UNSEONG_GRADE_SHADOW,
+  UNSEONG_GRADE_BADGE_BG,
+  UNSEONG_GRADE_BADGE_COLOR,
+  UNSEONG_GRADE_SHORT,
+  UNSEONG_GRADE_NAME_COLOR,
+  UNSEONG_CATCHPHRASE,
+  UNSEONG_NAME,
+  UNSEONG_HANJA,
+  isUnseongVisible,
+} from '../types/unseong'
+import type { Gyeok } from '../engine/unseongpae'
 
 // ─── 신살 이름·설명 조회 ────────────────────────────────────────────────────
 
@@ -35,9 +49,24 @@ const SINSAL_META: Record<string, { name: string; effect: string }> = {
   },
 }
 
-// 운성패 이름 조회 (2단계 구현 전 자리 예약용 텍스트)
+// 운성패 이름·효과 조회 (2단계 — §6-I 정본 채움)
 const UNSEONGPAE_META: Record<string, { name: string; effect: string }> = {
-  // 예시 — 실제 정본은 2단계에서 정의
+  saengji: {
+    name: UNSEONG_NAME.saengji,
+    effect: UNSEONG_CATCHPHRASE.saengji,
+  },
+  wangji: {
+    name: UNSEONG_NAME.wangji,
+    effect: UNSEONG_CATCHPHRASE.wangji,
+  },
+  myoji: {
+    name: UNSEONG_NAME.myoji,
+    effect: UNSEONG_CATCHPHRASE.myoji,
+  },
+  jeolji: {
+    name: UNSEONG_NAME.jeolji,
+    effect: UNSEONG_CATCHPHRASE.jeolji,
+  },
 }
 
 function resolveSlotMeta(slot: UnifiedSlot): { label: string; name: string; effect: string } {
@@ -93,9 +122,20 @@ function UnifiedSlotCard({
   // SlotTier(common/rare/legendary)는 PassiveRarity의 부분집합이므로 직접 인덱싱
   const tierKey = slot.tier as 'common' | 'rare' | 'legendary'
   const tierColor = PASSIVE_RARITY_COLORS[tierKey] ?? '#D8CCB4'
-  const borderColor = PASSIVE_RARITY_BORDER[tierKey] ?? '#4A4540'
-  const borderWidth = PASSIVE_RARITY_BORDER_WIDTH[tierKey] ?? '1px'
-  const boxShadow = PASSIVE_RARITY_SHADOW[tierKey] ?? 'none'
+
+  // legendary tier: 격별 테두리/글로우 사용 (§A-1). 그 외는 기존 tier 상수.
+  const isLegendary = slot.tier === 'legendary'
+  // gyeok 폴백: 데이터 없으면 'su' 취급 (1단계 fallback 패턴 계승)
+  const gyeok: Gyeok = (slot.gyeok ?? 'su') as Gyeok
+  const borderStyle = isLegendary
+    ? UNSEONG_GRADE_BORDER[gyeok]
+    : `${PASSIVE_RARITY_BORDER_WIDTH[tierKey] ?? '1px'} solid ${PASSIVE_RARITY_BORDER[tierKey] ?? '#4A4540'}`
+  const boxShadow = isLegendary
+    ? (gyeok === 'wang' ? UNSEONG_GRADE_SHADOW.wang : UNSEONG_GRADE_SHADOW[gyeok])
+    : (PASSIVE_RARITY_SHADOW[tierKey] ?? 'none')
+
+  // 이름 색: legendary는 격 강조색, 그 외는 tier 색
+  const nameColor = isLegendary ? UNSEONG_GRADE_NAME_COLOR[gyeok] : tierColor
 
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -152,7 +192,7 @@ function UnifiedSlotCard({
         width: '56px',
         height: '72px',
         backgroundColor: '#1C1710',
-        border: isFlashing ? '2px solid #FFFFFF' : `${borderWidth} solid ${borderColor}`,
+        border: isFlashing ? '2px solid #FFFFFF' : borderStyle,
         borderRadius: '2px',
         display: 'flex',
         flexDirection: 'column',
@@ -167,6 +207,8 @@ function UnifiedSlotCard({
         flexShrink: 0,
         opacity: isFadingOut ? 0 : 1,
         transform: isFadingOut ? 'scale(0.9)' : 'none',
+        // 왕격 펄스 애니메이션 (§A-1 — slow, subtle)
+        animation: isLegendary && gyeok === 'wang' && !isFlashing ? 'unseongWangPulse 1.8s ease-in-out infinite' : undefined,
         ...flashStyle,
       }}
       onMouseDown={handleMouseDown}
@@ -191,19 +233,39 @@ function UnifiedSlotCard({
         {meta.label}
       </div>
 
-      {/* 전설 격 표기 (우하단, 1단계 자리예약) */}
-      {slot.tier === 'legendary' && (
+      {/* 운성패 — 종 심볼 (우상단, §A-3) */}
+      {isLegendary && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '2px',
+            right: '3px',
+            fontSize: '8px',
+            color: UNSEONG_GRADE_BADGE_COLOR[gyeok],
+            lineHeight: 1,
+          }}
+        >
+          {UNSEONG_SYMBOL[slot.cardId] ?? '✦'}
+        </div>
+      )}
+
+      {/* 운성패 — 격 배지 (우하단, §6-A 데이터 바인딩 — 1단계 "수" 하드코딩 대체) */}
+      {isLegendary && (
         <div
           style={{
             position: 'absolute',
             bottom: '2px',
             right: '3px',
             fontSize: '8px',
-            color: '#C9A227',
-            opacity: 0.9,
+            color: UNSEONG_GRADE_BADGE_COLOR[gyeok],
+            backgroundColor: UNSEONG_GRADE_BADGE_BG[gyeok],
+            borderRadius: '2px',
+            padding: '0 2px',
+            lineHeight: '1.4',
+            opacity: 0.95,
           }}
         >
-          수
+          {UNSEONG_GRADE_SHORT[gyeok]}
         </div>
       )}
 
@@ -211,7 +273,7 @@ function UnifiedSlotCard({
       <div
         style={{
           fontSize: '9px',
-          color: tierColor,
+          color: nameColor,
           fontWeight: 'bold',
           textAlign: 'center',
           letterSpacing: '0.03em',
@@ -223,7 +285,21 @@ function UnifiedSlotCard({
         {meta.name}
       </div>
 
-      {/* 효과 1줄 */}
+      {/* 운성패 — 한자 보조 (§A-1 와이어프레임) */}
+      {isLegendary && (
+        <div
+          style={{
+            fontSize: '7px',
+            color: '#B39A55',
+            textAlign: 'center',
+            lineHeight: '1.1',
+          }}
+        >
+          {UNSEONG_HANJA[slot.cardId] ?? ''}
+        </div>
+      )}
+
+      {/* 효과 1줄 (운성패는 한자 아래 공간이 좁으므로 2줄 클램프로 축소) */}
       <div
         style={{
           fontSize: '7px',
@@ -233,12 +309,55 @@ function UnifiedSlotCard({
           wordBreak: 'keep-all',
           overflow: 'hidden',
           display: '-webkit-box',
-          WebkitLineClamp: 3,
+          WebkitLineClamp: isLegendary ? 2 : 3,
           WebkitBoxOrient: 'vertical',
         } as React.CSSProperties}
       >
         {meta.effect}
       </div>
+
+      {/* 운성패 — 먹이 미니바 (§B-1, §6-C) */}
+      {isLegendary && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '12px',  // 격 배지 위 (배지 bottom:2px + 높이 약 10px)
+            left: '4px',
+            right: '14px',   // 격 배지 너비(약 12px) 여백 확보
+            height: '3px',
+            backgroundColor: 'rgba(138,115,50,0.25)',
+            borderRadius: '2px',
+            overflow: 'hidden',
+          }}
+        >
+          {gyeok === 'wang' ? (
+            // 왕격(만렙) — 100% 금색 채움 (§B-2)
+            <div
+              style={{
+                width: '100%',
+                height: '100%',
+                backgroundColor: '#F0C64A',
+                borderRadius: '2px',
+              }}
+            />
+          ) : (
+            // 진행 중 — feedCount / feedTarget 비율
+            <div
+              style={{
+                width: slot.feedTarget != null && slot.feedTarget > 0
+                  ? `${Math.min(100, ((slot.feedCount ?? 0) / slot.feedTarget) * 100)}%`
+                  : '0%',
+                height: '100%',
+                backgroundColor: UNSEONG_GRADE_BADGE_COLOR[gyeok] === '#16130F'
+                  ? '#F0C64A'
+                  : UNSEONG_GRADE_BADGE_COLOR[gyeok],
+                borderRadius: '2px',
+                transition: 'width 0.3s ease',
+              }}
+            />
+          )}
+        </div>
+      )}
 
       {/* 신살 발동 버튼 (전투 중 희귀 슬롯) */}
       {showActivateBtn && (
@@ -311,6 +430,10 @@ interface UnequipConfirmModalProps {
 function UnequipConfirmModal({ slot, onConfirm, onCancel }: UnequipConfirmModalProps) {
   const meta = resolveSlotMeta(slot)
   const tierColor = PASSIVE_RARITY_COLORS[slot.tier as 'common' | 'rare' | 'legendary'] ?? '#D8CCB4'
+  // 운성패 전용: 격 경고 라인 (§D-3, §6-H)
+  const isLegendary = slot.tier === 'legendary'
+  const gyeok: Gyeok = (slot.gyeok ?? 'su') as Gyeok
+  const gyeokShort = UNSEONG_GRADE_SHORT[gyeok]
 
   return (
     <div
@@ -337,12 +460,29 @@ function UnequipConfirmModal({ slot, onConfirm, onCancel }: UnequipConfirmModalP
         }}
       >
         <div style={{ color: '#E8DCC4', fontSize: '14px', letterSpacing: '0.1em', marginBottom: '12px' }}>
-          <span style={{ color: tierColor, fontWeight: 'bold' }}>{meta.name}</span>
-          <span style={{ color: '#E8DCC4' }}>을(를) 해제합니다</span>
+          {isLegendary ? (
+            <>
+              <span style={{ color: tierColor, fontWeight: 'bold' }}>{meta.name}</span>
+              <span style={{ color: UNSEONG_GRADE_BADGE_COLOR[gyeok], fontWeight: 'bold', fontSize: '12px', marginLeft: '4px' }}>
+                [{gyeokShort}]
+              </span>
+              <span style={{ color: '#E8DCC4' }}>을(를) 해제합니다</span>
+            </>
+          ) : (
+            <>
+              <span style={{ color: tierColor, fontWeight: 'bold' }}>{meta.name}</span>
+              <span style={{ color: '#E8DCC4' }}>을(를) 해제합니다</span>
+            </>
+          )}
         </div>
         <div style={{ color: '#B33A2B', fontSize: '12px', marginBottom: '4px' }}>
-          이 카드는 영구히 소멸합니다.
+          이 패는 영구히 소멸합니다.
         </div>
+        {isLegendary && (
+          <div style={{ color: '#B33A2B', fontSize: '12px', marginBottom: '4px' }}>
+            길러온 격({gyeokShort})도 함께 사라집니다.
+          </div>
+        )}
         <div style={{ color: '#B33A2B', fontSize: '12px', marginBottom: '20px' }}>
           보관함이 없습니다. 되돌릴 수 없습니다.
         </div>
@@ -481,7 +621,12 @@ export default function PassiveSlot({
 
   // ── 통합 슬롯 정본 렌더 ──
   if (unifiedSlots !== undefined) {
-    const emptyCount = Math.max(0, maxSlots - unifiedSlots.length)
+    // 금고(myoji) UI 전면 제외 (2026-07-23 마감 시퀀스): legendary+금고 슬롯은
+    // 렌더 트리에서 조건부 미표시. 원본 인덱스(i)는 slotIndex로 보존해 해제 콜백 정합성 유지.
+    const isHiddenSlot = (slot: UnifiedSlot) =>
+      slot.tier === 'legendary' && !isUnseongVisible(slot.cardId)
+    const visibleCount = unifiedSlots.filter(s => !isHiddenSlot(s)).length
+    const emptyCount = Math.max(0, maxSlots - visibleCount)
 
     return (
       <>
@@ -498,19 +643,23 @@ export default function PassiveSlot({
             padding: '4px 16px',
           }}
         >
-          {unifiedSlots.map((slot, i) => (
-            <UnifiedSlotCard
-              key={`${slot.tier}-${slot.cardId}-${i}`}
-              slot={slot}
-              slotIndex={i}
-              isFlashing={flashCardId === slot.cardId}
-              isEquipActive={isEquipPhase}
-              isInBattle={isInBattle}
-              isFadingOut={fadingOutIndices.has(i)}
-              onUnequipRequest={handleUnequipRequest}
-              onActivateSinsal={onActivateSinsal}
-            />
-          ))}
+          {unifiedSlots.map((slot, i) => {
+            // 금고 슬롯은 렌더 스킵(원본 인덱스 i는 그대로 유지 — 해제/모달 정합성).
+            if (isHiddenSlot(slot)) return null
+            return (
+              <UnifiedSlotCard
+                key={`${slot.tier}-${slot.cardId}-${i}`}
+                slot={slot}
+                slotIndex={i}
+                isFlashing={flashCardId === slot.cardId}
+                isEquipActive={isEquipPhase}
+                isInBattle={isInBattle}
+                isFadingOut={fadingOutIndices.has(i)}
+                onUnequipRequest={handleUnequipRequest}
+                onActivateSinsal={onActivateSinsal}
+              />
+            )
+          })}
           {Array(emptyCount).fill(null).map((_, i) => (
             <EmptySlot key={`empty-${i}`} />
           ))}

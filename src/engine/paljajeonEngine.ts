@@ -6,6 +6,7 @@
 import type { Card, GameState, Element, SavedHeroProfile, SinsalId, UnifiedSlot } from '../types/game'
 import {
   judgeHand,
+  judgeCombo,
   GEUK_MAP,
   detectElementClash,
 } from './pokerHandJudge'
@@ -31,6 +32,7 @@ import {
   myojiStoreDiscarded,
   myojiRelease,
   myojiResetPerFloor,
+  MYOGO_INSTANT_DIMINISH,
   jeoljiRevive,
   jeoljiAwakenMultiplier,
   jeoljiClearAwaken,
@@ -1881,18 +1883,103 @@ export function acquireUnseongpae(
 }
 
 /**
- * 묘지(墓地) 방출 발동 — 묘고 전체를 손패로 복귀 (전투당 1회).
- * 왕격이면 방출 카드 값 +1 숙성. 발동 불가(미장착/이미 사용/묘고 비움) 시 원본 반환.
+ * 즉석 조립 — 묘고 재료(≤materials)에서 정본 족보(judgeCombo) 내 최대 배율 콤보 산출.
+ * materials가 5장 초과면 상위 5장 조합을 완전 탐색해 최대 totalScore 콤보를 고른다.
+ * 유령 족보 생성 금지 — judgeCombo 정본 판정만 사용.
+ * @returns { combo, result } 최선 콤보 카드 + judgeCombo 결과. 재료 없으면 null.
+ */
+export function bestMyogoCombo(
+  materials: Card[],
+  recipeMultipliers?: Record<string, number>,
+  gatherUsedInBattle = 0,
+): { combo: Card[]; result: ReturnType<typeof judgeCombo> } | null {
+  if (materials.length === 0) return null
+  const n = Math.min(materials.length, 5)
+  let best: { combo: Card[]; result: ReturnType<typeof judgeCombo> } | null = null
+  // 크기 1..n 각 조합 완전 탐색 (묘고 적재는 소규모 — 실사용 ≤ 상한). 최대 totalScore 채택.
+  const idxs = materials.map((_, i) => i)
+  const evaluate = (combo: Card[]) => {
+    if (combo.length === 0) return
+    const result = judgeCombo(combo, recipeMultipliers, undefined, gatherUsedInBattle)
+    if (!best || result.totalScore > best.result.totalScore) {
+      best = { combo, result }
+    }
+  }
+  // k=1..n 조합 생성 (재귀 조합)
+  const choose = (start: number, k: number, acc: number[]) => {
+    if (acc.length === k) {
+      evaluate(acc.map(i => materials[i]))
+      return
+    }
+    for (let i = start; i < idxs.length; i++) {
+      choose(i + 1, k, [...acc, i])
+    }
+  }
+  for (let k = 1; k <= n; k++) choose(0, k, [])
+  return best
+}
+
+/**
+ * 묘지(금고) 방출 발동 — 5차 재설계 "즉석 조립" 즉시 타격 (전투당 1회).
+ * 묘고 재료로 정본 족보 내 최대 콤보를 즉석 계산 → 적에게 즉시 1회 타격. **손패 무경유·불변**.
+ * 데미지 = 즉석 콤보 totalScore × 상성 배율(타격속성 기준) × 수확체감(MYOGO_INSTANT_DIMINISH).
+ * 왕격이면 재료 값 +1 숙성. 방출 후 묘고 리셋 + 체감 카운터 증가. free action(공격권·버리기 미소비).
+ * 발동 불가(미장착/이미 사용/묘고 비움) 시 원본 반환.
  * 유저 시점 선택 액티브 — BattleScreen에서 호출.
  */
 export function releaseMyogo(state: GameState): GameState {
   if (!hasUnseongpae(state, 'myoji')) return state
   const myoji = getUnseongpaeState(state, 'myoji')!
-  const { state: nextMyoji, released } = myojiRelease(myoji)
-  if (released === null) return state // 발동 불가
+  const { state: nextMyoji, materials } = myojiRelease(myoji)
+  if (materials === null) return state // 발동 불가
+
+  // 즉석 조립: 정본 족보 내 최대 콤보 산출 (유령 족보 생성 금지 — judgeCombo 정본만).
+  const picked = bestMyogoCombo(materials, state.recipeMultipliers, state.gatherUsedInBattle ?? 0)
+  let strikeDamage = 0
+  if (picked) {
+    const { result } = picked
+    let dmg = result.totalScore
+    // 상성 배율 — fullCapCalcExpectedDamage 거울(타격속성 finishingElement 기준). 손패·기믹 미개입.
+    const floorConfig = FLOOR_CONFIGS[state.currentFloor - 1]
+    const enemyEl = (!state.enemyPhaseSwitch
+      ? floorConfig?.enemyPrimaryElement
+      : floorConfig?.enemySubElement) as Element | undefined
+    if (enemyEl) {
+      const repEl = result.finishingElement
+      let affinity = 1.0
+      if (GEUK_MAP[repEl] === enemyEl) affinity = GEUK_BONUS_MULTIPLIER          // 내가 적을 극
+      else if (SANG_MAP[repEl] === enemyEl) affinity = SANG_PENALTY_MULTIPLIER   // 내가 적을 생
+      else if (GEUK_MAP[enemyEl] === repEl) affinity = ANTI_GEUK_PENALTY          // 적이 나를 극
+      else if (YIKSEANG_MAP[repEl] === enemyEl) affinity = YIKSEANG_MULT          // 역생
+      dmg = Math.round(dmg * affinity)
+    }
+    // 수확 체감 — 공짜 딜이므로 정본 배율 대비 계수 적용 (≤1.0, 상한 초과 방지).
+    strikeDamage = Math.round(dmg * MYOGO_INSTANT_DIMINISH)
+  }
+
+  const newEnemyHp = Math.max(0, state.enemyHp - strikeDamage)
+
+  // 즉석 타격으로 적 격파 시 층 클리어 전이 (playCards의 floorCleared 꼬리 미러 — 복제타 패턴).
+  let phase = state.phase
+  let isVictory = state.isVictory
+  let floorsCleared = state.floorsCleared
+  if (newEnemyHp <= 0 && state.enemyHp > 0) {
+    floorsCleared = state.floorsCleared + 1
+    if (state.currentFloor >= 4) {
+      phase = 'result'
+      isVictory = true
+    } else {
+      phase = 'floor-reward'
+    }
+  }
+
   return syncLegacySlotFields({
     ...state,
-    hand: [...state.hand, ...released],
+    // 손패 불변 — 방출은 손패를 건드리지 않는다 (즉석 타격 페이오프). 공격권·버리기 미소비(free action).
+    enemyHp: newEnemyHp,
+    phase,
+    isVictory,
+    floorsCleared,
     unseongpaeStates: replaceUnseongpaeState(state.unseongpaeStates ?? [], nextMyoji),
   })
 }

@@ -58,11 +58,13 @@ const PRESETS = [
   { key: 'toDanil', label: '토단일', dist: { mok: 1, hwa: 1, to: 14, geum: 2, su: 2 } as Record<Element, number>, ilgan: 'to' as Element },
 ]
 
+// G13 개체명 개정(2026-07-23 이든): 게이트 로그 표기 = 장생/제왕/묘고/절처봉생.
+// 엔진 식별자 키(saengji 등)는 유지 — 표시명만 교체 (분류명 생왕묘절은 도감 층 강등).
 const UNSEONGPAE: { id: UnseongpaeId; label: string }[] = [
-  { id: 'saengji', label: '생지(生地)' },
-  { id: 'wangji', label: '왕지(旺地)' },
-  { id: 'myoji', label: '묘지(墓地)' },
-  { id: 'jeolji', label: '절지(絶地)' },
+  { id: 'saengji', label: '장생(長生)' },
+  { id: 'wangji', label: '제왕(帝旺)' },
+  { id: 'myoji', label: '묘고(墓庫)' },
+  { id: 'jeolji', label: '절처봉생(絶處逢生)' },
 ]
 
 const RUNS = 3000

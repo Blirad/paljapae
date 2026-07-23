@@ -20,9 +20,11 @@ import {
   playCards,
   discardCards,
   releaseMyogo,
+  bestMyogoCombo,
   tryJeoljiRevive,
   resetUnseongpaePerFloor,
 } from '../engine/paljajeonEngine'
+import { judgeCombo } from '../engine/pokerHandJudge'
 import {
   accrueFeed,
   createUnseongpaeState,
@@ -140,43 +142,65 @@ describe('E2E ② 절지 부활 + 격 꺾임', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // ③ 묘고 적재·방출
 // ─────────────────────────────────────────────────────────────────────────────
-describe('E2E ③ 묘지 묘고 적재·방출', () => {
-  it('버린 카드 묘고 적재 → 방출 시 전체 손패 복귀 (전투당 1회)', () => {
+describe('E2E ③ 묘지(금고) 묘고 적재·즉석 조립 방출 (5차 재설계)', () => {
+  it('버린 카드 묘고 적재 → 방출 시 즉석 조립 재료 반환 (손패 무경유, 전투당 1회)', () => {
     const cards = [makeCard('x', 'mok', 6), makeCard('y', 'hwa', 7)]
     let myoji = { ...createUnseongpaeState('myoji'), gyeok: 'sang' as const } // 상격 = 무제한
     myoji = myojiStoreDiscarded(myoji, cards)
     expect(myoji.myogo!.length).toBe(2)
-    const { state: after, released } = myojiRelease(myoji)
-    expect(released!.length).toBe(2) // 전체 방출
-    expect(after.myogo!.length).toBe(0) // 묘고 비움
+    expect(myoji.myogoReleaseCount).toBe(0)
+    const { state: after, materials } = myojiRelease(myoji)
+    expect(materials!.length).toBe(2) // 즉석 조립 재료 반환 (손패 미개입)
+    expect(after.myogo!.length).toBe(0) // 묘고 리셋
     expect(after.myogoUsedThisFloor).toBe(true)
+    expect(after.myogoReleaseCount).toBe(1) // 수확 체감 카운터 증가
     // 재방출 불가 (전투당 1회)
     const again = myojiRelease(after)
-    expect(again.released).toBeNull()
+    expect(again.materials).toBeNull()
   })
 
-  it('왕격 방출 — 묘고 카드 값 +1 숙성', () => {
+  it('왕격 방출 — 즉석 조립 재료 값 +1 숙성', () => {
     let myoji = { ...createUnseongpaeState('myoji'), gyeok: 'wang' as const }
     myoji = myojiStoreDiscarded(myoji, [makeCard('z', 'to', 5)])
-    const { released } = myojiRelease(myoji)
-    expect(released![0].value).toBe(6) // 5 + 1 숙성
+    const { materials } = myojiRelease(myoji)
+    expect(materials![0].value).toBe(6) // 5 + 1 숙성
   })
 
-  it('엔진 통합 — discardCards로 묘고 적재 후 releaseMyogo로 손패 복귀', () => {
+  it('즉석 조립 배율 = judgeCombo 정본 대조 (유령 족보 생성 금지)', () => {
+    // 5원소 5장 → 오행연환(×8) 성립 재료
+    const materials = [
+      makeCard('m1', 'mok', 6), makeCard('m2', 'hwa', 6), makeCard('m3', 'to', 6),
+      makeCard('m4', 'geum', 6), makeCard('m5', 'su', 6),
+    ]
+    const picked = bestMyogoCombo(materials)
+    expect(picked).not.toBeNull()
+    // 정본 judgeCombo와 동일 콤보·배율
+    const canonical = judgeCombo(picked!.combo)
+    expect(picked!.result.type).toBe(canonical.type)
+    expect(picked!.result.multiplier).toBe(canonical.multiplier)
+    expect(picked!.result.name).toBe(canonical.name)
+  })
+
+  it('엔진 통합 — discardCards로 묘고 적재 후 releaseMyogo 즉석 타격 (손패 불변)', () => {
     let state = acquireUnseongpae({ ...createInitialGameState(0), phase: 'floor-reward' }, 'myoji').state
     state = {
-      ...makeFusionState(),
+      ...makeFusionState({ currentFloor: 1, enemyHp: 9999, enemyMaxHp: 9999 }),
       unifiedSlots: state.unifiedSlots,
       unseongpaeStates: state.unseongpaeStates!.map(u => ({ ...u, gyeok: 'sang' as const })),
     }
-    const handBefore = state.hand.length
     state = discardCards(state, ['c', 'd']) // 2장 버리기 → 묘고 적재
     expect(getUnseongpaeState(state, 'myoji')!.myogo!.length).toBe(2)
-    const handAfterDiscard = state.hand.length
-    state = releaseMyogo(state) // 방출 → 손패 복귀
-    expect(state.hand.length).toBe(handAfterDiscard + 2)
+    const handSnapshot = [...state.hand.map(c => c.id)]
+    const enemyHpBefore = state.enemyHp
+    state = releaseMyogo(state) // 즉석 조립 타격
+    // 손패 불변 assert (length·내용 동일)
+    expect(state.hand.map(c => c.id)).toEqual(handSnapshot)
+    // 즉시 타격 발생 assert (적 HP 감소)
+    expect(state.enemyHp).toBeLessThan(enemyHpBefore)
+    // 묘고 리셋
     expect(getUnseongpaeState(state, 'myoji')!.myogo!.length).toBe(0)
-    void handBefore
+    // 체감 카운터 증가
+    expect(getUnseongpaeState(state, 'myoji')!.myogoReleaseCount).toBe(1)
   })
 })
 
